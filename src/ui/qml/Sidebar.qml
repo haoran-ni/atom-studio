@@ -1,0 +1,304 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Rectangle {
+    id: sidebar
+
+    color: "#252526"
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 0
+        spacing: 0
+
+        // Sidebar header
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 32
+            color: "#2d2d2d"
+
+            Label {
+                anchors.centerIn: parent
+                text: qsTr("Properties")
+                color: "#cccccc"
+                font.pixelSize: 12
+                font.bold: true
+            }
+        }
+
+        // Separator
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: "#3c3c3c"
+        }
+
+        // Scrollable content area
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+
+            ColumnLayout {
+                width: sidebar.width
+                spacing: 1
+
+                // Structure Info Section
+                CollapsibleSection {
+                    title: qsTr("Structure Info")
+                    Layout.fillWidth: true
+
+                    content: ColumnLayout {
+                        spacing: 8
+
+                        PropertyRow {
+                            label: qsTr("File:")
+                            value: "No file loaded"
+                        }
+
+                        PropertyRow {
+                            label: qsTr("Atoms:")
+                            value: "0"
+                        }
+
+                        PropertyRow {
+                            label: qsTr("Atom Types:")
+                            value: "0"
+                        }
+
+                        PropertyRow {
+                            label: qsTr("Bonds:")
+                            value: "0"
+                        }
+                    }
+                }
+
+                // Visualization Section
+                CollapsibleSection {
+                    title: qsTr("Visualization")
+                    Layout.fillWidth: true
+
+                    content: ColumnLayout {
+                        spacing: 8
+
+                        Label {
+                            text: qsTr("Atom Style")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        ComboBox {
+                            Layout.fillWidth: true
+                            model: ["Sphere", "Ball & Stick", "CPK", "Wireframe"]
+                            currentIndex: 0
+                        }
+
+                        Label {
+                            text: qsTr("Atom Scale")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0.1
+                            to: 2.0
+                            value: 1.0
+                        }
+
+                        CheckBox {
+                            text: qsTr("Show Bonds")
+                            checked: true
+                        }
+
+                        CheckBox {
+                            text: qsTr("Show Unit Cell")
+                            checked: true
+                        }
+                    }
+                }
+
+                // Camera Section
+                CollapsibleSection {
+                    title: qsTr("Camera")
+                    Layout.fillWidth: true
+
+                    content: ColumnLayout {
+                        spacing: 8
+
+                        Label {
+                            text: qsTr("Projection")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        ComboBox {
+                            Layout.fillWidth: true
+                            model: ["Perspective", "Orthographic"]
+                            currentIndex: 0
+                        }
+
+                        Label {
+                            text: qsTr("Field of View")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 30
+                            to: 120
+                            value: 60
+                        }
+
+                        Button {
+                            text: qsTr("Reset Camera")
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
+                // Render Settings Section
+                CollapsibleSection {
+                    title: qsTr("Render Settings")
+                    Layout.fillWidth: true
+                    expanded: false
+
+                    content: ColumnLayout {
+                        spacing: 8
+
+                        Label {
+                            text: qsTr("Render Mode")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        ComboBox {
+                            Layout.fillWidth: true
+                            model: ["Raster (Fast)", "Ray Tracing (Quality)"]
+                            currentIndex: 0
+                        }
+
+                        CheckBox {
+                            text: qsTr("Ambient Occlusion")
+                            checked: false
+                        }
+
+                        CheckBox {
+                            text: qsTr("Shadows")
+                            checked: true
+                        }
+
+                        Label {
+                            text: qsTr("Background Color")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 24
+                            color: "#1a1a2e"
+                            border.color: "#3c3c3c"
+                            border.width: 1
+                            radius: 2
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: console.log("Color picker clicked")
+                            }
+                        }
+                    }
+                }
+
+                // Spacer to push content to top
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
+        }
+    }
+
+    // Collapsible Section Component
+    component CollapsibleSection: ColumnLayout {
+        id: section
+
+        property string title: ""
+        property alias content: contentLoader.sourceComponent
+        property bool expanded: true
+
+        spacing: 0
+        Layout.fillWidth: true
+
+        // Section header
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            color: sectionMouse.containsMouse ? "#3c3c3c" : "#333333"
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                spacing: 8
+
+                Label {
+                    text: section.expanded ? "\u25BC" : "\u25B6"
+                    color: "#808080"
+                    font.pixelSize: 10
+                }
+
+                Label {
+                    text: section.title
+                    color: "#cccccc"
+                    font.pixelSize: 11
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+            }
+
+            MouseArea {
+                id: sectionMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: section.expanded = !section.expanded
+            }
+        }
+
+        // Section content
+        Loader {
+            id: contentLoader
+            Layout.fillWidth: true
+            Layout.leftMargin: 15
+            Layout.rightMargin: 10
+            Layout.topMargin: 8
+            Layout.bottomMargin: 8
+            visible: section.expanded
+        }
+    }
+
+    // Property Row Component
+    component PropertyRow: RowLayout {
+        property string label: ""
+        property string value: ""
+
+        spacing: 10
+        Layout.fillWidth: true
+
+        Label {
+            text: label
+            color: "#808080"
+            font.pixelSize: 11
+            Layout.preferredWidth: 80
+        }
+
+        Label {
+            text: value
+            color: "#cccccc"
+            font.pixelSize: 11
+            Layout.fillWidth: true
+            elide: Text.ElideRight
+        }
+    }
+}

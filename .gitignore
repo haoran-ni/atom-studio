@@ -1,0 +1,57 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Qt generated files
+*_autogen/
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.qmlc
+*.jsc
+
+# Compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# macOS
+.DS_Store
+*.dSYM/
+*.app/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+*.swp
+*.swo
+*~
+*.bak
+
+# vcpkg
+vcpkg_installed/
+
+# Claude Code local settings (keep .claude/settings.json if shared)
+.claude/settings.local.json
+
+# Temporary files
+*.tmp
+*.temp
+*.log

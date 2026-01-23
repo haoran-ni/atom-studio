@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/qml">
+        <file alias="Main.qml">../src/ui/qml/Main.qml</file>
+        <file alias="HeaderBar.qml">../src/ui/qml/HeaderBar.qml</file>
+        <file alias="Sidebar.qml">../src/ui/qml/Sidebar.qml</file>
+        <file alias="ViewportPanel.qml">../src/ui/qml/ViewportPanel.qml</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "atom-studio",
+  "version": "0.1.0",
+  "description": "High performance visualization application for atomic structures",
+  "dependencies": [
+    {
+      "name": "qt6-base",
+      "default-features": false,
+      "features": ["gui", "widgets"]
+    },
+    {
+      "name": "qt6-declarative",
+      "default-features": false
+    },
+    {
+      "name": "qt6-quickcontrols2",
+      "default-features": false
+    }
+  ],
+  "builtin-baseline": "2024.09.30"
+}
