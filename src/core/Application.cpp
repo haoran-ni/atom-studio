@@ -5,6 +5,11 @@
 #include <QQuickStyle>
 #include <QDebug>
 
+// UI components
+#include "../ui/components/OpenGLViewport.h"
+#include "../ui/components/FileController.h"
+#include "../ui/components/StructureModel.h"
+
 namespace atom {
 
 Application::Application(QObject* parent)
@@ -66,8 +71,12 @@ void Application::setupQmlContext()
 
 void Application::registerQmlTypes()
 {
-    // Future: register custom QML types here
-    // Example: qmlRegisterType<VulkanViewport>("AtomStudio", 1, 0, "VulkanViewport");
+    // Register UI components
+    qmlRegisterType<ui::OpenGLViewport>("AtomStudio", 1, 0, "OpenGLViewport");
+    qmlRegisterSingletonType<ui::FileController>("AtomStudio", 1, 0, "FileController",
+        ui::FileController::create);
+    qmlRegisterSingletonType<ui::StructureModel>("AtomStudio", 1, 0, "StructureModel",
+        ui::StructureModel::create);
 }
 
 } // namespace atom

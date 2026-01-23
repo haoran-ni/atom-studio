@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import AtomStudio 1.0
 
 Rectangle {
     id: headerBar
@@ -29,7 +30,7 @@ Rectangle {
                 Action {
                     text: qsTr("Open...")
                     shortcut: StandardKey.Open
-                    onTriggered: console.log("Open file triggered")
+                    onTriggered: FileController.openFileDialog()
                 }
 
                 Action {
@@ -102,13 +103,21 @@ Rectangle {
 
                 Action {
                     text: qsTr("Reset Camera")
-                    onTriggered: console.log("Reset camera triggered")
+                    onTriggered: {
+                        if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                            mainWindow.viewportPanel.viewport.resetCamera()
+                        }
+                    }
                 }
 
                 Action {
                     text: qsTr("Fit to View")
                     shortcut: "F"
-                    onTriggered: console.log("Fit to view triggered")
+                    onTriggered: {
+                        if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                            mainWindow.viewportPanel.viewport.fitToView()
+                        }
+                    }
                 }
 
                 MenuSeparator {}

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import AtomStudio 1.0
 
 Rectangle {
     id: sidebar
@@ -54,22 +55,47 @@ Rectangle {
 
                         PropertyRow {
                             label: qsTr("File:")
-                            value: "No file loaded"
+                            value: StructureModel.fileName
                         }
 
                         PropertyRow {
                             label: qsTr("Atoms:")
-                            value: "0"
+                            value: StructureModel.atomCount.toString()
                         }
 
                         PropertyRow {
                             label: qsTr("Atom Types:")
-                            value: "0"
+                            value: StructureModel.atomTypeCount.toString()
                         }
 
                         PropertyRow {
                             label: qsTr("Bonds:")
-                            value: "0"
+                            value: StructureModel.bondCount.toString()
+                        }
+
+                        // Element list
+                        Repeater {
+                            model: StructureModel.elements
+                            delegate: PropertyRow {
+                                label: ""
+                                value: modelData
+                            }
+                        }
+
+                        // Unit cell info
+                        PropertyRow {
+                            visible: StructureModel.hasUnitCell
+                            label: qsTr("Unit Cell:")
+                            value: StructureModel.hasUnitCell ? "Yes" : "No"
+                        }
+
+                        Label {
+                            visible: StructureModel.hasUnitCell
+                            text: StructureModel.cellParameters
+                            color: "#cccccc"
+                            font.pixelSize: 10
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 85
                         }
                     }
                 }
@@ -101,15 +127,27 @@ Rectangle {
                         }
 
                         Slider {
+                            id: atomScaleSlider
                             Layout.fillWidth: true
                             from: 0.1
                             to: 2.0
-                            value: 1.0
+                            value: 0.5
+                            onValueChanged: {
+                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                                    mainWindow.viewportPanel.viewport.atomScale = value
+                                }
+                            }
                         }
 
                         CheckBox {
+                            id: showBondsCheck
                             text: qsTr("Show Bonds")
                             checked: true
+                            onCheckedChanged: {
+                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                                    mainWindow.viewportPanel.viewport.showBonds = checked
+                                }
+                            }
                         }
 
                         CheckBox {
@@ -149,12 +187,27 @@ Rectangle {
                             Layout.fillWidth: true
                             from: 30
                             to: 120
-                            value: 60
+                            value: 45
                         }
 
                         Button {
                             text: qsTr("Reset Camera")
                             Layout.fillWidth: true
+                            onClicked: {
+                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                                    mainWindow.viewportPanel.viewport.resetCamera()
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: qsTr("Fit to View")
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
+                                    mainWindow.viewportPanel.viewport.fitToView()
+                                }
+                            }
                         }
                     }
                 }

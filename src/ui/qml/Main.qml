@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import AtomStudio 1.0
 
 ApplicationWindow {
     id: mainWindow
@@ -14,6 +15,16 @@ ApplicationWindow {
     title: appName + " v" + appVersion
 
     color: "#1e1e1e"
+
+    // Connection to handle file loading errors
+    // Note: Structure updates are handled in C++ (FileController -> StructureModel -> OpenGLViewport)
+    // because std::shared_ptr cannot pass through QML signals
+    Connections {
+        target: FileController
+        function onLoadFailed(error) {
+            statusLabel.text = "Error: " + error
+        }
+    }
 
     // Main layout
     ColumnLayout {
@@ -70,15 +81,23 @@ ApplicationWindow {
             spacing: 20
 
             Label {
-                text: "Ready"
+                id: statusLabel
+                text: FileController.isLoading ? FileController.loadStatus : "Ready"
                 color: "#cccccc"
                 font.pixelSize: 11
+            }
+
+            // Loading progress
+            ProgressBar {
+                visible: FileController.isLoading
+                value: FileController.loadProgress
+                Layout.preferredWidth: 100
             }
 
             Item { Layout.fillWidth: true }
 
             Label {
-                text: "No file loaded"
+                text: StructureModel.hasStructure ? StructureModel.fileName : "No file loaded"
                 color: "#808080"
                 font.pixelSize: 11
             }

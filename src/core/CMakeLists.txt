@@ -11,6 +11,7 @@ target_include_directories(atom-core PUBLIC
 )
 
 target_link_libraries(atom-core PUBLIC
+    atom-ui
     Qt6::Core
     Qt6::Gui
     Qt6::Quick

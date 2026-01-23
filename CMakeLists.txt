@@ -22,6 +22,8 @@ find_package(Qt6 REQUIRED COMPONENTS
     Gui
     Quick
     QuickControls2
+    OpenGL
+    Widgets
 )
 
 # Get Qt installation path for macdeployqt
@@ -80,6 +82,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Gui
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::OpenGL
+    Qt6::Widgets
 )
 
 # Add framework search path for AGL stub on macOS
