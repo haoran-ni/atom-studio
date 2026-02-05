@@ -25,7 +25,7 @@ The application consists of a header bar for app options, a side bar showing inf
 
 ### Language: C++17/20
 - Core engine in modern C++
-- Python scripting layer (optional, later phase)
+- Embedded Python (pybind11) for file I/O via ASE
 - C API for external bindings
 
 ### UI Framework: Qt 6
@@ -50,15 +50,14 @@ The application consists of a header bar for app options, a side bar showing inf
 - vcpkg or Conan for dependency management
 - Cross-platform CI pipeline
 
-### File I/O: C++ Native Readers + Plugin Architecture
-- LAMMPS dump (atom style variants), data files
-- XYZ (including extended XYZ conventions)
-- CIF (using mature C++ parser)
-- Trajectory formats: DCD, XTC/TRR, NetCDF
-- Plugin-like IO layer:
-  - Parsing in worker threads
-  - Normalized internal arrays output
-  - Out-of-core streaming for large trajectories
+### File I/O: Python ASE Integration
+- Uses ASE (Atomic Simulation Environment) via embedded Python
+- Supports 70+ file formats out of the box (XYZ, CIF, LAMMPS, VASP, PDB, etc.)
+- Architecture:
+  - Python initialized at startup, ASE pre-loaded
+  - Worker threads acquire GIL for file reading
+  - ASE reads files → converted to C++ Structure with zero-copy numpy access
+  - Bundled Python distribution for deployment (no system Python required)
 
 ## Architecture Details
 
