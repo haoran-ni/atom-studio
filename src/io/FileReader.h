@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../data/AtomicStructure.h"
+#include "../data/Structure.h"
 
 #include <functional>
 #include <memory>
@@ -16,9 +16,9 @@ namespace atom::io {
 struct ReadResult {
     bool success = false;
     std::string errorMessage;
-    std::unique_ptr<data::AtomicStructure> structure;
+    std::unique_ptr<data::Structure> structure;
 
-    static ReadResult Success(std::unique_ptr<data::AtomicStructure> s) {
+    static ReadResult Success(std::unique_ptr<data::Structure> s) {
         ReadResult r;
         r.success = true;
         r.structure = std::move(s);

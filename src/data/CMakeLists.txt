@@ -1,15 +1,13 @@
 # src/data/CMakeLists.txt
-# Data model library - atomic structure, bonds, unit cell
+# Data model library - atomic structure, bonds, lattice
 
 add_library(atom-data STATIC
     ElementData.cpp
     ElementData.h
-    AtomicStructure.cpp
-    AtomicStructure.h
     BondList.cpp
     BondList.h
-    UnitCell.cpp
-    UnitCell.h
+    Structure.cpp
+    Structure.h
 )
 
 target_include_directories(atom-data PUBLIC

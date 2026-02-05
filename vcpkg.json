@@ -16,7 +16,8 @@
     {
       "name": "qt6-quickcontrols2",
       "default-features": false
-    }
+    },
+    "pybind11"
   ],
   "builtin-baseline": "2024.09.30"
 }

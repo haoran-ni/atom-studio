@@ -3,7 +3,7 @@
 #include "RenderSettings.h"
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::render {
@@ -41,7 +41,7 @@ public:
      * @brief Set the atomic structure to render
      * @param structure Pointer to structure (may be null to clear)
      */
-    virtual void setStructure(const data::AtomicStructure* structure) = 0;
+    virtual void setStructure(const data::Structure* structure) = 0;
 
     /**
      * @brief Render a frame

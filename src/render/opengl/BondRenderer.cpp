@@ -2,7 +2,7 @@
 #include "ShaderManager.h"
 #include "../Camera.h"
 #include "../RenderSettings.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 #include "../../data/BondList.h"
 
 #include <QOpenGLShaderProgram>
@@ -125,7 +125,7 @@ void BondRenderer::createCylinderGeometry(int segments) {
     m_cylinderVAO.release();
 }
 
-void BondRenderer::setBondData(const data::AtomicStructure* structure) {
+void BondRenderer::setBondData(const data::Structure* structure) {
     if (!m_initialized) return;
 
     if (!structure || structure->bonds().bondCount() == 0) {

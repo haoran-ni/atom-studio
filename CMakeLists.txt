@@ -38,6 +38,15 @@ else()
     message(STATUS "Vulkan not found - will be required for rendering in future steps")
 endif()
 
+# Find Python and pybind11 for ASE integration
+find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter Development NumPy)
+find_package(pybind11 CONFIG REQUIRED)
+
+message(STATUS "Python found: ${Python3_EXECUTABLE}")
+message(STATUS "Python version: ${Python3_VERSION}")
+message(STATUS "NumPy include: ${Python3_NumPy_INCLUDE_DIRS}")
+message(STATUS "pybind11 found: ${pybind11_VERSION}")
+
 # Platform-specific settings
 if(APPLE)
     set(CMAKE_MACOSX_BUNDLE ON)
@@ -118,14 +127,26 @@ if(APPLE)
             "${APP_FRAMEWORKS_DIR}/AGL.framework"
     )
 
+    # Custom target to bundle Python interpreter and packages
+    # Run with: cmake --build build --target deploy-python
+    add_custom_target(deploy-python
+        COMMENT "Bundling Python interpreter and packages..."
+        COMMAND ${CMAKE_COMMAND}
+            -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+            -DAPP_BUNDLE_PATH=${APP_BUNDLE_PATH}
+            -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
+            -P ${CMAKE_SOURCE_DIR}/cmake/BundlePython.cmake
+        DEPENDS ${PROJECT_NAME}
+    )
+
     # Custom target to deploy Qt frameworks into the app bundle
     # Run with: cmake --build build --target deploy
     add_custom_target(deploy
-        COMMENT "Deploying Qt frameworks into app bundle..."
+        COMMENT "Deploying Qt frameworks and Python into app bundle..."
         COMMAND "${QT_BIN_DIR}/macdeployqt" "${APP_BUNDLE_PATH}" -qmldir=${CMAKE_SOURCE_DIR}/src/ui/qml
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_BINARY_DIR}/Frameworks/AGL.framework"
             "${APP_FRAMEWORKS_DIR}/AGL.framework"
-        DEPENDS ${PROJECT_NAME}
+        DEPENDS ${PROJECT_NAME} deploy-python
     )
 endif()

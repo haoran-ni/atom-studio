@@ -6,7 +6,7 @@
 #include <memory>
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::io {
@@ -68,7 +68,7 @@ signals:
      * @brief Emitted when loading completes successfully
      * @param structure Loaded structure (ownership transferred)
      */
-    void loadingFinished(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void loadingFinished(std::shared_ptr<atom::data::Structure> structure);
 
     /**
      * @brief Emitted when loading fails
@@ -85,7 +85,7 @@ private:
     class LoadWorker;
 
     void onWorkerProgress(float progress, const QString& message);
-    void onWorkerFinished(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void onWorkerFinished(std::shared_ptr<atom::data::Structure> structure);
     void onWorkerFailed(const QString& error);
     void onWorkerCancelled();
 

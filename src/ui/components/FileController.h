@@ -10,7 +10,7 @@
 #include "../../io/AsyncFileLoader.h"
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::ui {
@@ -73,7 +73,7 @@ signals:
     /**
      * @brief Emitted when a structure is successfully loaded
      */
-    void structureLoaded(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void structureLoaded(std::shared_ptr<atom::data::Structure> structure);
 
     /**
      * @brief Emitted when loading fails
@@ -83,7 +83,7 @@ signals:
 private slots:
     void onLoadingStarted(const QString& filePath);
     void onProgressChanged(float progress, const QString& message);
-    void onLoadingFinished(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void onLoadingFinished(std::shared_ptr<atom::data::Structure> structure);
     void onLoadingFailed(const QString& error);
     void onLoadingCancelled();
 

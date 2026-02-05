@@ -1,5 +1,5 @@
 #include "FileReader.h"
-#include "../data/AtomicStructure.h"
+#include "../data/Structure.h"
 
 #include <algorithm>
 #include <fstream>

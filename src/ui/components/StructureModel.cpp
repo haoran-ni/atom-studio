@@ -1,7 +1,6 @@
 #include "StructureModel.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 #include "../../data/BondList.h"
-#include "../../data/UnitCell.h"
 #include "../../data/ElementData.h"
 
 #include <QFileInfo>
@@ -41,7 +40,7 @@ bool StructureModel::hasStructure() const {
 QString StructureModel::fileName() const {
     if (!m_structure) return tr("No file loaded");
 
-    QString path = QString::fromStdString(m_structure->sourceFile());
+    QString path = QString::fromStdString(m_structure->sourcePath());
     if (path.isEmpty()) return tr("Untitled");
 
     return QFileInfo(path).fileName();
@@ -69,23 +68,23 @@ QStringList StructureModel::elements() const {
 }
 
 bool StructureModel::hasUnitCell() const {
-    return m_structure && m_structure->hasUnitCell();
+    return m_structure && m_structure->hasLattice();
 }
 
 QString StructureModel::cellParameters() const {
     if (!hasUnitCell()) return QString();
 
-    const auto& cell = m_structure->unitCell();
+    const auto& lattice = m_structure->lattice();
     return QString("a=%1 b=%2 c=%3\n\u03B1=%4\u00B0 \u03B2=%5\u00B0 \u03B3=%6\u00B0")
-           .arg(cell.a(), 0, 'f', 3)
-           .arg(cell.b(), 0, 'f', 3)
-           .arg(cell.c(), 0, 'f', 3)
-           .arg(cell.alpha(), 0, 'f', 1)
-           .arg(cell.beta(), 0, 'f', 1)
-           .arg(cell.gamma(), 0, 'f', 1);
+           .arg(lattice.a(), 0, 'f', 3)
+           .arg(lattice.b(), 0, 'f', 3)
+           .arg(lattice.c(), 0, 'f', 3)
+           .arg(lattice.alpha(), 0, 'f', 1)
+           .arg(lattice.beta(), 0, 'f', 1)
+           .arg(lattice.gamma(), 0, 'f', 1);
 }
 
-void StructureModel::setStructure(std::shared_ptr<data::AtomicStructure> structure) {
+void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
     updateElementList();
     emit structureChanged();
@@ -105,11 +104,11 @@ void StructureModel::updateElementList() {
 
     // Count atoms per element
     QMap<int, int> counts;
-    const int* types = m_structure->types();
+    const int* atomicNums = m_structure->atomicNumbers();
     size_t n = m_structure->atomCount();
 
     for (size_t i = 0; i < n; ++i) {
-        counts[types[i]]++;
+        counts[atomicNums[i]]++;
     }
 
     // Build element list with counts

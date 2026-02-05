@@ -2,7 +2,7 @@
 #include "StructureModel.h"
 #include "../../io/AsyncFileLoader.h"
 #include "../../io/FileReaderRegistry.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -124,7 +124,7 @@ void FileController::onProgressChanged(float progress, const QString& message) {
     emit loadStatusChanged();
 }
 
-void FileController::onLoadingFinished(std::shared_ptr<data::AtomicStructure> structure) {
+void FileController::onLoadingFinished(std::shared_ptr<data::Structure> structure) {
     m_isLoading = false;
     m_loadProgress = 1.0f;
     m_loadStatus = tr("Loaded");

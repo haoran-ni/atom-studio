@@ -1,6 +1,6 @@
 #include "OpenGLRenderer.h"
 #include "../Camera.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 
 #include <QDebug>
 
@@ -60,7 +60,7 @@ void OpenGLRenderer::resize(int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-void OpenGLRenderer::setStructure(const data::AtomicStructure* structure) {
+void OpenGLRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;
     m_bondDataDirty = true;

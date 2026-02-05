@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::render {
@@ -39,7 +39,7 @@ public:
     /**
      * @brief Upload bond data from structure
      */
-    void setBondData(const data::AtomicStructure* structure);
+    void setBondData(const data::Structure* structure);
 
     /**
      * @brief Render bonds

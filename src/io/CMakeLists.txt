@@ -8,12 +8,6 @@ add_library(atom-io STATIC
     FileReaderRegistry.h
     AsyncFileLoader.cpp
     AsyncFileLoader.h
-    readers/XYZReader.cpp
-    readers/XYZReader.h
-    readers/LAMMPSDumpReader.cpp
-    readers/LAMMPSDumpReader.h
-    readers/CIFReader.cpp
-    readers/CIFReader.h
 )
 
 target_include_directories(atom-io PUBLIC
@@ -22,5 +16,6 @@ target_include_directories(atom-io PUBLIC
 
 target_link_libraries(atom-io PUBLIC
     atom-data
+    atom-python
     Qt6::Core
 )

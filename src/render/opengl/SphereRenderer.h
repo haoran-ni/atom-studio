@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::render {
@@ -43,7 +43,7 @@ public:
      * @brief Upload atom data from structure
      * @param structure Atomic structure (may be null)
      */
-    void setAtomData(const data::AtomicStructure* structure);
+    void setAtomData(const data::Structure* structure);
 
     /**
      * @brief Render atoms

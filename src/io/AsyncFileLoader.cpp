@@ -1,6 +1,6 @@
 #include "AsyncFileLoader.h"
 #include "FileReaderRegistry.h"
-#include "../data/AtomicStructure.h"
+#include "../data/Structure.h"
 
 #include <QDebug>
 #include <atomic>
@@ -36,7 +36,7 @@ public slots:
         if (cancelFlag.load()) {
             emit cancelled();
         } else if (result.success) {
-            emit finished(std::shared_ptr<data::AtomicStructure>(
+            emit finished(std::shared_ptr<data::Structure>(
                 std::move(result.structure)));
         } else {
             emit failed(QString::fromStdString(result.errorMessage));
@@ -45,7 +45,7 @@ public slots:
 
 signals:
     void progressChanged(float progress, const QString& message);
-    void finished(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void finished(std::shared_ptr<atom::data::Structure> structure);
     void failed(const QString& error);
     void cancelled();
 };
@@ -113,7 +113,7 @@ void AsyncFileLoader::onWorkerProgress(float progress, const QString& message) {
     emit progressChanged(progress, message);
 }
 
-void AsyncFileLoader::onWorkerFinished(std::shared_ptr<data::AtomicStructure> structure) {
+void AsyncFileLoader::onWorkerFinished(std::shared_ptr<data::Structure> structure) {
     m_loading = false;
     m_progress = 1.0f;
     m_statusMessage = "Complete";

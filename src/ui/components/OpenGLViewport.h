@@ -6,7 +6,7 @@
 #include <memory>
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::render {
@@ -46,7 +46,7 @@ public:
     float atomScale() const;
 
 public slots:
-    void setStructure(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void setStructure(std::shared_ptr<atom::data::Structure> structure);
     void fitToView();
     void resetCamera();
     void setShowBonds(bool show);
@@ -72,7 +72,7 @@ private:
     class RendererImpl;
     friend class RendererImpl;
 
-    std::shared_ptr<data::AtomicStructure> m_structure;
+    std::shared_ptr<data::Structure> m_structure;
     std::unique_ptr<render::Camera> m_camera;
 
     QPointF m_lastMousePos;

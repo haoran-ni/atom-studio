@@ -2,7 +2,7 @@
 #include "ShaderManager.h"
 #include "../Camera.h"
 #include "../RenderSettings.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 
 #include <QOpenGLShaderProgram>
 #include <QDebug>
@@ -85,7 +85,7 @@ void SphereRenderer::createQuadGeometry() {
     m_quadVAO.release();
 }
 
-void SphereRenderer::setAtomData(const data::AtomicStructure* structure) {
+void SphereRenderer::setAtomData(const data::Structure* structure) {
     if (!m_initialized) {
         return;
     }

@@ -6,9 +6,17 @@
 #include <QDebug>
 
 #include "core/Application.h"
+#include "python/PythonRuntime.h"
 
 int main(int argc, char* argv[])
 {
+    // Initialize Python interpreter BEFORE Qt
+    // This ensures Python is ready for ASE file reading
+    if (!atom::python::PythonRuntime::instance().initialize()) {
+        qCritical() << "Failed to initialize Python runtime";
+        return -1;
+    }
+
     // Set up OpenGL surface format for macOS compatibility
     // Request OpenGL 4.1 Core Profile (the max supported on macOS)
     QSurfaceFormat format;
@@ -44,9 +52,15 @@ int main(int argc, char* argv[])
 
     if (!atomApp.initialize()) {
         qCritical() << "Failed to initialize application";
+        atom::python::PythonRuntime::instance().finalize();
         return -1;
     }
 
     // Run the event loop
-    return app.exec();
+    int result = app.exec();
+
+    // Finalize Python interpreter after Qt event loop ends
+    atom::python::PythonRuntime::instance().finalize();
+
+    return result;
 }

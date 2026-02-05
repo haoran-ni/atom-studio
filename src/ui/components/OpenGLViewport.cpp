@@ -2,7 +2,7 @@
 #include "StructureModel.h"
 #include "../../render/Camera.h"
 #include "../../render/opengl/OpenGLRenderer.h"
-#include "../../data/AtomicStructure.h"
+#include "../../data/Structure.h"
 #include "../../data/BondList.h"
 
 #include <QMouseEvent>
@@ -135,7 +135,7 @@ float OpenGLViewport::atomScale() const {
     return m_atomScale;
 }
 
-void OpenGLViewport::setStructure(std::shared_ptr<data::AtomicStructure> structure) {
+void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
     m_needsStructureUpdate = true;
 

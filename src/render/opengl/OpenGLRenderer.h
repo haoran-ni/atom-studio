@@ -25,7 +25,7 @@ public:
     bool initialize() override;
     void cleanup() override;
     void resize(int width, int height) override;
-    void setStructure(const data::AtomicStructure* structure) override;
+    void setStructure(const data::Structure* structure) override;
     void render(const Camera& camera) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
@@ -45,7 +45,7 @@ private:
     SphereRenderer m_sphereRenderer;
     BondRenderer m_bondRenderer;
 
-    const data::AtomicStructure* m_structure = nullptr;
+    const data::Structure* m_structure = nullptr;
 
     int m_width = 800;
     int m_height = 600;

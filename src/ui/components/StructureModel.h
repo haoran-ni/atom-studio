@@ -8,7 +8,7 @@
 #include <memory>
 
 namespace atom::data {
-class AtomicStructure;
+class Structure;
 }
 
 namespace atom::ui {
@@ -40,7 +40,7 @@ public:
     static StructureModel* create(QQmlEngine* qmlEngine, QJSEngine* jsEngine);
     static StructureModel* instance() { return s_instance; }
 
-    std::shared_ptr<data::AtomicStructure> structure() const { return m_structure; }
+    std::shared_ptr<data::Structure> structure() const { return m_structure; }
 
     bool hasStructure() const;
     QString fileName() const;
@@ -53,17 +53,17 @@ public:
     QString cellParameters() const;
 
 public slots:
-    void setStructure(std::shared_ptr<atom::data::AtomicStructure> structure);
+    void setStructure(std::shared_ptr<atom::data::Structure> structure);
     void clear();
 
 signals:
     void structureChanged();
-    void structureUpdated(std::shared_ptr<data::AtomicStructure> structure);
+    void structureUpdated(std::shared_ptr<data::Structure> structure);
 
 private:
     void updateElementList();
 
-    std::shared_ptr<data::AtomicStructure> m_structure;
+    std::shared_ptr<data::Structure> m_structure;
     QStringList m_elements;
 
     static StructureModel* s_instance;
