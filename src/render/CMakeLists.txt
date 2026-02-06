@@ -12,6 +12,8 @@ add_library(atom-render STATIC
     opengl/SphereRenderer.h
     opengl/BondRenderer.cpp
     opengl/BondRenderer.h
+    opengl/UnitCellRenderer.cpp
+    opengl/UnitCellRenderer.h
     opengl/OpenGLRenderer.cpp
     opengl/OpenGLRenderer.h
 )

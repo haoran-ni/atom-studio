@@ -4,6 +4,43 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-06: Add Unit Cell Wireframe Visualization
+
+### Summary
+Added unit cell visualization to the interactive OpenGL viewport. The unit cell is rendered as 12 wireframe edges of the parallelepiped defined by the lattice vectors, using simple `GL_LINES` — no lighting or ray tracing.
+
+### Files Created
+| File | Purpose |
+|------|---------|
+| `src/render/opengl/UnitCellRenderer.h` | Unit cell wireframe renderer interface |
+| `src/render/opengl/UnitCellRenderer.cpp` | Computes 8 corners & 12 edges from lattice vectors, draws with GL_LINES |
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/opengl/OpenGLRenderer.h` | Added `UnitCellRenderer` member, accessor, and dirty flag |
+| `src/render/opengl/OpenGLRenderer.cpp` | Initialize, cleanup, data upload, and render call for unit cell |
+| `src/render/CMakeLists.txt` | Added UnitCellRenderer source files |
+
+### Architecture Decisions
+
+#### 1. Simple Line Rendering
+Unit cell edges are drawn with `GL_LINES` using the existing line shader (`uViewProjectionMatrix` only). No lighting, no instancing — just 8 vertices and 12 indexed line segments.
+
+#### 2. Parallelepiped from Lattice Vectors
+The 8 corners are computed from the 3 lattice vectors (a, b, c) stored in `Structure::Lattice::matrix[3][3]`:
+- Origin, A, B, C, A+B, A+C, B+C, A+B+C
+
+#### 3. Render Order
+Unit cell lines are drawn first (before bonds and atoms) so they appear behind the structure with correct depth testing.
+
+#### 4. Conditional Rendering
+- Only rendered when `Structure::hasLattice()` is true (i.e. cell volume > 0)
+- Toggled via `RenderSettings::showUnitCell` (default: true)
+- Color and line width from `RenderSettings::unitCellColor` and `unitCellLineWidth`
+
+---
+
 ## 2026-02-05: Replace Native File Readers with Python ASE Integration
 
 ### Summary

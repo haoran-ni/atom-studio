@@ -34,6 +34,11 @@ bool OpenGLRenderer::initialize() {
         return false;
     }
 
+    if (!m_unitCellRenderer.initialize(&m_shaderManager)) {
+        qCritical() << "OpenGLRenderer: Failed to initialize unit cell renderer";
+        return false;
+    }
+
     // Set up OpenGL state
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -47,6 +52,7 @@ bool OpenGLRenderer::initialize() {
 }
 
 void OpenGLRenderer::cleanup() {
+    m_unitCellRenderer.cleanup();
     m_bondRenderer.cleanup();
     m_sphereRenderer.cleanup();
     m_shaderManager.cleanup();
@@ -64,6 +70,7 @@ void OpenGLRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;
     m_bondDataDirty = true;
+    m_unitCellDataDirty = true;
 }
 
 void OpenGLRenderer::invalidateAtomData() {
@@ -94,6 +101,11 @@ void OpenGLRenderer::render(const Camera& camera) {
         m_bondDataDirty = false;
     }
 
+    if (m_unitCellDataDirty) {
+        m_unitCellRenderer.setUnitCellData(m_structure);
+        m_unitCellDataDirty = false;
+    }
+
     // Clear
     renderBackground();
 
@@ -101,7 +113,10 @@ void OpenGLRenderer::render(const Camera& camera) {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
-    // Render bonds first (they're behind atoms)
+    // Render unit cell lines (behind everything, no depth write interference)
+    m_unitCellRenderer.render(camera, m_settings);
+
+    // Render bonds
     m_bondRenderer.render(camera, m_settings);
 
     // Render atoms
