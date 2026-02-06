@@ -16,6 +16,7 @@ layout(location = 2) in vec4 aInstanceColor;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform vec2 uViewportSize;
+uniform float uAtomScale;
 
 out vec3 vViewCenter;    // Sphere center in view space
 out float vRadius;
@@ -24,7 +25,7 @@ out vec2 vQuadCoord;     // -1 to 1
 
 void main() {
     vColor = aInstanceColor;
-    vRadius = aInstancePos.w;
+    vRadius = aInstancePos.w * uAtomScale;
     vQuadCoord = aPosition.xy;
 
     // Transform sphere center to view space

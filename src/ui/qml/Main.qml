@@ -62,6 +62,7 @@ ApplicationWindow {
             // Properties sidebar (right)
             Sidebar {
                 id: sidebar
+                viewport: viewportPanel.viewport
                 SplitView.preferredWidth: 320
                 SplitView.minimumWidth: 200
                 SplitView.maximumWidth: 600

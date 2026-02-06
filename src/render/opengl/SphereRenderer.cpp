@@ -168,6 +168,7 @@ void SphereRenderer::render(const Camera& camera, const RenderSettings& settings
     lightDir.normalize();
     shader->setUniformValue("uLightDir", lightDir);
 
+    shader->setUniformValue("uAtomScale", settings.atomScale);
     shader->setUniformValue("uAmbient", settings.ambientStrength);
     shader->setUniformValue("uDiffuse", settings.diffuseStrength);
     shader->setUniformValue("uSpecular", settings.specularStrength);

@@ -12,7 +12,7 @@ struct RenderSettings {
     QColor backgroundColor = QColor(26, 26, 46);  // Dark blue-ish
 
     // Atom rendering
-    float atomScale = 0.5f;           // Scale factor for atom radii
+    float atomScale = 1.0f;           // Scale factor for atom radii
     bool showAtoms = true;
 
     // Bond rendering

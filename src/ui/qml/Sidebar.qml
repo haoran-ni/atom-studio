@@ -6,6 +6,8 @@ import AtomStudio 1.0
 Rectangle {
     id: sidebar
 
+    property var viewport: null
+
     color: "#252526"
 
     ColumnLayout {
@@ -131,10 +133,10 @@ Rectangle {
                             Layout.fillWidth: true
                             from: 0.1
                             to: 2.0
-                            value: 0.5
+                            value: 1.0
                             onValueChanged: {
-                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
-                                    mainWindow.viewportPanel.viewport.atomScale = value
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.atomScale = value
                                 }
                             }
                         }
@@ -144,8 +146,8 @@ Rectangle {
                             text: qsTr("Show Bonds")
                             checked: true
                             onCheckedChanged: {
-                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
-                                    mainWindow.viewportPanel.viewport.showBonds = checked
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.showBonds = checked
                                 }
                             }
                         }
@@ -194,8 +196,8 @@ Rectangle {
                             text: qsTr("Reset Camera")
                             Layout.fillWidth: true
                             onClicked: {
-                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
-                                    mainWindow.viewportPanel.viewport.resetCamera()
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.resetCamera()
                                 }
                             }
                         }
@@ -204,8 +206,8 @@ Rectangle {
                             text: qsTr("Fit to View")
                             Layout.fillWidth: true
                             onClicked: {
-                                if (mainWindow.viewportPanel && mainWindow.viewportPanel.viewport) {
-                                    mainWindow.viewportPanel.viewport.fitToView()
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.fitToView()
                                 }
                             }
                         }

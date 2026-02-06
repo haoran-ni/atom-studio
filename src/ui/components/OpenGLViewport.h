@@ -79,7 +79,7 @@ private:
     Qt::MouseButtons m_pressedButtons;
 
     bool m_showBonds = true;
-    float m_atomScale = 0.5f;
+    float m_atomScale = 1.0f;
     float m_fps = 0.0f;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;

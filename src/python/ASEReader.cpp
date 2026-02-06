@@ -285,7 +285,7 @@ ReadResult ASEReader::read(std::string_view path, ProgressCallback progress) {
 
         // Update rendering properties
         structure->updateColorsFromElements();
-        structure->updateRadiiFromElements(0.5f, false);  // 50% of covalent radius
+        structure->updateRadiiFromElements(1.0f, false);
 
         if (!m_impl->reportProgress(progress, 1.0f, "Done")) {
             return ReadResult::Error("Cancelled");
@@ -339,7 +339,7 @@ ReadResult ASEReader::readFromString(std::string_view data,
         structure->setName(std::string(sourceName));
 
         structure->updateColorsFromElements();
-        structure->updateRadiiFromElements(0.5f, false);
+        structure->updateRadiiFromElements(1.0f, false);
 
         if (!m_impl->reportProgress(progress, 1.0f, "Done")) {
             return ReadResult::Error("Cancelled");

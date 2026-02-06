@@ -250,7 +250,7 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
 
     // Default rendering properties from element data
     const auto& elem = ElementData::byAtomicNumber(atomicNumber);
-    m_radii.push_back(elem.covalentRadius * 0.5f);  // 50% of covalent radius
+    m_radii.push_back(elem.covalentRadius);
     m_colorR.push_back(elem.cpkColor.r);
     m_colorG.push_back(elem.cpkColor.g);
     m_colorB.push_back(elem.cpkColor.b);
