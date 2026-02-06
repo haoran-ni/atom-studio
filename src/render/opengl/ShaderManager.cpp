@@ -15,35 +15,43 @@ layout(location = 2) in vec4 aInstanceColor;
 
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
-uniform vec2 uViewportSize;
 uniform float uAtomScale;
 
 out vec3 vViewCenter;    // Sphere center in view space
 out float vRadius;
 out vec4 vColor;
-out vec2 vQuadCoord;     // -1 to 1
+out vec3 vViewPosOnQuad; // View-space position of this quad vertex
 
 void main() {
     vColor = aInstanceColor;
     vRadius = aInstancePos.w * uAtomScale;
-    vQuadCoord = aPosition.xy;
 
     // Transform sphere center to view space
     vec4 viewCenter = uViewMatrix * vec4(aInstancePos.xyz, 1.0);
     vViewCenter = viewCenter.xyz;
 
-    // Calculate billboard offset
-    // Scale quad by radius, accounting for perspective
-    float distance = length(viewCenter.xyz);
-    float projScale = uProjectionMatrix[1][1]; // Get FOV scale
+    // Perspective-correct billboard size.
+    // The projected silhouette of a sphere at distance d is:
+    //   R_proj = R * d / sqrt(d^2 - R^2)
+    // which is always >= R and grows as the sphere gets closer.
+    float dist = -viewCenter.z;  // positive distance along view axis
+    float R = vRadius;
+    float billboardR;
+    if (dist > R * 1.01) {
+        billboardR = R * dist / sqrt(dist * dist - R * R);
+    } else {
+        // Sphere very close to or engulfing camera
+        billboardR = dist * 100.0;
+    }
+    billboardR *= 1.05; // small margin for numerical safety
 
-    // Expand quad slightly to avoid edge clipping
-    vec2 offset = aPosition.xy * vRadius * 1.2;
+    vec2 offset = aPosition.xy * billboardR;
 
     // Create view-space position (billboard facing camera)
     vec4 viewPos = viewCenter;
     viewPos.xy += offset;
 
+    vViewPosOnQuad = viewPos.xyz;
     gl_Position = uProjectionMatrix * viewPos;
 }
 )";
@@ -54,7 +62,7 @@ const char* sphereFragmentShader = R"(
 in vec3 vViewCenter;
 in float vRadius;
 in vec4 vColor;
-in vec2 vQuadCoord;
+in vec3 vViewPosOnQuad; // Interpolated view-space position on billboard
 
 uniform mat4 uProjectionMatrix;
 uniform vec3 uLightDir;     // Normalized, in view space
@@ -66,31 +74,37 @@ uniform float uShininess;
 out vec4 fragColor;
 
 void main() {
-    // Ray-sphere intersection in view space
-    // Ray origin is at (vViewCenter.xy + vQuadCoord * vRadius, 0) for orthographic
-    // For perspective, we trace from the quad position towards the eye
+    // Perspective ray-sphere intersection in view space.
+    // Ray from eye (0,0,0) through this fragment's view-space position on the billboard.
+    vec3 rayDir = normalize(vViewPosOnQuad);
 
-    vec2 d = vQuadCoord * vRadius * 1.2;
-    float r2 = vRadius * vRadius;
-    float d2 = dot(d, d);
+    // Sphere: |P - C|^2 = R^2,  Ray: P(t) = t * rayDir
+    // Expanding: t^2 - 2t(rayDir . C) + |C|^2 - R^2 = 0
+    vec3 C = vViewCenter;
+    float R = vRadius;
 
-    // Check if inside sphere projection
-    if (d2 > r2) {
+    float b = dot(rayDir, C);
+    float c = dot(C, C) - R * R;
+    float disc = b * b - c;
+
+    if (disc < 0.0) {
         discard;
     }
 
-    // Calculate z offset on sphere surface
-    float z = sqrt(r2 - d2);
+    float sqrtDisc = sqrt(disc);
+    float t = b - sqrtDisc; // front intersection
 
-    // Normal in view space (sphere surface normal)
-    vec3 normal = normalize(vec3(d.x, d.y, z));
+    // If t < 0, camera is inside the sphere — use back intersection
+    if (t < 0.0) t = b + sqrtDisc;
+    if (t < 0.0) discard;
 
-    // View-space position on sphere surface
-    vec3 fragViewPos = vViewCenter + vec3(d, -z);
+    // Hit position and normal in view space
+    vec3 hitPos = t * rayDir;
+    vec3 normal = normalize(hitPos - C);
 
     // Lighting calculation
     vec3 lightDir = normalize(uLightDir);
-    vec3 viewDir = normalize(-fragViewPos);
+    vec3 viewDir = normalize(-hitPos);
 
     // Ambient
     vec3 ambient = uAmbient * vColor.rgb;
@@ -108,7 +122,7 @@ void main() {
     fragColor = vec4(result, vColor.a);
 
     // Update depth buffer for correct intersections
-    vec4 clipPos = uProjectionMatrix * vec4(fragViewPos, 1.0);
+    vec4 clipPos = uProjectionMatrix * vec4(hitPos, 1.0);
     float ndcDepth = clipPos.z / clipPos.w;
     gl_FragDepth = (ndcDepth + 1.0) * 0.5;
 }

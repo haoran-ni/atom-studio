@@ -49,11 +49,8 @@ public:
      * @brief Render atoms
      * @param camera Camera for matrices
      * @param settings Render settings
-     * @param viewportWidth Viewport width
-     * @param viewportHeight Viewport height
      */
-    void render(const Camera& camera, const RenderSettings& settings,
-                int viewportWidth, int viewportHeight);
+    void render(const Camera& camera, const RenderSettings& settings);
 
     /**
      * @brief Get number of atoms being rendered

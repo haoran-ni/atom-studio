@@ -120,7 +120,7 @@ void OpenGLRenderer::render(const Camera& camera) {
     m_bondRenderer.render(camera, m_settings);
 
     // Render atoms
-    m_sphereRenderer.render(camera, m_settings, m_width, m_height);
+    m_sphereRenderer.render(camera, m_settings);
 }
 
 } // namespace atom::render

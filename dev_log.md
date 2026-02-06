@@ -4,6 +4,35 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-06: Fix Impostor Sphere Rendering for Large/Overlapping Atoms
+
+### Summary
+Fixed two rendering bugs in the impostor sphere shaders that caused visual artifacts when atom sizes were large or spheres overlapped. The billboard quads were too small under perspective projection, and the ray-sphere intersection used an orthographic approximation instead of proper perspective rays.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/opengl/ShaderManager.cpp` | Rewrote sphere vertex shader (perspective-correct billboard sizing) and fragment shader (perspective ray-sphere intersection) |
+| `src/render/opengl/SphereRenderer.h` | Removed unused `viewportWidth`/`viewportHeight` params from `render()` |
+| `src/render/opengl/SphereRenderer.cpp` | Updated `render()` signature; removed `uViewportSize` uniform set |
+| `src/render/opengl/OpenGLRenderer.cpp` | Updated `render()` call site to match new signature |
+
+### Architecture Decisions
+
+#### 1. Perspective-Correct Billboard Sizing
+Previously, the billboard quad was expanded by a fixed `1.2 * R` factor in view space. Under perspective, the projected silhouette of a sphere at distance `d` is `R * d / sqrt(d^2 - R^2)`, which exceeds `1.2R` when `R > 0.55d`. The vertex shader now computes this exact formula, with a 1.05x safety margin and a fallback for degenerate cases (camera inside sphere).
+
+#### 2. Perspective Ray-Sphere Intersection
+Previously, the fragment shader used an orthographic approximation: `d = quadCoord * R; z = sqrt(R^2 - d^2)`. This assumes all view rays are parallel to the z-axis, which is wrong under perspective. Now, each fragment traces a ray from the eye `(0,0,0)` through the interpolated view-space billboard position, and solves the standard quadratic `t^2 - 2t(D.C) + |C|^2 - R^2 = 0`. This gives correct normals, shapes, and depth at all overlap regions.
+
+#### 3. Camera-Inside-Sphere Handling
+When the front intersection `t` is negative (camera inside sphere), the shader falls back to the back intersection `t = b + sqrt(disc)`, rendering the interior correctly.
+
+#### 4. Removed Unused `uViewportSize`
+The viewport size uniform and corresponding render parameters were vestigial — neither the old nor new shader logic required them.
+
+---
+
 ## 2026-02-06: Fix Atom Scale Slider and Use Original Covalent Radii
 
 ### Summary

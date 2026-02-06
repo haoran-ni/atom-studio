@@ -146,8 +146,7 @@ void SphereRenderer::setAtomData(const data::Structure* structure) {
     m_quadVAO.release();
 }
 
-void SphereRenderer::render(const Camera& camera, const RenderSettings& settings,
-                             int viewportWidth, int viewportHeight) {
+void SphereRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_atomCount == 0 || !settings.showAtoms) {
         return;
     }
@@ -160,8 +159,6 @@ void SphereRenderer::render(const Camera& camera, const RenderSettings& settings
     // Set uniforms
     shader->setUniformValue("uViewMatrix", camera.viewMatrix());
     shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
-    shader->setUniformValue("uViewportSize",
-                            QVector2D(viewportWidth, viewportHeight));
 
     // Light direction in view space
     QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
