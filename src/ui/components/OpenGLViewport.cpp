@@ -135,6 +135,19 @@ float OpenGLViewport::atomScale() const {
     return m_atomScale;
 }
 
+QVariantList OpenGLViewport::getAxisDirections() const {
+    QMatrix4x4 view = m_camera->viewMatrix();
+    // View matrix maps world axes to view space.
+    // V * (1,0,0,0) = column 0, V * (0,1,0,0) = column 1, etc.
+    // Screen x = view x (right), screen y = -view y (canvas y points down).
+    // Returns [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz] where z = depth for ordering.
+    return {
+        view(0, 0), -view(1, 0), view(2, 0),  // World X axis
+        view(0, 1), -view(1, 1), view(2, 1),  // World Y axis
+        view(0, 2), -view(1, 2), view(2, 2)   // World Z axis
+    };
+}
+
 void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
     m_needsStructureUpdate = true;
@@ -157,6 +170,7 @@ void OpenGLViewport::fitToView() {
     float extent = bbox.maxExtent();
 
     m_camera->fitToView(center, extent > 0 ? extent : 10.0f);
+    emit cameraChanged();
     update();
 }
 
@@ -164,6 +178,8 @@ void OpenGLViewport::resetCamera() {
     m_camera->reset();
     if (m_structure) {
         fitToView();
+    } else {
+        emit cameraChanged();
     }
     update();
 }
@@ -205,6 +221,7 @@ void OpenGLViewport::mouseMoveEvent(QMouseEvent* event) {
         m_camera->zoom(1.0f - delta.y() * 0.01f);
     }
 
+    emit cameraChanged();
     update();
     event->accept();
 }
@@ -218,6 +235,7 @@ void OpenGLViewport::wheelEvent(QWheelEvent* event) {
     float delta = event->angleDelta().y();
     float factor = (delta > 0) ? 0.9f : 1.1f;
     m_camera->zoom(factor);
+    emit cameraChanged();
     update();
     event->accept();
 }

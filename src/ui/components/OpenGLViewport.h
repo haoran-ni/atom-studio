@@ -45,6 +45,8 @@ public:
     bool showBonds() const;
     float atomScale() const;
 
+    Q_INVOKABLE QVariantList getAxisDirections() const;
+
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
     void fitToView();
@@ -58,6 +60,7 @@ signals:
     void fpsChanged();
     void showBondsChanged();
     void atomScaleChanged();
+    void cameraChanged();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;

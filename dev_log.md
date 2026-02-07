@@ -4,6 +4,34 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-07: Fix XYZ Axes Indicator to Rotate with Camera
+
+### Summary
+The XYZ axes indicator in the top-left of the viewport was static — it drew hard-coded axis directions that never updated when the camera rotated. Replaced it with a camera-aware gizmo that projects the world X, Y, Z axes through the camera's view matrix, with correct depth-sorted draw ordering and arrowhead tips.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/ui/components/OpenGLViewport.h` | Added `Q_INVOKABLE getAxisDirections()` method and `cameraChanged()` signal |
+| `src/ui/components/OpenGLViewport.cpp` | Implemented `getAxisDirections()` (extracts view matrix rotation → 2D screen projections); emits `cameraChanged()` from orbit, pan, zoom, reset, and fitToView |
+| `src/ui/qml/ViewportPanel.qml` | Rewrote axes Canvas to use camera-projected directions with depth sorting and arrowheads |
+
+### Architecture Decisions
+
+#### 1. View Matrix Projection for Axis Directions
+Each world axis direction (1,0,0), (0,1,0), (0,0,1) is multiplied by the upper-left 3×3 of the view matrix. The x-component gives the screen-right direction, the negated y-component gives the screen-down direction (canvas Y is inverted vs view-space Y), and the z-component provides depth for draw ordering.
+
+#### 2. Depth-Sorted Draw Ordering (Painter's Algorithm)
+Axes are sorted ascending by their view-space z-component. Axes pointing into the screen (negative z) are drawn first; axes pointing toward the camera (positive z) are drawn last, appearing on top.
+
+#### 3. Q_INVOKABLE + Signal Pattern
+`getAxisDirections()` returns a flat `QVariantList` of 9 floats (3 axes × 3 components each) callable from QML. The `cameraChanged()` signal triggers `Canvas.requestPaint()` via a QML `Connections` element, keeping the gizmo in sync with every camera update.
+
+#### 4. Arrowheads for Direction Clarity
+Each axis line now has a small V-shaped arrowhead at its tip, computed from the normalized axis direction and its perpendicular, making the positive direction unambiguous.
+
+---
+
 ## 2026-02-06: Fix Impostor Sphere Rendering for Large/Overlapping Atoms
 
 ### Summary

@@ -180,7 +180,7 @@ Rectangle {
         }
     }
 
-    // Axis indicator placeholder (top-left)
+    // Axis indicator (top-left) — rotates with the camera
     Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
@@ -192,8 +192,14 @@ Rectangle {
         radius: 4
 
         Canvas {
+            id: axisCanvas
             anchors.fill: parent
             anchors.margins: 10
+
+            Connections {
+                target: glViewport
+                function onCameraChanged() { axisCanvas.requestPaint() }
+            }
 
             onPaint: {
                 var ctx = getContext("2d");
@@ -203,36 +209,59 @@ Rectangle {
                 var cy = height / 2;
                 var len = 25;
 
-                // X axis (red)
-                ctx.strokeStyle = "#ff4444";
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(cx, cy);
-                ctx.lineTo(cx + len, cy);
-                ctx.stroke();
+                // Get camera-projected axis directions from the view matrix
+                var d = glViewport.getAxisDirections();
+                // d = [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz]
+                var axes = [
+                    { dx: d[0], dy: d[1], z: d[2], color: "#ff4444", label: "X" },
+                    { dx: d[3], dy: d[4], z: d[5], color: "#44ff44", label: "Y" },
+                    { dx: d[6], dy: d[7], z: d[8], color: "#4444ff", label: "Z" }
+                ];
 
-                // Y axis (green)
-                ctx.strokeStyle = "#44ff44";
-                ctx.beginPath();
-                ctx.moveTo(cx, cy);
-                ctx.lineTo(cx, cy - len);
-                ctx.stroke();
+                // Sort ascending by z: draw into-screen axes first,
+                // toward-camera axes last (on top)
+                axes.sort(function(a, b) { return a.z - b.z; });
 
-                // Z axis (blue) - foreshortened
-                ctx.strokeStyle = "#4444ff";
-                ctx.beginPath();
-                ctx.moveTo(cx, cy);
-                ctx.lineTo(cx - len * 0.5, cy + len * 0.5);
-                ctx.stroke();
+                for (var i = 0; i < 3; i++) {
+                    var ax = axes[i];
+                    var ex = cx + ax.dx * len;
+                    var ey = cy + ax.dy * len;
 
-                // Labels
-                ctx.font = "10px sans-serif";
-                ctx.fillStyle = "#ff4444";
-                ctx.fillText("X", cx + len + 3, cy + 4);
-                ctx.fillStyle = "#44ff44";
-                ctx.fillText("Y", cx - 4, cy - len - 3);
-                ctx.fillStyle = "#4444ff";
-                ctx.fillText("Z", cx - len * 0.5 - 10, cy + len * 0.5 + 4);
+                    // Axis line
+                    ctx.strokeStyle = ax.color;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.lineTo(ex, ey);
+                    ctx.stroke();
+
+                    // Small arrowhead at the tip
+                    var aLen = 5;
+                    var norm = Math.sqrt(ax.dx * ax.dx + ax.dy * ax.dy);
+                    if (norm > 0.01) {
+                        var ndx = ax.dx / norm;
+                        var ndy = ax.dy / norm;
+                        // Perpendicular direction
+                        var px = -ndy;
+                        var py = ndx;
+                        ctx.beginPath();
+                        ctx.moveTo(ex, ey);
+                        ctx.lineTo(ex - ndx * aLen + px * aLen * 0.4,
+                                   ey - ndy * aLen + py * aLen * 0.4);
+                        ctx.moveTo(ex, ey);
+                        ctx.lineTo(ex - ndx * aLen - px * aLen * 0.4,
+                                   ey - ndy * aLen - py * aLen * 0.4);
+                        ctx.stroke();
+                    }
+
+                    // Label just past the endpoint
+                    ctx.font = "bold 10px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillStyle = ax.color;
+                    ctx.fillText(ax.label, cx + ax.dx * (len + 10),
+                                           cy + ax.dy * (len + 10));
+                }
             }
         }
     }
