@@ -1,5 +1,5 @@
 #include "OpenGLRenderer.h"
-#include "../Camera.h"
+#include "../common/Camera.h"
 #include "../../data/Structure.h"
 
 #include <QDebug>

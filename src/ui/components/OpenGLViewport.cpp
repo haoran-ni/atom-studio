@@ -1,6 +1,6 @@
 #include "OpenGLViewport.h"
 #include "StructureModel.h"
-#include "../../render/Camera.h"
+#include "../../render/common/Camera.h"
 #include "../../render/opengl/OpenGLRenderer.h"
 #include "../../render/opengl/RayTracingRenderer.h"
 #include "../../data/Structure.h"

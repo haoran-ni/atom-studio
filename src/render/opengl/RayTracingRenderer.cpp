@@ -1,5 +1,5 @@
 #include "RayTracingRenderer.h"
-#include "../Camera.h"
+#include "../common/Camera.h"
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <cstring>

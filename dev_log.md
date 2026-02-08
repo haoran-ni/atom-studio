@@ -4,6 +4,57 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-08: Refactor to Backend-Based Platform Architecture
+
+### Summary
+Reorganized the rendering system from a flat structure into a backend-based architecture. Shared abstractions (Renderer base, Camera, RenderSettings) moved to `src/render/common/`, with each graphics backend in its own subfolder (`opengl/`, `vulkan/`, `metal/`). CMake now uses platform-conditional backend selection — currently OpenGL on all platforms, with scaffolding for future Vulkan (Windows/Linux) and Metal (macOS) backends. Created `src/platform/{macos,windows,linux}/` directories for future OS-specific glue code.
+
+### Files Moved
+| From | To |
+|------|----|
+| `src/render/Renderer.h` | `src/render/common/Renderer.h` |
+| `src/render/RenderSettings.h` | `src/render/common/RenderSettings.h` |
+| `src/render/Camera.h` | `src/render/common/Camera.h` |
+| `src/render/Camera.cpp` | `src/render/common/Camera.cpp` |
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/CMakeLists.txt` | Rewritten with `RENDER_COMMON_SOURCES`, `RENDER_OPENGL_SOURCES`, platform-conditional backend selection |
+| `src/ui/CMakeLists.txt` | Restructured with `UI_SHARED_SOURCES` and `UI_BACKEND_SOURCES` groups |
+| `src/render/opengl/OpenGLRenderer.h` | Include path: `../Renderer.h` → `../common/Renderer.h` |
+| `src/render/opengl/RayTracingRenderer.h` | Include path: `../Renderer.h` → `../common/Renderer.h` |
+| `src/render/opengl/OpenGLRenderer.cpp` | Include path: `../Camera.h` → `../common/Camera.h` |
+| `src/render/opengl/RayTracingRenderer.cpp` | Include path: `../Camera.h` → `../common/Camera.h` |
+| `src/render/opengl/SphereRenderer.cpp` | Include paths: `../Camera.h`, `../RenderSettings.h` → `../common/` |
+| `src/render/opengl/BondRenderer.cpp` | Include paths: `../Camera.h`, `../RenderSettings.h` → `../common/` |
+| `src/render/opengl/UnitCellRenderer.cpp` | Include paths: `../Camera.h`, `../RenderSettings.h` → `../common/` |
+| `src/ui/components/OpenGLViewport.cpp` | Include path: `../../render/Camera.h` → `../../render/common/Camera.h` |
+| `CLAUDE.md` | Updated architecture sections and added source tree diagram |
+
+### Directories Created
+| Directory | Purpose |
+|-----------|---------|
+| `src/render/common/` | Shared renderer abstractions |
+| `src/render/vulkan/` | Future Vulkan backend |
+| `src/render/metal/` | Future Metal backend |
+| `src/platform/macos/` | Future macOS-specific code |
+| `src/platform/windows/` | Future Windows-specific code |
+| `src/platform/linux/` | Future Linux-specific code |
+
+### Architecture Decisions
+
+#### 1. Backend-Based, Not OS-Based
+Organized by graphics backend (opengl/, vulkan/, metal/) rather than OS (macos/, windows/, linux/) because the mapping isn't 1:1 — OpenGL works on all three platforms, and a single OS may support multiple backends. This avoids code duplication.
+
+#### 2. CMake Platform-Conditional Compilation
+`src/render/CMakeLists.txt` defines source sets per backend (`RENDER_OPENGL_SOURCES`, `RENDER_VULKAN_SOURCES`, `RENDER_METAL_SOURCES`) and appends the appropriate set based on platform. Currently OpenGL is enabled everywhere; Vulkan/Metal sections are commented-out scaffolding.
+
+#### 3. Dual Include Directories
+`target_include_directories` exposes both `src/render/` and `src/render/common/`, so downstream code can use either `#include "Renderer.h"` (via common/) or `#include "opengl/OpenGLRenderer.h"` (via render/).
+
+---
+
 ## 2026-02-08: RT Renderer Bug Fixes
 
 ### Summary

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Renderer.h"
+#include "../common/Renderer.h"
 #include "ShaderManager.h"
 #include "SphereRenderer.h"
 #include "BondRenderer.h"

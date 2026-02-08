@@ -1,7 +1,7 @@
 #include "BondRenderer.h"
 #include "ShaderManager.h"
-#include "../Camera.h"
-#include "../RenderSettings.h"
+#include "../common/Camera.h"
+#include "../common/RenderSettings.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
 

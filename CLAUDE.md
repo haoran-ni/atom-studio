@@ -30,24 +30,31 @@ The application consists of a header bar for app options, a side bar showing inf
 
 ### UI Framework: Qt 6
 - Qt Widgets/QML for UI components
-- Dedicated render surface/widget for Vulkan integration
+- Dedicated render surface/widget per graphics backend
 - Decoupled UI event loop from render loop (explicit frame scheduling)
-- Own renderer abstraction layer (beyond Qt's Vulkan helpers)
+- Own renderer abstraction layer
 
-### Graphics API: Vulkan + Hardware Ray Tracing
-- **Raster backend (Vulkan)**: Always-on interactive viewport
-- **RT backend A (Vulkan RT)**: Hardware-accelerated ray tracing (Windows/Linux)
-  - Acceleration structures (BLAS/TLAS)
+### Graphics API: Backend-Based Architecture
+The rendering system is organized by **graphics backend**, not by OS. Shared abstractions live in `src/render/common/`, and each backend has its own subfolder.
+
+- **OpenGL backend** (`src/render/opengl/`): Current default on all platforms
+  - Raster renderer: instanced impostor spheres
+  - Fragment-shader ray tracing with progressive accumulation
+- **Vulkan backend** (`src/render/vulkan/`): Future — primary for Windows/Linux
+  - Hardware-accelerated ray tracing (BLAS/TLAS)
   - Ray tracing pipeline and ray queries
-- **RT backend B (future)**: Metal RT for macOS or OptiX for NVIDIA optimization
-- Compute-shader RT as fallback only
+- **Metal backend** (`src/render/metal/`): Future — primary for macOS
+  - Metal RT for hardware ray tracing on Apple Silicon
 
 ### Platform Strategy
-- Windows/Linux: Full Vulkan + Vulkan RT support
-- macOS: Vulkan via MoltenVK; RT support TBD (may be raster-only for v1)
+- **macOS**: OpenGL 4.1 (current), Metal RT (future primary)
+- **Windows**: OpenGL (current fallback), Vulkan + RT (future primary)
+- **Linux**: OpenGL (current fallback), Vulkan + RT (future primary)
+- CMake detects the platform and builds only the relevant backends
 
 ### Build System: CMake
 - vcpkg or Conan for dependency management
+- Platform-conditional backend compilation in `src/render/CMakeLists.txt`
 - Cross-platform CI pipeline
 
 ### File I/O: Python ASE Integration
@@ -59,7 +66,35 @@ The application consists of a header bar for app options, a side bar showing inf
   - ASE reads files → converted to C++ Structure with zero-copy numpy access
   - Bundled Python distribution for deployment (no system Python required)
 
+## Source Tree
+
+```
+src/
+  render/
+    common/           # Shared abstractions (Renderer base, Camera, RenderSettings)
+    opengl/           # OpenGL backend (raster + fragment-shader RT)
+    vulkan/           # Vulkan backend (future)
+    metal/            # Metal backend (future)
+  platform/           # OS-specific glue (future)
+    macos/
+    windows/
+    linux/
+  data/               # Shared — Structure (SoA), ElementData, BondList
+  python/             # Shared — PythonRuntime, ASEReader
+  io/                 # Shared — FileReader, FileReaderRegistry, AsyncFileLoader
+  ui/
+    components/       # Qt C++ — viewports (per-backend), FileController, StructureModel
+    qml/              # QML — Main, HeaderBar, Sidebar, ViewportPanel
+  core/               # Application orchestration
+```
+
 ## Architecture Details
+
+### Renderer Abstraction
+- Abstract `Renderer` base class in `common/Renderer.h` defines the backend-agnostic interface: `initialize()`, `cleanup()`, `resize()`, `setStructure()`, `render()`, etc.
+- Each backend implements this interface (e.g., `OpenGLRenderer`, `RayTracingRenderer`)
+- `OpenGLViewport::RendererImpl` manages renderer switching via pointer swap
+- Shared `Camera` and `RenderSettings` types are used by all backends
 
 ### Data Model & Memory Layout
 - Structure-of-Arrays (SoA) for positions, velocities, IDs, types, radii
