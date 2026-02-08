@@ -33,16 +33,14 @@ set(RENDER_OPENGL_SOURCES
 # Vulkan backend (future — Windows/Linux primary)
 # ---------------------------------------------------------------------------
 set(RENDER_VULKAN_SOURCES
-    # vulkan/VulkanRenderer.cpp
-    # vulkan/VulkanRenderer.h
+    # Add Vulkan source files here when implemented
 )
 
 # ---------------------------------------------------------------------------
 # Metal backend (future — macOS primary)
 # ---------------------------------------------------------------------------
 set(RENDER_METAL_SOURCES
-    # metal/MetalRenderer.cpp
-    # metal/MetalRenderer.h
+    # Add Metal source files here when implemented
 )
 
 # ---------------------------------------------------------------------------
@@ -51,21 +49,22 @@ set(RENDER_METAL_SOURCES
 set(RENDER_BACKEND_SOURCES)
 set(RENDER_BACKEND_LIBS)
 
-# OpenGL — enabled on all platforms for now
+# OpenGL — available on all platforms (current default)
 list(APPEND RENDER_BACKEND_SOURCES ${RENDER_OPENGL_SOURCES})
 list(APPEND RENDER_BACKEND_LIBS Qt6::OpenGL)
 
-# Future: Vulkan backend for Windows/Linux
-# if(Vulkan_FOUND AND NOT APPLE)
-#     list(APPEND RENDER_BACKEND_SOURCES ${RENDER_VULKAN_SOURCES})
-#     list(APPEND RENDER_BACKEND_LIBS Vulkan::Vulkan)
-# endif()
+# Vulkan backend — Windows/Linux primary
+if(Vulkan_FOUND AND NOT APPLE)
+    list(APPEND RENDER_BACKEND_SOURCES ${RENDER_VULKAN_SOURCES})
+    list(APPEND RENDER_BACKEND_LIBS Vulkan::Vulkan)
+endif()
 
-# Future: Metal backend for macOS
-# if(APPLE)
-#     list(APPEND RENDER_BACKEND_SOURCES ${RENDER_METAL_SOURCES})
-#     list(APPEND RENDER_BACKEND_LIBS "-framework Metal" "-framework MetalKit")
-# endif()
+# Metal backend — macOS primary
+if(APPLE)
+    list(APPEND RENDER_BACKEND_SOURCES ${RENDER_METAL_SOURCES})
+    # Uncomment when Metal sources exist:
+    # list(APPEND RENDER_BACKEND_LIBS "-framework Metal" "-framework MetalKit")
+endif()
 
 # ---------------------------------------------------------------------------
 # Library target
