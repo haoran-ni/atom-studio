@@ -1,0 +1,688 @@
+#include "RayTracingRenderer.h"
+#include "../Camera.h"
+#include "../../data/Structure.h"
+#include <QDebug>
+#include <cstring>
+#include <functional>
+
+namespace atom::render {
+
+// ---------------------------------------------------------------------------
+// Shader sources
+// ---------------------------------------------------------------------------
+
+namespace rt_shaders {
+
+const char* quadVertexShader = R"(
+#version 410 core
+
+layout(location = 0) in vec2 aPosition;
+
+out vec2 vTexCoord;
+
+void main() {
+    vTexCoord = aPosition * 0.5 + 0.5;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+)";
+
+const char* rayTraceFragmentShader = R"(
+#version 410 core
+
+in vec2 vTexCoord;
+out vec4 fragColor;
+
+// Camera
+uniform mat4 uInvView;
+uniform mat4 uInvProjection;
+uniform vec3 uCameraPos;
+
+// Viewport
+uniform int uWidth;
+uniform int uHeight;
+
+// Atom data (texture buffer objects)
+uniform samplerBuffer uAtomPositions;   // vec4(x, y, z, radius)
+uniform samplerBuffer uAtomColors;      // vec4(r, g, b, a)
+uniform int uAtomCount;
+uniform float uAtomScale;
+
+// Lighting
+uniform vec3 uLightDir;
+uniform float uAmbient;
+uniform float uDiffuse;
+uniform float uSpecular;
+uniform float uShininess;
+uniform vec3 uBackgroundColor;
+
+// Progressive rendering
+uniform uint uFrameCount;
+
+// Feature toggles
+uniform bool uEnableShadows;
+uniform bool uEnableAO;
+uniform int uAOSamples;
+uniform float uAORadius;
+
+// ---------- PCG random number generator ----------
+
+uint rng_state;
+
+uint pcg(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand01() {
+    rng_state = pcg(rng_state);
+    return float(rng_state) / 4294967296.0;
+}
+
+// ---------- Ray-sphere intersection ----------
+
+// Returns t of closest hit, or -1.0 if no hit
+float intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius) {
+    vec3 oc = ro - center;
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float disc = b * b - c;
+    if (disc < 0.0) return -1.0;
+    float sqrtDisc = sqrt(disc);
+    float t = -b - sqrtDisc;
+    if (t > 0.001) return t;
+    t = -b + sqrtDisc;
+    if (t > 0.001) return t;
+    return -1.0;
+}
+
+// ---------- Scene traversal ----------
+
+void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
+    hitT = 1e30;
+    hitIndex = -1;
+    for (int i = 0; i < uAtomCount; i++) {
+        vec4 atom = texelFetch(uAtomPositions, i);
+        float r = atom.w * uAtomScale;
+        float t = intersectSphere(ro, rd, atom.xyz, r);
+        if (t > 0.0 && t < hitT) {
+            hitT = t;
+            hitIndex = i;
+        }
+    }
+}
+
+// Any-hit test (shadow/AO) — early exit on first intersection
+bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
+    for (int i = 0; i < uAtomCount; i++) {
+        vec4 atom = texelFetch(uAtomPositions, i);
+        float r = atom.w * uAtomScale;
+        vec3 oc = ro - atom.xyz;
+        float b = dot(oc, rd);
+        float c = dot(oc, oc) - r * r;
+        float disc = b * b - c;
+        if (disc >= 0.0) {
+            float sqrtDisc = sqrt(disc);
+            float t = -b - sqrtDisc;
+            if (t > 0.001 && t < maxDist) return true;
+            t = -b + sqrtDisc;
+            if (t > 0.001 && t < maxDist) return true;
+        }
+    }
+    return false;
+}
+
+// ---------- Hemisphere sampling for AO ----------
+
+vec3 cosineWeightedHemisphere(vec3 normal) {
+    float r1 = rand01();
+    float r2 = rand01();
+
+    // Cosine-weighted: cosTheta = sqrt(r1), sinTheta = sqrt(1 - r1)
+    float cosTheta = sqrt(r1);
+    float sinTheta = sqrt(1.0 - r1);
+    float phi = 6.28318530718 * r2;
+
+    // Build TBN from normal
+    vec3 tangent;
+    if (abs(normal.y) < 0.9)
+        tangent = normalize(cross(normal, vec3(0.0, 1.0, 0.0)));
+    else
+        tangent = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+    vec3 bitangent = cross(normal, tangent);
+
+    return normalize(
+        tangent   * (sinTheta * cos(phi)) +
+        bitangent * (sinTheta * sin(phi)) +
+        normal    * cosTheta
+    );
+}
+
+// ---------- Main ----------
+
+void main() {
+    // Initialize RNG with unique seed per pixel per frame
+    rng_state = pcg(
+        uint(gl_FragCoord.x) +
+        uint(gl_FragCoord.y) * uint(uWidth) +
+        uFrameCount * uint(uWidth) * uint(uHeight)
+    );
+
+    // Sub-pixel jitter for progressive anti-aliasing
+    vec2 jitter = vec2(rand01(), rand01()) - 0.5;
+    vec2 uv = (gl_FragCoord.xy + jitter) / vec2(float(uWidth), float(uHeight));
+
+    // Generate camera ray
+    vec4 ndc = vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+    vec4 viewTarget = uInvProjection * ndc;
+    viewTarget.xyz /= viewTarget.w;
+    vec3 rayDir = normalize((uInvView * vec4(viewTarget.xyz, 0.0)).xyz);
+    vec3 rayOrigin = uCameraPos;
+
+    // Trace primary ray
+    float hitT;
+    int hitIndex;
+    traceClosest(rayOrigin, rayDir, hitT, hitIndex);
+
+    if (hitIndex < 0) {
+        fragColor = vec4(uBackgroundColor, 1.0);
+        return;
+    }
+
+    // Shading
+    vec4 atomData = texelFetch(uAtomPositions, hitIndex);
+    vec4 atomColor = texelFetch(uAtomColors, hitIndex);
+    float atomRadius = atomData.w * uAtomScale;
+
+    vec3 hitPos = rayOrigin + rayDir * hitT;
+    vec3 normal = normalize(hitPos - atomData.xyz);
+
+    // Light direction (world space, normalized)
+    vec3 lightDir = normalize(uLightDir);
+    vec3 viewDir = normalize(uCameraPos - hitPos);
+
+    // Blinn-Phong shading
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    vec3 halfDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfDir), 0.0), uShininess);
+
+    vec3 ambient  = uAmbient  * atomColor.rgb;
+    vec3 diffuse  = uDiffuse  * NdotL * atomColor.rgb;
+    vec3 specular = uSpecular * spec * vec3(1.0);
+
+    // Bias origin along normal to avoid self-intersection (scale with radius)
+    float bias = max(atomRadius * 0.01, 0.05);
+    vec3 biasedOrigin = hitPos + normal * bias;
+
+    // Shadow
+    float shadow = 1.0;
+    if (uEnableShadows) {
+        if (traceAnyHit(biasedOrigin, lightDir, 10000.0)) {
+            shadow = 0.0;
+        }
+    }
+
+    // Ambient occlusion
+    float ao = 1.0;
+    if (uEnableAO && uAOSamples > 0) {
+        float occluded = 0.0;
+        for (int i = 0; i < uAOSamples; i++) {
+            vec3 aoDir = cosineWeightedHemisphere(normal);
+            if (traceAnyHit(biasedOrigin, aoDir, uAORadius)) {
+                occluded += 1.0;
+            }
+        }
+        ao = 1.0 - occluded / float(uAOSamples);
+    }
+
+    // AO only modulates ambient (indirect light); direct light uses shadow only
+    vec3 result = ambient * ao + (diffuse + specular) * shadow;
+    fragColor = vec4(result, 1.0);
+}
+)";
+
+const char* displayVertexShader = R"(
+#version 410 core
+
+layout(location = 0) in vec2 aPosition;
+
+out vec2 vTexCoord;
+
+void main() {
+    vTexCoord = aPosition * 0.5 + 0.5;
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+)";
+
+const char* displayFragmentShader = R"(
+#version 410 core
+
+in vec2 vTexCoord;
+out vec4 fragColor;
+
+uniform sampler2D uAccumTexture;
+uniform float uSampleCount;
+
+void main() {
+    vec3 accum = texture(uAccumTexture, vTexCoord).rgb;
+    vec3 color = accum / max(uSampleCount, 1.0);
+
+    fragColor = vec4(color, 1.0);
+}
+)";
+
+} // namespace rt_shaders
+
+// ---------------------------------------------------------------------------
+// RayTracingRenderer implementation
+// ---------------------------------------------------------------------------
+
+RayTracingRenderer::RayTracingRenderer() = default;
+
+RayTracingRenderer::~RayTracingRenderer() {
+    cleanup();
+}
+
+bool RayTracingRenderer::initialize() {
+    if (m_initialized) return true;
+
+    initializeOpenGLFunctions();
+
+    if (!compileShaders()) {
+        qCritical() << "RayTracingRenderer: Failed to compile shaders";
+        return false;
+    }
+
+    createFullScreenQuad();
+
+    // Query TBO size limit
+    GLint maxTBOSize;
+    glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE, &maxTBOSize);
+    qInfo() << "RayTracingRenderer: Max TBO texels:" << maxTBOSize;
+
+    // Create TBO resources (buffers + textures)
+    glGenBuffers(1, &m_atomPosBuf);
+    glGenTextures(1, &m_atomPosTex);
+    glGenBuffers(1, &m_atomColorBuf);
+    glGenTextures(1, &m_atomColorTex);
+
+    m_initialized = true;
+    return true;
+}
+
+void RayTracingRenderer::cleanup() {
+    if (!m_initialized) return;
+
+    m_rtShader.reset();
+    m_displayShader.reset();
+
+    if (m_quadVAO) { glDeleteVertexArrays(1, &m_quadVAO); m_quadVAO = 0; }
+    if (m_quadVBO) { glDeleteBuffers(1, &m_quadVBO); m_quadVBO = 0; }
+    if (m_accumFBO) { glDeleteFramebuffers(1, &m_accumFBO); m_accumFBO = 0; }
+    if (m_accumTexture) { glDeleteTextures(1, &m_accumTexture); m_accumTexture = 0; }
+    if (m_atomPosBuf) { glDeleteBuffers(1, &m_atomPosBuf); m_atomPosBuf = 0; }
+    if (m_atomPosTex) { glDeleteTextures(1, &m_atomPosTex); m_atomPosTex = 0; }
+    if (m_atomColorBuf) { glDeleteBuffers(1, &m_atomColorBuf); m_atomColorBuf = 0; }
+    if (m_atomColorTex) { glDeleteTextures(1, &m_atomColorTex); m_atomColorTex = 0; }
+
+    m_structure = nullptr;
+    m_initialized = false;
+}
+
+void RayTracingRenderer::resize(int width, int height) {
+    if (width == m_width && height == m_height) return;
+    m_width = width;
+    m_height = height;
+
+    // Recreate accumulation FBO at new size
+    createAccumulationFBO();
+    resetAccumulation();
+}
+
+void RayTracingRenderer::setStructure(const data::Structure* structure) {
+    m_structure = structure;
+    m_atomDataDirty = true;
+    resetAccumulation();
+}
+
+void RayTracingRenderer::render(const Camera& camera) {
+    if (!m_initialized || m_width == 0 || m_height == 0) return;
+
+    // Upload atom data if dirty
+    if (m_atomDataDirty) {
+        uploadAtomData();
+    }
+
+    if (m_atomCount == 0) {
+        // No atoms — just clear with background color
+        QColor bg = m_settings.backgroundColor;
+        glClearColor(bg.redF(), bg.greenF(), bg.blueF(), 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        return;
+    }
+
+    // Check if state changed (camera, settings, etc.)
+    uint64_t currentHash = computeStateHash(camera);
+    if (currentHash != m_lastStateHash) {
+        m_lastStateHash = currentHash;
+        resetAccumulation();
+    }
+
+    // Don't render beyond max samples
+    if (isConverged()) return;
+
+    m_sampleCount++;
+
+    // Save Qt's FBO binding
+    GLint qtFBO;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &qtFBO);
+
+    // Ensure accumulation FBO exists
+    if (!m_accumFBO) {
+        createAccumulationFBO();
+    }
+
+    // Pass 1: Ray trace into accumulation FBO (additive)
+    renderRTPass(camera);
+
+    // Pass 2: Display accumulated result into Qt's FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, qtFBO);
+    glViewport(0, 0, m_width, m_height);
+    renderDisplayPass();
+}
+
+void RayTracingRenderer::invalidateAtomData() {
+    m_atomDataDirty = true;
+    resetAccumulation();
+}
+
+void RayTracingRenderer::invalidateBondData() {
+    // Bonds not rendered in RT mode yet — but reset accumulation
+    // in case we add bond rendering later
+    resetAccumulation();
+}
+
+void RayTracingRenderer::resetAccumulation() {
+    m_sampleCount = 0;
+
+    if (m_accumFBO && m_initialized) {
+        GLint currentFBO;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFBO);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_accumFBO);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, currentFBO);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+bool RayTracingRenderer::compileShaders() {
+    // RT shader
+    m_rtShader = std::make_unique<QOpenGLShaderProgram>();
+    if (!m_rtShader->addShaderFromSourceCode(QOpenGLShader::Vertex,
+                                              rt_shaders::quadVertexShader)) {
+        qCritical() << "RT vertex shader failed:" << m_rtShader->log();
+        return false;
+    }
+    if (!m_rtShader->addShaderFromSourceCode(QOpenGLShader::Fragment,
+                                              rt_shaders::rayTraceFragmentShader)) {
+        qCritical() << "RT fragment shader failed:" << m_rtShader->log();
+        return false;
+    }
+    if (!m_rtShader->link()) {
+        qCritical() << "RT shader linking failed:" << m_rtShader->log();
+        return false;
+    }
+
+    // Display shader
+    m_displayShader = std::make_unique<QOpenGLShaderProgram>();
+    if (!m_displayShader->addShaderFromSourceCode(QOpenGLShader::Vertex,
+                                                   rt_shaders::displayVertexShader)) {
+        qCritical() << "Display vertex shader failed:" << m_displayShader->log();
+        return false;
+    }
+    if (!m_displayShader->addShaderFromSourceCode(QOpenGLShader::Fragment,
+                                                   rt_shaders::displayFragmentShader)) {
+        qCritical() << "Display fragment shader failed:" << m_displayShader->log();
+        return false;
+    }
+    if (!m_displayShader->link()) {
+        qCritical() << "Display shader linking failed:" << m_displayShader->log();
+        return false;
+    }
+
+    return true;
+}
+
+void RayTracingRenderer::createFullScreenQuad() {
+    // Two triangles covering [-1, 1] in clip space
+    float vertices[] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f,  1.0f
+    };
+
+    glGenVertexArrays(1, &m_quadVAO);
+    glGenBuffers(1, &m_quadVBO);
+
+    glBindVertexArray(m_quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+
+    glBindVertexArray(0);
+}
+
+void RayTracingRenderer::createAccumulationFBO() {
+    // Clean up old FBO
+    if (m_accumFBO) {
+        glDeleteFramebuffers(1, &m_accumFBO);
+        m_accumFBO = 0;
+    }
+    if (m_accumTexture) {
+        glDeleteTextures(1, &m_accumTexture);
+        m_accumTexture = 0;
+    }
+
+    if (m_width == 0 || m_height == 0) return;
+
+    // Create RGBA32F texture for accumulation
+    glGenTextures(1, &m_accumTexture);
+    glBindTexture(GL_TEXTURE_2D, m_accumTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, m_width, m_height, 0,
+                 GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Create FBO
+    glGenFramebuffers(1, &m_accumFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_accumFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_accumTexture, 0);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        qCritical() << "RayTracingRenderer: Accumulation FBO incomplete:" << status;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void RayTracingRenderer::uploadAtomData() {
+    if (!m_structure || m_structure->atomCount() == 0) {
+        m_atomCount = 0;
+        m_atomDataDirty = false;
+        return;
+    }
+
+    m_atomCount = static_cast<int>(m_structure->atomCount());
+
+    // Pack positions + radii: vec4(x, y, z, radius) per atom
+    auto posData = m_structure->packPositionsAndRadii();
+
+    glBindBuffer(GL_TEXTURE_BUFFER, m_atomPosBuf);
+    glBufferData(GL_TEXTURE_BUFFER,
+                 static_cast<GLsizeiptr>(posData.size() * sizeof(float)),
+                 posData.data(), GL_STATIC_DRAW);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_BUFFER, m_atomPosTex);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomPosBuf);
+
+    // Pack colors: vec4(r, g, b, a) per atom
+    auto colorData = m_structure->packColors();
+
+    glBindBuffer(GL_TEXTURE_BUFFER, m_atomColorBuf);
+    glBufferData(GL_TEXTURE_BUFFER,
+                 static_cast<GLsizeiptr>(colorData.size() * sizeof(float)),
+                 colorData.data(), GL_STATIC_DRAW);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_BUFFER, m_atomColorTex);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomColorBuf);
+
+    m_atomDataDirty = false;
+}
+
+void RayTracingRenderer::renderRTPass(const Camera& camera) {
+    glBindFramebuffer(GL_FRAMEBUFFER, m_accumFBO);
+    glViewport(0, 0, m_width, m_height);
+
+    // Additive blending for accumulation
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glDisable(GL_DEPTH_TEST);
+
+    m_rtShader->bind();
+
+    // Camera uniforms
+    QMatrix4x4 invView = camera.viewMatrix().inverted();
+    QMatrix4x4 invProj = camera.projectionMatrix().inverted();
+    QVector3D camPos = camera.position();
+
+    m_rtShader->setUniformValue("uInvView", invView);
+    m_rtShader->setUniformValue("uInvProjection", invProj);
+    m_rtShader->setUniformValue("uCameraPos", camPos);
+
+    // Viewport
+    m_rtShader->setUniformValue("uWidth", m_width);
+    m_rtShader->setUniformValue("uHeight", m_height);
+
+    // Atom data TBOs
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_BUFFER, m_atomPosTex);
+    m_rtShader->setUniformValue("uAtomPositions", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_BUFFER, m_atomColorTex);
+    m_rtShader->setUniformValue("uAtomColors", 1);
+
+    m_rtShader->setUniformValue("uAtomCount", m_atomCount);
+    m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
+
+    // Lighting (world space)
+    QVector3D lightDir(m_settings.lightDirX, m_settings.lightDirY, m_settings.lightDirZ);
+    lightDir.normalize();
+    m_rtShader->setUniformValue("uLightDir", lightDir);
+    m_rtShader->setUniformValue("uAmbient", m_settings.ambientStrength);
+    m_rtShader->setUniformValue("uDiffuse", m_settings.diffuseStrength);
+    m_rtShader->setUniformValue("uSpecular", m_settings.specularStrength);
+    m_rtShader->setUniformValue("uShininess", m_settings.shininess);
+
+    // Background color
+    QColor bg = m_settings.backgroundColor;
+    m_rtShader->setUniformValue("uBackgroundColor",
+                                 QVector3D(bg.redF(), bg.greenF(), bg.blueF()));
+
+    // Progressive rendering
+    m_rtShader->setUniformValue("uFrameCount", static_cast<GLuint>(m_sampleCount));
+
+    // Feature toggles
+    m_rtShader->setUniformValue("uEnableShadows", m_settings.enableShadows);
+    m_rtShader->setUniformValue("uEnableAO", m_settings.enableAmbientOcclusion);
+    m_rtShader->setUniformValue("uAOSamples", m_settings.aoSamples);
+    m_rtShader->setUniformValue("uAORadius", m_settings.aoRadius);
+
+    // Draw full-screen quad
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_rtShader->release();
+    glDisable(GL_BLEND);
+}
+
+void RayTracingRenderer::renderDisplayPass() {
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+
+    m_displayShader->bind();
+
+    // Bind accumulation texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_accumTexture);
+    m_displayShader->setUniformValue("uAccumTexture", 0);
+    m_displayShader->setUniformValue("uSampleCount", static_cast<float>(m_sampleCount));
+
+    // Draw full-screen quad
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_displayShader->release();
+}
+
+uint64_t RayTracingRenderer::computeStateHash(const Camera& camera) const {
+    // Hash camera parameters + render settings that affect the image.
+    // Any change triggers accumulation reset.
+    std::hash<float> hf;
+    std::hash<int> hi;
+    std::hash<bool> hb;
+
+    uint64_t h = 0;
+    auto combine = [&](uint64_t val) {
+        h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    };
+
+    // Camera
+    combine(hf(camera.azimuth()));
+    combine(hf(camera.elevation()));
+    combine(hf(camera.distance()));
+    combine(hf(camera.target().x()));
+    combine(hf(camera.target().y()));
+    combine(hf(camera.target().z()));
+    combine(hf(camera.fieldOfView()));
+    combine(hf(camera.aspectRatio()));
+    combine(hb(camera.isPerspective()));
+    combine(hf(camera.orthoScale()));
+
+    // Settings that affect the image
+    combine(hf(m_settings.atomScale));
+    combine(hb(m_settings.enableShadows));
+    combine(hb(m_settings.enableAmbientOcclusion));
+    combine(hi(m_settings.aoSamples));
+    combine(hf(m_settings.aoRadius));
+    combine(hf(m_settings.ambientStrength));
+    combine(hf(m_settings.diffuseStrength));
+    combine(hf(m_settings.specularStrength));
+    combine(hf(m_settings.shininess));
+    combine(hf(m_settings.lightDirX));
+    combine(hf(m_settings.lightDirY));
+    combine(hf(m_settings.lightDirZ));
+
+    return h;
+}
+
+} // namespace atom::render

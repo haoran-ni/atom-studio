@@ -232,17 +232,32 @@ Rectangle {
                         ComboBox {
                             Layout.fillWidth: true
                             model: ["Raster (Fast)", "Ray Tracing (Quality)"]
-                            currentIndex: 0
+                            currentIndex: sidebar.viewport ? sidebar.viewport.rendererMode : 0
+                            onCurrentIndexChanged: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.rendererMode = currentIndex
+                                }
+                            }
                         }
 
                         CheckBox {
                             text: qsTr("Ambient Occlusion")
-                            checked: false
+                            checked: sidebar.viewport ? sidebar.viewport.enableAO : false
+                            onCheckedChanged: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.enableAO = checked
+                                }
+                            }
                         }
 
                         CheckBox {
                             text: qsTr("Shadows")
-                            checked: true
+                            checked: sidebar.viewport ? sidebar.viewport.enableShadows : false
+                            onCheckedChanged: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.enableShadows = checked
+                                }
+                            }
                         }
 
                         Label {

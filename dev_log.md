@@ -4,6 +4,22 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-08: RT Renderer Bug Fixes
+
+### Summary
+Fixed Retina display viewport sizing (RT image was quarter-size) and noisy AO (black pixels from AO applied to direct lighting). Increased shadow/AO ray origin bias to scale with atom radius. Shadow noise from binary hard shadows with a single light remains an open issue.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/ui/components/OpenGLViewport.cpp` | Use physical pixels (`logical * devicePixelRatio`) for renderer `resize()` |
+| `src/render/opengl/RayTracingRenderer.cpp` | AO only on ambient term; radius-scaled ray origin bias |
+
+### Open Bug
+Noisy black points when shadows enabled — binary shadow (0/1) + single light + sub-pixel jitter creates high-contrast noise at shadow boundaries during early accumulation.
+
+---
+
 ## 2026-02-07: Fix XYZ Axes Indicator to Rotate with Camera
 
 ### Summary

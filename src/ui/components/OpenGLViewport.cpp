@@ -2,9 +2,11 @@
 #include "StructureModel.h"
 #include "../../render/Camera.h"
 #include "../../render/opengl/OpenGLRenderer.h"
+#include "../../render/opengl/RayTracingRenderer.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
 
+#include <QQuickWindow>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QDateTime>
@@ -16,61 +18,132 @@ namespace atom::ui {
 
 /**
  * @brief Renderer implementation for QQuickFramebufferObject
+ *
+ * Holds both rasterization and ray tracing renderers.
+ * Raster renderer is initialized eagerly; RT renderer lazily on first use.
  */
 class OpenGLViewport::RendererImpl : public QQuickFramebufferObject::Renderer {
 public:
     RendererImpl(OpenGLViewport* viewport)
         : m_viewport(viewport)
-        , m_renderer(std::make_unique<render::OpenGLRenderer>())
+        , m_rasterRenderer(std::make_unique<render::OpenGLRenderer>())
     {
     }
 
     void render() override {
-        if (!m_initialized) {
+        if (!m_rasterInitialized) {
             return;
         }
 
-        m_renderer->render(*m_viewport->m_camera);
-        update();
+        m_activeRenderer->render(*m_viewport->m_camera);
+
+        // For RT mode: update sample count and keep rendering until converged
+        if (m_currentMode == 1 && m_rtRenderer) {
+            m_viewport->m_sampleCount = m_rtRenderer->sampleCount();
+            emit m_viewport->sampleCountChanged();
+
+            if (!m_rtRenderer->isConverged()) {
+                update();  // Request next frame for progressive refinement
+            }
+        } else {
+            update();  // Raster mode: always redraw
+        }
     }
 
     QOpenGLFramebufferObject* createFramebufferObject(const QSize& size) override {
         QOpenGLFramebufferObjectFormat format;
         format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
-        format.setSamples(4);
+
+        // RT mode doesn't need MSAA (progressive accumulation handles AA)
+        if (m_currentMode != 1) {
+            format.setSamples(4);
+        }
+
         return new QOpenGLFramebufferObject(size, format);
     }
 
     void synchronize(QQuickFramebufferObject* item) override {
         auto* viewport = static_cast<OpenGLViewport*>(item);
 
-        // Initialize renderer if not done yet
-        // (synchronize can be called before render in Qt's scene graph)
-        if (!m_initialized) {
-            if (!m_renderer->initialize()) {
-                qCritical() << "Failed to initialize OpenGL renderer";
+        // Initialize raster renderer if not done yet
+        if (!m_rasterInitialized) {
+            if (!m_rasterRenderer->initialize()) {
+                qCritical() << "Failed to initialize OpenGL raster renderer";
                 return;
             }
-            m_initialized = true;
+            m_rasterInitialized = true;
+            m_activeRenderer = m_rasterRenderer.get();
         }
 
-        // Update viewport size
-        QSize size = viewport->size().toSize();
-        if (size.width() > 0 && size.height() > 0) {
-            m_renderer->resize(size.width(), size.height());
+        // Handle renderer mode switch
+        int requestedMode = viewport->m_rendererMode;
+        if (requestedMode != m_currentMode) {
+            m_currentMode = requestedMode;
+
+            if (m_currentMode == 1) {
+                // Switch to ray tracing
+                if (!m_rtRenderer) {
+                    m_rtRenderer = std::make_unique<render::RayTracingRenderer>();
+                    if (!m_rtRenderer->initialize()) {
+                        qCritical() << "Failed to initialize ray tracing renderer";
+                        m_currentMode = 0;
+                        viewport->m_rendererMode = 0;
+                        emit viewport->rendererModeChanged();
+                    }
+                }
+                if (m_rtRenderer) {
+                    m_activeRenderer = m_rtRenderer.get();
+                    // Upload current data to RT renderer (use physical pixels)
+                    QSize size = viewport->size().toSize();
+                    qreal switchDpr = viewport->window() ? viewport->window()->devicePixelRatio() : 1.0;
+                    int pw = static_cast<int>(size.width() * switchDpr);
+                    int ph = static_cast<int>(size.height() * switchDpr);
+                    if (pw > 0 && ph > 0) {
+                        m_rtRenderer->resize(pw, ph);
+                    }
+                    if (viewport->m_structure) {
+                        m_rtRenderer->setStructure(viewport->m_structure.get());
+                    }
+                }
+            } else {
+                // Switch to rasterization
+                m_activeRenderer = m_rasterRenderer.get();
+                viewport->m_sampleCount = 0;
+                emit viewport->sampleCountChanged();
+            }
+
+            // Force FBO recreation (MSAA on/off change)
+            invalidateFramebufferObject();
+        }
+
+        // Update viewport size (use physical pixels for rendering)
+        QSize logicalSize = viewport->size().toSize();
+        qreal dpr = viewport->window() ? viewport->window()->devicePixelRatio() : 1.0;
+        int pixelWidth = static_cast<int>(logicalSize.width() * dpr);
+        int pixelHeight = static_cast<int>(logicalSize.height() * dpr);
+        if (pixelWidth > 0 && pixelHeight > 0) {
+            m_activeRenderer->resize(pixelWidth, pixelHeight);
             viewport->m_camera->setAspectRatio(
-                static_cast<float>(size.width()) / size.height());
+                static_cast<float>(logicalSize.width()) / logicalSize.height());
         }
 
         // Update structure if needed
         if (viewport->m_needsStructureUpdate) {
-            m_renderer->setStructure(viewport->m_structure.get());
+            m_activeRenderer->setStructure(viewport->m_structure.get());
+            // Also update the other renderer so it's ready for instant switching
+            if (m_currentMode == 0 && m_rtRenderer) {
+                m_rtRenderer->setStructure(viewport->m_structure.get());
+            } else if (m_currentMode == 1) {
+                m_rasterRenderer->setStructure(viewport->m_structure.get());
+            }
             viewport->m_needsStructureUpdate = false;
         }
 
-        // Update render settings
-        m_renderer->settings().showBonds = viewport->m_showBonds;
-        m_renderer->settings().atomScale = viewport->m_atomScale;
+        // Sync render settings to active renderer
+        m_activeRenderer->settings().showBonds = viewport->m_showBonds;
+        m_activeRenderer->settings().atomScale = viewport->m_atomScale;
+        m_activeRenderer->settings().enableAmbientOcclusion = viewport->m_enableAO;
+        m_activeRenderer->settings().enableShadows = viewport->m_enableShadows;
 
         // Update FPS
         qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
@@ -86,8 +159,11 @@ public:
 
 private:
     OpenGLViewport* m_viewport;
-    std::unique_ptr<render::OpenGLRenderer> m_renderer;
-    bool m_initialized = false;
+    std::unique_ptr<render::OpenGLRenderer> m_rasterRenderer;
+    std::unique_ptr<render::RayTracingRenderer> m_rtRenderer;
+    render::Renderer* m_activeRenderer = nullptr;
+    int m_currentMode = 0;  // 0 = Raster, 1 = RayTracing
+    bool m_rasterInitialized = false;
 };
 
 OpenGLViewport::OpenGLViewport(QQuickItem* parent)
@@ -135,12 +211,24 @@ float OpenGLViewport::atomScale() const {
     return m_atomScale;
 }
 
+int OpenGLViewport::rendererMode() const {
+    return m_rendererMode;
+}
+
+int OpenGLViewport::sampleCount() const {
+    return m_sampleCount;
+}
+
+bool OpenGLViewport::enableAO() const {
+    return m_enableAO;
+}
+
+bool OpenGLViewport::enableShadows() const {
+    return m_enableShadows;
+}
+
 QVariantList OpenGLViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
-    // View matrix maps world axes to view space.
-    // V * (1,0,0,0) = column 0, V * (0,1,0,0) = column 1, etc.
-    // Screen x = view x (right), screen y = -view y (canvas y points down).
-    // Returns [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz] where z = depth for ordering.
     return {
         view(0, 0), -view(1, 0), view(2, 0),  // World X axis
         view(0, 1), -view(1, 1), view(2, 1),  // World Y axis
@@ -196,6 +284,30 @@ void OpenGLViewport::setAtomScale(float scale) {
     if (!qFuzzyCompare(m_atomScale, scale)) {
         m_atomScale = scale;
         emit atomScaleChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setRendererMode(int mode) {
+    if (m_rendererMode != mode) {
+        m_rendererMode = mode;
+        emit rendererModeChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setEnableAO(bool enable) {
+    if (m_enableAO != enable) {
+        m_enableAO = enable;
+        emit enableAOChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setEnableShadows(bool enable) {
+    if (m_enableShadows != enable) {
+        m_enableShadows = enable;
+        emit enableShadowsChanged();
         update();
     }
 }

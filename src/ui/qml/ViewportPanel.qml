@@ -131,6 +131,22 @@ Rectangle {
                 font.pixelSize: 10
                 font.family: "monospace"
             }
+
+            Label {
+                visible: glViewport.rendererMode === 1
+                text: "Mode: Ray Tracing"
+                color: "#88ccff"
+                font.pixelSize: 10
+                font.family: "monospace"
+            }
+
+            Label {
+                visible: glViewport.rendererMode === 1
+                text: "Samples: " + glViewport.sampleCount
+                color: "#88ccff"
+                font.pixelSize: 10
+                font.family: "monospace"
+            }
         }
     }
 

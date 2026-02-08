@@ -16,6 +16,8 @@ add_library(atom-render STATIC
     opengl/UnitCellRenderer.h
     opengl/OpenGLRenderer.cpp
     opengl/OpenGLRenderer.h
+    opengl/RayTracingRenderer.cpp
+    opengl/RayTracingRenderer.h
 )
 
 target_include_directories(atom-render PUBLIC
