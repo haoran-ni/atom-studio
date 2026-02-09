@@ -40,7 +40,19 @@ set(RENDER_VULKAN_SOURCES
 # Metal backend (future — macOS primary)
 # ---------------------------------------------------------------------------
 set(RENDER_METAL_SOURCES
-    # Add Metal source files here when implemented
+    metal/MetalTypes.h
+    metal/MetalShaderLibrary.h
+    metal/MetalShaderLibrary.mm
+    metal/MetalSphereRenderer.h
+    metal/MetalSphereRenderer.mm
+    metal/MetalBondRenderer.h
+    metal/MetalBondRenderer.mm
+    metal/MetalUnitCellRenderer.h
+    metal/MetalUnitCellRenderer.mm
+    metal/MetalRenderer.h
+    metal/MetalRenderer.mm
+    metal/MetalRayTracingRenderer.h
+    metal/MetalRayTracingRenderer.mm
 )
 
 # ---------------------------------------------------------------------------
@@ -62,8 +74,7 @@ endif()
 # Metal backend — macOS primary
 if(APPLE)
     list(APPEND RENDER_BACKEND_SOURCES ${RENDER_METAL_SOURCES})
-    # Uncomment when Metal sources exist:
-    # list(APPEND RENDER_BACKEND_LIBS "-framework Metal" "-framework MetalKit")
+    list(APPEND RENDER_BACKEND_LIBS "-framework Metal" "-framework QuartzCore")
 endif()
 
 # ---------------------------------------------------------------------------

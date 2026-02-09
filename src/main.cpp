@@ -17,8 +17,13 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    // Set up OpenGL surface format for macOS compatibility
-    // Request OpenGL 4.1 Core Profile (the max supported on macOS)
+#ifdef Q_OS_MACOS
+    // Use Metal as the primary graphics API on macOS
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
+    qInfo() << "Using Metal graphics API";
+#else
+    // Set up OpenGL surface format for other platforms
+    // Request OpenGL 4.1 Core Profile
     QSurfaceFormat format;
     format.setVersion(4, 1);
     format.setProfile(QSurfaceFormat::CoreProfile);
@@ -30,6 +35,7 @@ int main(int argc, char* argv[])
     // Force OpenGL as the graphics API (required for QQuickFramebufferObject)
     // Must be called before QApplication is created
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+#endif
 
     // Enable high DPI scaling
     QApplication::setHighDpiScaleFactorRoundingPolicy(

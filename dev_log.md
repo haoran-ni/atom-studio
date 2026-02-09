@@ -4,6 +4,104 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-08: Metal Rendering Backend
+
+### Summary
+Implemented a complete Metal rendering backend for macOS with full parity to the existing OpenGL backend. Includes instanced raster rendering (impostor spheres, instanced cylinder bonds, wireframe unit cell) and a fragment-shader ray tracing renderer with progressive accumulation. The app now uses Metal as the primary graphics API on macOS, with OpenGL as the fallback on other platforms. Platform selection is automatic at build time (CMake) and runtime (QML Loader).
+
+### Files Created (15 files)
+
+**Infrastructure:**
+| File | Purpose |
+|------|---------|
+| `src/render/metal/MetalTypes.h` | Shared CPU/GPU struct definitions (`SceneUniforms`, `SphereInstance`, `BondInstance`, `LineVertex`, `RTUniforms`, `DisplayUniforms`) using `<simd/simd.h>` |
+| `src/render/metal/MetalShaderLibrary.h` | PIMPL-based shader library interface — compiles MSL, creates 5 pipeline states + 2 depth stencil states |
+| `src/render/metal/MetalShaderLibrary.mm` | All MSL shader source (embedded C-string, runtime compiled) + pipeline creation with per-pass blend/depth config |
+
+**Raster sub-renderers:**
+| File | Purpose |
+|------|---------|
+| `src/render/metal/MetalSphereRenderer.h` | Impostor sphere renderer interface |
+| `src/render/metal/MetalSphereRenderer.mm` | Billboard quad + instanced `SphereInstance` buffer, perspective-correct ray-sphere intersection in fragment shader |
+| `src/render/metal/MetalBondRenderer.h` | Bond cylinder renderer interface |
+| `src/render/metal/MetalBondRenderer.mm` | Procedural cylinder geometry (12 segments) + instanced `BondInstance` buffer with orthonormal basis construction |
+| `src/render/metal/MetalUnitCellRenderer.h` | Unit cell wireframe renderer interface |
+| `src/render/metal/MetalUnitCellRenderer.mm` | 8 vertices + 24 indices (12 edges) drawn as `MTLPrimitiveTypeLine` |
+
+**Coordinators:**
+| File | Purpose |
+|------|---------|
+| `src/render/metal/MetalRenderer.h` | Raster renderer implementing `Renderer` interface, owns shader library + 3 sub-renderers |
+| `src/render/metal/MetalRenderer.mm` | Offscreen BGRA8 + Depth32Float textures, own command queue, depth remap from OpenGL [-1,1] to Metal [0,1] |
+| `src/render/metal/MetalRayTracingRenderer.h` | RT renderer implementing `Renderer` interface with progressive accumulation |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Two-pass: additive RT into RGBA32Float, display pass divides by sample count. State hash for convergence detection |
+
+**Qt integration:**
+| File | Purpose |
+|------|---------|
+| `src/ui/components/MetalViewport.h` | `QQuickItem`-based viewport with identical Q_PROPERTY interface as `OpenGLViewport` |
+| `src/ui/components/MetalViewport.mm` | `updatePaintNode()` gets MTLDevice from Qt, renders offscreen, wraps MTLTexture via `QNativeInterface::QSGMetalTexture::fromNative()`, displays via `QSGSimpleTextureNode` |
+
+### Files Modified (6 files)
+| File | Change |
+|------|--------|
+| `CMakeLists.txt` | Added `enable_language(OBJCXX)` in `if(APPLE)` for Objective-C++ compilation |
+| `src/render/CMakeLists.txt` | Populated `RENDER_METAL_SOURCES` (13 files), enabled `-framework Metal -framework QuartzCore` linking |
+| `src/ui/CMakeLists.txt` | Added `UI_METAL_SOURCES`, `ATOM_HAS_METAL` compile definition, Metal framework linking |
+| `src/main.cpp` | Conditional `setGraphicsApi(Metal)` on macOS, OpenGL + QSurfaceFormat on other platforms |
+| `src/core/Application.cpp` | Registered `MetalViewport` QML type under `#ifdef ATOM_HAS_METAL` |
+| `src/ui/qml/ViewportPanel.qml` | Replaced direct `OpenGLViewport` with conditional `Loader` (`Qt.platform.os === "osx"` → Metal, else → OpenGL) |
+
+### Architecture Decisions
+
+#### 1. QQuickItem + Offscreen MTLTexture (not QQuickFramebufferObject)
+`QQuickFramebufferObject` is OpenGL-specific. Metal viewport uses `QQuickItem` with offscreen rendering to an `MTLTexture`, wrapped as a `QSGTexture` via `QNativeInterface::QSGMetalTexture::fromNative()` and displayed through `QSGSimpleTextureNode`. Qt's scene graph is set to Metal via `QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal)`.
+
+#### 2. PIMPL for Objective-C++ Isolation
+All Metal classes use `struct Impl` (PIMPL) to keep Objective-C types (`id<MTLDevice>`, etc.) out of C++ headers. Public interfaces pass `void*` pointers with `(__bridge id<MTL*>)` casts in `.mm` files. Headers are pure C++ and importable from any translation unit.
+
+#### 3. Metal NDC Depth [0,1] Remapping
+OpenGL uses [-1,1] NDC depth; Metal uses [0,1]. A bias matrix (`z_metal = z_gl * 0.5 + 0.5`) is applied to the projection matrix in `MetalRenderer::remapDepthToMetal()`. The sphere impostor fragment shader writes `clipPos.z / clipPos.w` directly for custom depth via `[[depth(any)]]`.
+
+#### 4. Atom Data as MTLBuffer (Simpler than OpenGL TBOs)
+The RT renderer accesses atom positions and colors via `device const float4*` buffer pointers in the fragment shader — direct array indexing with no texture indirection. This replaces OpenGL's `samplerBuffer` + `texelFetch` pattern.
+
+#### 5. MSL Shaders Embedded as C-Strings
+All MSL shader source is a single C-string in `MetalShaderLibrary.mm`, compiled at runtime via `[device newLibraryWithSource:options:error:]`. This matches the OpenGL pattern in `ShaderManager.cpp` where GLSL is also embedded as inline strings.
+
+#### 6. Duplicate Shader Library Instances
+Both `MetalRenderer` and `MetalRayTracingRenderer` own their own `MetalShaderLibrary` instance. This avoids lifetime/ownership complexity when switching between renderers, at the cost of compiling the same MSL twice (one-time ~50ms each).
+
+#### 7. Platform-Conditional QML Viewport
+`ViewportPanel.qml` uses a `Loader` with `Qt.platform.os === "osx"` to select `MetalViewport` or `OpenGLViewport`. The `property var viewport: viewportLoader.item` alias ensures all external QML references (`sidebar.viewport.*`, `mainWindow.viewportPanel.viewport.*`) work transparently regardless of backend.
+
+### MSL Shader Summary
+
+| Shader | Purpose |
+|--------|---------|
+| `sphere_vertex` / `sphere_fragment` | Impostor billboard with perspective-correct sizing, ray-sphere intersection, Blinn-Phong, custom depth `[[depth(any)]]` |
+| `bond_vertex` / `bond_fragment` | Instanced cylinders with orthonormal basis construction, Blinn-Phong |
+| `line_vertex` / `line_fragment` | Unit cell wireframe (MVP transform + flat color) |
+| `fullscreen_vertex` | Shared full-screen quad for RT and display passes |
+| `rt_fragment` | Brute-force ray-sphere traversal, PCG RNG, sub-pixel jitter, shadows, ambient occlusion |
+| `display_fragment` | Divides accumulation texture by sample count |
+
+### Pipeline Configuration
+
+| Pipeline | Pixel Format | Blend | Depth |
+|----------|-------------|-------|-------|
+| Sphere | BGRA8Unorm | Alpha | Less+Write |
+| Bond | BGRA8Unorm | Alpha | Less+Write |
+| Line | BGRA8Unorm | Alpha | Less+Write |
+| RT | RGBA32Float | Additive (ONE,ONE) | Disabled |
+| Display | BGRA8Unorm | None | Disabled |
+
+### Verification
+- Build: `cmake --build build` — 100% success, zero errors
+- Launch: App starts with "Using Metal graphics API", MSL compilation succeeds, all pipelines created, Metal raster renderer initializes
+
+---
+
 ## 2026-02-08: Refactor to Backend-Based Platform Architecture
 
 ### Summary

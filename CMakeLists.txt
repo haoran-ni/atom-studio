@@ -64,6 +64,7 @@ if(APPLE)
     # AGL (Apple GL) was deprecated and removed - create a stub framework to satisfy Qt's OpenGL module
     # Build stub as a framework during CMake configure
     enable_language(C)
+    enable_language(OBJCXX)
     add_library(AGL SHARED ${CMAKE_SOURCE_DIR}/cmake/agl_stub.c)
     set_target_properties(AGL PROPERTIES
         FRAMEWORK TRUE

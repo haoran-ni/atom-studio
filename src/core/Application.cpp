@@ -7,6 +7,9 @@
 
 // UI components
 #include "../ui/components/OpenGLViewport.h"
+#ifdef ATOM_HAS_METAL
+#include "../ui/components/MetalViewport.h"
+#endif
 #include "../ui/components/FileController.h"
 #include "../ui/components/StructureModel.h"
 
@@ -73,6 +76,9 @@ void Application::registerQmlTypes()
 {
     // Register UI components
     qmlRegisterType<ui::OpenGLViewport>("AtomStudio", 1, 0, "OpenGLViewport");
+#ifdef ATOM_HAS_METAL
+    qmlRegisterType<ui::MetalViewport>("AtomStudio", 1, 0, "MetalViewport");
+#endif
     qmlRegisterSingletonType<ui::FileController>("AtomStudio", 1, 0, "FileController",
         ui::FileController::create);
     qmlRegisterSingletonType<ui::StructureModel>("AtomStudio", 1, 0, "StructureModel",

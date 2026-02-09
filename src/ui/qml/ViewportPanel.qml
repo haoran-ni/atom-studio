@@ -6,7 +6,7 @@ import AtomStudio 1.0
 Rectangle {
     id: viewportPanel
 
-    property alias viewport: glViewport
+    property var viewport: viewportLoader.item
 
     color: "#1a1a2e"
 
@@ -16,10 +16,21 @@ Rectangle {
         GradientStop { position: 1.0; color: "#16213e" }
     }
 
-    // OpenGL Viewport
-    OpenGLViewport {
-        id: glViewport
+    // Platform-conditional viewport: Metal on macOS, OpenGL elsewhere
+    Loader {
+        id: viewportLoader
         anchors.fill: parent
+        sourceComponent: Qt.platform.os === "osx" ? metalViewportComp : openglViewportComp
+    }
+
+    Component {
+        id: openglViewportComp
+        OpenGLViewport {}
+    }
+
+    Component {
+        id: metalViewportComp
+        MetalViewport {}
     }
 
     // Placeholder content (shown when no structure loaded)
@@ -112,28 +123,28 @@ Rectangle {
             spacing: 2
 
             Label {
-                text: "FPS: " + glViewport.fps.toFixed(1)
+                text: "FPS: " + (viewportPanel.viewport ? viewportPanel.viewport.fps.toFixed(1) : "0.0")
                 color: "#ffffff"
                 font.pixelSize: 10
                 font.family: "monospace"
             }
 
             Label {
-                text: "Atoms: " + glViewport.atomCount
+                text: "Atoms: " + (viewportPanel.viewport ? viewportPanel.viewport.atomCount : 0)
                 color: "#ffffff"
                 font.pixelSize: 10
                 font.family: "monospace"
             }
 
             Label {
-                text: "Bonds: " + glViewport.bondCount
+                text: "Bonds: " + (viewportPanel.viewport ? viewportPanel.viewport.bondCount : 0)
                 color: "#ffffff"
                 font.pixelSize: 10
                 font.family: "monospace"
             }
 
             Label {
-                visible: glViewport.rendererMode === 1
+                visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
                 text: "Mode: Ray Tracing"
                 color: "#88ccff"
                 font.pixelSize: 10
@@ -141,8 +152,8 @@ Rectangle {
             }
 
             Label {
-                visible: glViewport.rendererMode === 1
-                text: "Samples: " + glViewport.sampleCount
+                visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
+                text: "Samples: " + (viewportPanel.viewport ? viewportPanel.viewport.sampleCount : 0)
                 color: "#88ccff"
                 font.pixelSize: 10
                 font.family: "monospace"
@@ -213,7 +224,7 @@ Rectangle {
             anchors.margins: 10
 
             Connections {
-                target: glViewport
+                target: viewportPanel.viewport
                 function onCameraChanged() { axisCanvas.requestPaint() }
             }
 
@@ -226,7 +237,8 @@ Rectangle {
                 var len = 25;
 
                 // Get camera-projected axis directions from the view matrix
-                var d = glViewport.getAxisDirections();
+                if (!viewportPanel.viewport) return;
+                var d = viewportPanel.viewport.getAxisDirections();
                 // d = [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz]
                 var axes = [
                     { dx: d[0], dy: d[1], z: d[2], color: "#ff4444", label: "X" },

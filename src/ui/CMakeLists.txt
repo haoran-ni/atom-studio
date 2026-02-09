@@ -28,6 +28,14 @@ set(UI_VULKAN_SOURCES
 )
 
 # ---------------------------------------------------------------------------
+# Metal viewport (macOS)
+# ---------------------------------------------------------------------------
+set(UI_METAL_SOURCES
+    components/MetalViewport.h
+    components/MetalViewport.mm
+)
+
+# ---------------------------------------------------------------------------
 # Select viewport implementations based on available backends
 # ---------------------------------------------------------------------------
 set(UI_BACKEND_SOURCES)
@@ -37,6 +45,11 @@ list(APPEND UI_BACKEND_SOURCES ${UI_OPENGL_SOURCES})
 
 # Vulkan viewport — placeholder, always included for now (empty impl)
 list(APPEND UI_BACKEND_SOURCES ${UI_VULKAN_SOURCES})
+
+# Metal viewport — macOS
+if(APPLE)
+    list(APPEND UI_BACKEND_SOURCES ${UI_METAL_SOURCES})
+endif()
 
 # ---------------------------------------------------------------------------
 # Library target
@@ -65,4 +78,10 @@ target_link_libraries(atom-ui PUBLIC
 if(Vulkan_FOUND)
     target_link_libraries(atom-ui PUBLIC Vulkan::Vulkan)
     target_compile_definitions(atom-ui PUBLIC ATOM_HAS_VULKAN)
+endif()
+
+# Metal viewport support on macOS
+if(APPLE)
+    target_link_libraries(atom-ui PUBLIC "-framework Metal" "-framework QuartzCore")
+    target_compile_definitions(atom-ui PUBLIC ATOM_HAS_METAL)
 endif()
