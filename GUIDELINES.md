@@ -1,7 +1,7 @@
-# CLAUDE.md
+# GUIDELINES.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-Claude can modify this file as appropriate.
+This file provides guidance to AI agent when working with code in this repository.
+AI agent can modify this file as appropriate.
 
 ## Project Overview
 
