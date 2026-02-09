@@ -38,8 +38,10 @@ public:
 private:
     void createRenderTargets();
     void uploadAtomData();
+    void uploadUnitCellData();
     void renderRTPass(const Camera& camera);
     void renderDisplayPass();
+    void renderUnitCellOverlay(const Camera& camera);
     uint64_t computeStateHash(const Camera& camera) const;
 
     struct Impl;
@@ -54,6 +56,8 @@ private:
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
+    bool m_unitCellDataDirty = true;
+    int m_unitCellEdgeCount = 0;
     uint64_t m_lastStateHash = 0;
 };
 

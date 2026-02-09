@@ -5,6 +5,7 @@
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <QMatrix4x4>
+#include <array>
 #include <cstring>
 #include <functional>
 
@@ -18,6 +19,14 @@ static simd_float4x4 qMatToSimd(const QMatrix4x4& m) {
     simd_float4x4 result;
     std::memcpy(&result, m.constData(), 16 * sizeof(float));
     return result;
+}
+
+/// Remap projection matrix from OpenGL depth [-1,1] to Metal depth [0,1].
+static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
+    QMatrix4x4 bias;
+    bias(2, 2) = 0.5f;
+    bias(2, 3) = 0.5f;
+    return qMatToSimd(bias * proj);
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +49,10 @@ struct MetalRayTracingRenderer::Impl {
     // Atom data buffers
     id<MTLBuffer> atomPositionBuffer = nil;  // float4(x,y,z,radius) per atom
     id<MTLBuffer> atomColorBuffer = nil;     // float4(r,g,b,a) per atom
+
+    // Unit cell line buffers (8 vertices, 24 indices)
+    id<MTLBuffer> unitCellVertexBuffer = nil;
+    id<MTLBuffer> unitCellIndexBuffer = nil;
 };
 
 MetalRayTracingRenderer::MetalRayTracingRenderer()
@@ -83,6 +96,19 @@ bool MetalRayTracingRenderer::initialize() {
                                                            length:sizeof(quadVerts)
                                                           options:MTLResourceStorageModeShared];
 
+    // Unit cell edge index buffer (constant topology)
+    const std::array<uint32_t, 24> unitCellIndices = {{
+        0, 1,   0, 2,   0, 3,
+        1, 4,   1, 5,
+        2, 4,   2, 6,
+        3, 5,   3, 6,
+        4, 7,   5, 7,   6, 7
+    }};
+    m_impl->unitCellIndexBuffer = [m_impl->device
+        newBufferWithBytes:unitCellIndices.data()
+                    length:unitCellIndices.size() * sizeof(uint32_t)
+                   options:MTLResourceStorageModeShared];
+
     m_initialized = true;
     qInfo() << "MetalRayTracingRenderer: initialized successfully";
     return true;
@@ -96,9 +122,13 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->outputTexture = nil;
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
+    m_impl->unitCellVertexBuffer = nil;
+    m_impl->unitCellIndexBuffer = nil;
     m_impl->commandQueue = nil;
 
     m_structure = nullptr;
+    m_atomCount = 0;
+    m_unitCellEdgeCount = 0;
     m_initialized = false;
 }
 
@@ -115,6 +145,7 @@ void MetalRayTracingRenderer::resize(int width, int height) {
 void MetalRayTracingRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;
+    m_unitCellDataDirty = true;
     resetAccumulation();
 }
 
@@ -123,6 +154,15 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
 
     if (m_atomDataDirty) {
         uploadAtomData();
+    }
+    if (m_unitCellDataDirty) {
+        uploadUnitCellData();
+    }
+
+    // Ensure render targets exist
+    if (!m_impl->accumTexture || !m_impl->outputTexture) {
+        createRenderTargets();
+        resetAccumulation();
     }
 
     if (m_atomCount == 0) {
@@ -141,6 +181,10 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
             [cmd commit];
             [cmd waitUntilCompleted];
         }
+
+        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0) {
+            renderUnitCellOverlay(camera);
+        }
         return;
     }
 
@@ -151,17 +195,18 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
         resetAccumulation();
     }
 
-    if (isConverged()) return;
-
-    m_sampleCount++;
-
-    // Ensure render targets exist
-    if (!m_impl->accumTexture) {
-        createRenderTargets();
+    // Keep rendering the display/output passes even after convergence so
+    // overlays (unit cell) and RT output refresh remain responsive.
+    if (!isConverged()) {
+        m_sampleCount++;
+        renderRTPass(camera);
     }
 
-    renderRTPass(camera);
     renderDisplayPass();
+
+    if (m_settings.showUnitCell && m_unitCellEdgeCount > 0) {
+        renderUnitCellOverlay(camera);
+    }
 }
 
 void MetalRayTracingRenderer::invalidateAtomData() {
@@ -246,6 +291,47 @@ void MetalRayTracingRenderer::uploadAtomData() {
                    options:MTLResourceStorageModeShared];
 
     m_atomDataDirty = false;
+}
+
+void MetalRayTracingRenderer::uploadUnitCellData() {
+    if (!m_structure || !m_structure->hasLattice()) {
+        m_impl->unitCellVertexBuffer = nil;
+        m_unitCellEdgeCount = 0;
+        m_unitCellDataDirty = false;
+        return;
+    }
+
+    const auto& lattice = m_structure->lattice();
+    const auto& mat = lattice.matrix;
+
+    const float ax = static_cast<float>(mat[0][0]);
+    const float ay = static_cast<float>(mat[0][1]);
+    const float az = static_cast<float>(mat[0][2]);
+    const float bx = static_cast<float>(mat[1][0]);
+    const float by = static_cast<float>(mat[1][1]);
+    const float bz = static_cast<float>(mat[1][2]);
+    const float cx = static_cast<float>(mat[2][0]);
+    const float cy = static_cast<float>(mat[2][1]);
+    const float cz = static_cast<float>(mat[2][2]);
+
+    const simd_float4 white = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+    const std::array<LineVertex, 8> vertices = {{
+        { simd_make_float3(0.0f, 0.0f, 0.0f),                        0.0f, white }, // O
+        { simd_make_float3(ax, ay, az),                              0.0f, white }, // A
+        { simd_make_float3(bx, by, bz),                              0.0f, white }, // B
+        { simd_make_float3(cx, cy, cz),                              0.0f, white }, // C
+        { simd_make_float3(ax + bx, ay + by, az + bz),               0.0f, white }, // A+B
+        { simd_make_float3(ax + cx, ay + cy, az + cz),               0.0f, white }, // A+C
+        { simd_make_float3(bx + cx, by + cy, bz + cz),               0.0f, white }, // B+C
+        { simd_make_float3(ax + bx + cx, ay + by + cy, az + bz + cz),0.0f, white }, // A+B+C
+    }};
+
+    m_impl->unitCellVertexBuffer = [m_impl->device
+        newBufferWithBytes:vertices.data()
+                    length:vertices.size() * sizeof(LineVertex)
+                   options:MTLResourceStorageModeShared];
+    m_unitCellEdgeCount = 12;
+    m_unitCellDataDirty = false;
 }
 
 void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
@@ -343,6 +429,61 @@ void MetalRayTracingRenderer::renderDisplayPass() {
     [encoder setFragmentTexture:m_impl->accumTexture atIndex:0];
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+    [encoder endEncoding];
+
+    [cmdBuffer commit];
+    [cmdBuffer waitUntilCompleted];
+}
+
+void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
+    if (!m_impl->outputTexture || !m_impl->unitCellVertexBuffer ||
+        !m_impl->unitCellIndexBuffer || m_unitCellEdgeCount == 0) {
+        return;
+    }
+
+    RTLineUniforms line{};
+    line.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
+    QVector3D camPos = camera.position();
+    line.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
+    line.atomScale = m_settings.atomScale;
+    line.atomCount = m_atomCount;
+    line.occlusionBias = 0.001f;
+    const QColor color = m_settings.unitCellColor;
+    line.lineColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), color.alphaF());
+
+    id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+
+    MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = m_impl->outputTexture;
+    pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+    id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
+
+    [encoder setViewport:(MTLViewport){0, 0,
+        static_cast<double>(m_width), static_cast<double>(m_height),
+        0.0, 1.0}];
+
+    id<MTLRenderPipelineState> pipeline =
+        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtLinePipeline();
+    id<MTLDepthStencilState> depthState =
+        (__bridge id<MTLDepthStencilState>)m_shaderLibrary.depthDisabledState();
+
+    [encoder setRenderPipelineState:pipeline];
+    [encoder setDepthStencilState:depthState];
+    [encoder setCullMode:MTLCullModeNone];
+
+    [encoder setVertexBytes:&line length:sizeof(RTLineUniforms) atIndex:0];
+    [encoder setVertexBuffer:m_impl->unitCellVertexBuffer offset:0 atIndex:1];
+
+    [encoder setFragmentBytes:&line length:sizeof(RTLineUniforms) atIndex:0];
+    [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
+
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeLine
+                        indexCount:m_unitCellEdgeCount * 2
+                         indexType:MTLIndexTypeUInt32
+                       indexBuffer:m_impl->unitCellIndexBuffer
+                 indexBufferOffset:0];
     [encoder endEncoding];
 
     [cmdBuffer commit];

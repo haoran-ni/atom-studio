@@ -77,6 +77,16 @@ struct DisplayUniforms {
     float _pad[3];
 };
 
+struct RTLineUniforms {
+    float4x4 viewProjectionMatrix;
+    float3   cameraPosition;
+    float    atomScale;
+    int      atomCount;
+    float    occlusionBias;
+    float    _pad[2];
+    float4   lineColor;
+};
+
 // -------------------------------------------------------
 // Sphere Impostor Shader
 // -------------------------------------------------------
@@ -269,6 +279,69 @@ vertex LineVertexOut line_vertex(
 fragment float4 line_fragment(LineVertexOut in [[stage_in]])
 {
     return in.color;
+}
+
+// -------------------------------------------------------
+// RT unit cell overlay line shader (simple lines + atom occlusion)
+// -------------------------------------------------------
+
+struct RTLineVertexOut {
+    float4 position [[position]];
+    float3 worldPos;
+};
+
+vertex RTLineVertexOut rt_line_vertex(
+    uint vid [[vertex_id]],
+    constant RTLineUniforms& line [[buffer(0)]],
+    constant LineVertex* vertices [[buffer(1)]])
+{
+    RTLineVertexOut out;
+    LineVertex v = vertices[vid];
+    out.worldPos = v.position;
+    out.position = line.viewProjectionMatrix * float4(v.position, 1.0);
+    return out;
+}
+
+fragment float4 rt_line_fragment(
+    RTLineVertexOut in [[stage_in]],
+    constant RTLineUniforms& line [[buffer(0)]],
+    device const float4* atomPositions [[buffer(1)]])
+{
+    // Cast a ray from the camera to this line fragment and discard if any atom
+    // is intersected before reaching the line point.
+    float3 ro = line.cameraPosition;
+    float3 toLine = in.worldPos - ro;
+    float lineDist = length(toLine);
+
+    if (line.atomCount > 0 && lineDist > 1e-6) {
+        float3 rd = toLine / lineDist;
+        float maxT = max(lineDist - line.occlusionBias, 0.0);
+
+        for (int i = 0; i < line.atomCount; ++i) {
+            float4 atom = atomPositions[i];
+            float r = atom.w * line.atomScale;
+
+            float3 oc = ro - atom.xyz;
+            float b = dot(oc, rd);
+            float c = dot(oc, oc) - r * r;
+            float disc = b * b - c;
+            if (disc < 0.0) {
+                continue;
+            }
+
+            float sqrtDisc = sqrt(disc);
+            float t = -b - sqrtDisc;
+            if (t <= 0.001) {
+                t = -b + sqrtDisc;
+            }
+
+            if (t > 0.001 && t < maxT) {
+                discard_fragment();
+            }
+        }
+    }
+
+    return line.lineColor;
 }
 
 // -------------------------------------------------------
@@ -491,6 +564,7 @@ struct MetalShaderLibrary::Impl {
     id<MTLRenderPipelineState> linePipeline = nil;
     id<MTLRenderPipelineState> rtPipeline = nil;
     id<MTLRenderPipelineState> displayPipeline = nil;
+    id<MTLRenderPipelineState> rtLinePipeline = nil;
     id<MTLDepthStencilState> depthLessWriteState = nil;
     id<MTLDepthStencilState> depthDisabledState = nil;
 };
@@ -665,6 +739,31 @@ bool MetalShaderLibrary::initialize(void* device) {
         }
     }
 
+    // --- RT unit cell overlay line pipeline (alpha blend, BGRA8, no depth) ---
+    {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_line_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_line_fragment"];
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+
+        if (!desc.vertexFunction || !desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: RT line shader functions not found";
+            return false;
+        }
+
+        m_impl->rtLinePipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->rtLinePipeline) {
+            qCritical() << "MetalShaderLibrary: RT line pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
     m_initialized = true;
     qInfo() << "MetalShaderLibrary: All pipelines created successfully";
     return true;
@@ -677,6 +776,7 @@ void MetalShaderLibrary::cleanup() {
         m_impl->linePipeline = nil;
         m_impl->rtPipeline = nil;
         m_impl->displayPipeline = nil;
+        m_impl->rtLinePipeline = nil;
         m_impl->depthLessWriteState = nil;
         m_impl->depthDisabledState = nil;
         m_impl->library = nil;
@@ -703,6 +803,10 @@ void* MetalShaderLibrary::rtPipeline() const {
 
 void* MetalShaderLibrary::displayPipeline() const {
     return (__bridge void*)m_impl->displayPipeline;
+}
+
+void* MetalShaderLibrary::rtLinePipeline() const {
+    return (__bridge void*)m_impl->rtLinePipeline;
 }
 
 void* MetalShaderLibrary::depthLessWriteState() const {

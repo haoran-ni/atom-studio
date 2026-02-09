@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-09: Metal RT Unit Cell Overlay (Non-Ray-Traced)
+
+### Summary
+Added unit cell visualization to **Ray Tracing mode** on the **Metal backend** using a separate line-overlay pass (not ray-traced geometry). The unit cell is built from the lattice with the same 8-corner/12-edge topology as raster mode, then composited over the RT output.
+
+To enforce correct spatial relationships with atoms, the new line fragment shader performs an atom-only occlusion test: for each line fragment, it casts a ray from the camera to the fragment and discards the fragment if any atom sphere is hit first. This means:
+- Unit cell lines behind atoms are hidden.
+- Unit cell lines in front of atoms remain visible.
+- Atom shadowing/AO does not block unit cell lines (only atom geometry does).
+
+Also updated the RT frame flow so the display + overlay passes still run after convergence, keeping the unit cell overlay responsive when the sample counter has reached `maxRTSamples`.
+
+### Files Modified (6 files)
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalRayTracingRenderer.h` | Added unit-cell upload/render helpers and state flags (`m_unitCellDataDirty`, `m_unitCellEdgeCount`) |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Added unit cell buffers/upload path, RT overlay pass, and render sequencing updates (RT pass conditional, display+overlay always) |
+| `src/render/metal/MetalShaderLibrary.h` | Added `rtLinePipeline()` accessor |
+| `src/render/metal/MetalShaderLibrary.mm` | Added `RTLineUniforms`, `rt_line_vertex`, `rt_line_fragment`, and a dedicated RT line overlay pipeline |
+| `src/render/metal/MetalTypes.h` | Added shared `RTLineUniforms` struct for CPU/GPU layout parity |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Keep Unit Cell Out of RT Accumulation
+The unit cell is drawn in a dedicated post-display line pass to avoid introducing non-ray-traced primitives into the accumulation buffer. RT accumulation remains atom-only.
+
+#### 2. Atom-Only Occlusion in Overlay Shader
+Instead of depth-buffer compositing with RT output, the overlay fragment shader analytically tests visibility against atom spheres and discards occluded line fragments. This guarantees occlusion depends only on atoms, not on lighting/shadow terms.
+
+#### 3. Reuse Raster Unit Cell Topology
+Unit cell geometry uses the same lattice-derived corner construction and fixed 12-edge index topology as raster rendering for consistency across render modes.
+
+#### 4. Overlay Still Draws After Convergence
+When RT reaches `maxRTSamples`, sampling stops but display and overlay passes continue. This keeps unit cell visibility consistent during UI/camera redraws without adding new RT samples.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Runtime validation: not executed in this session (build-only verification).
+
+---
+
 ## 2026-02-09: Ray Tracing Sample Cap + QML Stability Fixes
 
 ### Summary

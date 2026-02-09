@@ -70,6 +70,17 @@ struct RTUniforms {
     float         _pad[3];
 };
 
+// Unit cell overlay uniforms for RT output compositing
+struct RTLineUniforms {
+    simd_float4x4 viewProjectionMatrix;
+    simd_float3   cameraPosition;
+    float         atomScale;
+    int32_t       atomCount;
+    float         occlusionBias;
+    float         _pad[2];
+    simd_float4   lineColor;
+};
+
 // Display pass uniforms — [[buffer(0)]] for display shader
 struct DisplayUniforms {
     float sampleCount;

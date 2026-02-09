@@ -27,6 +27,7 @@ public:
     void* linePipeline() const;
     void* rtPipeline() const;
     void* displayPipeline() const;
+    void* rtLinePipeline() const;
 
     // Depth stencil state accessors (return id<MTLDepthStencilState> as void*)
     void* depthLessWriteState() const;
