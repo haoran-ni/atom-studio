@@ -17,7 +17,9 @@ public:
 
     /// Compile all shaders and create pipeline states.
     /// @param device  Raw pointer to id<MTLDevice> (cast from void*)
-    bool initialize(void* device);
+    /// @param rasterSampleCount Sample count for rasterized pipelines
+    ///        (sphere/bond/line/display/RT unit-cell overlay).
+    bool initialize(void* device, int rasterSampleCount = 1);
     void cleanup();
     bool isInitialized() const { return m_initialized; }
 

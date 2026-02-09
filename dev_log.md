@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-09: Add MSAA for Metal Unit-Cell Rendering + Increase Cylinder Resolution
+
+### Summary
+Improved unit-cell visual quality and renderer consistency by:
+- enabling multisample anti-aliasing (MSAA) for Metal raster output
+- enabling MSAA for Metal RT display/output compositing paths used by the unit-cell overlay
+- increasing unit-cell cylinder tessellation from 20 to 48 segments
+
+This addresses jagged/dashed unit-cell lines when zoomed out and keeps unit-cell appearance aligned across OpenGL, Metal raster, and Metal RT views.
+
+### Files Modified (8 files)
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalShaderLibrary.h` | Extended initialization API to accept raster sample count for rasterized pipelines |
+| `src/render/metal/MetalShaderLibrary.mm` | Applied sample count to sphere/bond/line/display/RT-unit-cell-overlay pipelines |
+| `src/render/metal/MetalRenderer.mm` | Added 4x MSAA render target path (with fallback), multisample color resolve to output texture |
+| `src/render/metal/MetalRayTracingRenderer.h` | Updated display pass signature to include camera for integrated overlay compositing |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Added 4x MSAA display/overlay targets (with fallback), integrated display+overlay single-pass resolve path, updated no-atom overlay path, increased RT unit-cell cylinder segments to 48 |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Increased raster unit-cell cylinder segments from 20 to 48 |
+| `src/render/opengl/UnitCellRenderer.cpp` | Increased OpenGL unit-cell cylinder segments from 20 to 48 for cross-renderer parity |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Resolve MSAA into Existing Output Textures
+Both Metal raster and Metal RT keep their existing single-sample output textures for presentation, while rendering into multisample color targets and resolving per frame.
+
+#### 2. Keep Pipeline Sample Count and Target Sample Count Matched
+Rasterized Metal pipelines now use the configured sample count to avoid mismatches between pipeline state and multisample render targets.
+
+#### 3. Make RT Display + Unit-Cell Overlay Share the Same MSAA Pass
+In Metal RT mode, display compositing and unit-cell overlay are executed in one render pass when possible, so both benefit from the same MSAA resolve step.
+
+#### 4. Increase Geometry Smoothness at Source
+Unit-cell cylinders now use 48 segments across renderers to reduce faceting and improve silhouette quality.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Runtime validation: not executed in this session (build-only verification).
+
+---
+
 ## 2026-02-09: Fix Metal Raster Unit-Cell Cylinder Interior Artifact
 
 ### Summary

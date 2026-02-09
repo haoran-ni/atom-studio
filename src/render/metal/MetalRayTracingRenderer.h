@@ -40,7 +40,7 @@ private:
     void uploadAtomData();
     void uploadUnitCellData();
     void renderRTPass(const Camera& camera);
-    void renderDisplayPass();
+    void renderDisplayPass(const Camera& camera);
     void renderUnitCellOverlay(const Camera& camera);
     uint64_t computeStateHash(const Camera& camera) const;
 

@@ -9,6 +9,8 @@
 
 namespace atom::render::metal {
 
+static constexpr NSUInteger kPreferredRasterSampleCount = 4;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -37,6 +39,8 @@ static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
 struct MetalRenderer::Impl {
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
+    NSUInteger rasterSampleCount = 1;
+    id<MTLTexture> msaaColorTexture = nil;
     id<MTLTexture> colorTexture = nil;
     id<MTLTexture> depthTexture = nil;
 };
@@ -69,7 +73,16 @@ bool MetalRenderer::initialize() {
     }
 
     // Compile shaders and create pipeline states
-    if (!m_shaderLibrary.initialize((__bridge void*)m_impl->device)) {
+    m_impl->rasterSampleCount =
+        [m_impl->device supportsTextureSampleCount:kPreferredRasterSampleCount]
+            ? kPreferredRasterSampleCount
+            : 1;
+    if (m_impl->rasterSampleCount == 1) {
+        qWarning() << "MetalRenderer: 4x MSAA not supported; using single-sample rasterization";
+    }
+
+    if (!m_shaderLibrary.initialize((__bridge void*)m_impl->device,
+                                    static_cast<int>(m_impl->rasterSampleCount))) {
         return false;
     }
 
@@ -90,9 +103,11 @@ void MetalRenderer::cleanup() {
     m_unitCellRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
+    m_impl->msaaColorTexture = nil;
     m_impl->colorTexture = nil;
     m_impl->depthTexture = nil;
     m_impl->commandQueue = nil;
+    m_impl->rasterSampleCount = 1;
 
     m_structure = nullptr;
     m_initialized = false;
@@ -117,6 +132,7 @@ void MetalRenderer::setStructure(const data::Structure* structure) {
 void MetalRenderer::render(const Camera& camera) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
     if (!m_impl->colorTexture || !m_impl->depthTexture) return;
+    if (m_impl->rasterSampleCount > 1 && !m_impl->msaaColorTexture) return;
 
     // Upload dirty data
     if (m_atomDataDirty) {
@@ -152,9 +168,15 @@ void MetalRenderer::render(const Camera& camera) {
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
     MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
-    passDesc.colorAttachments[0].texture = m_impl->colorTexture;
     passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-    passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    if (m_impl->msaaColorTexture) {
+        passDesc.colorAttachments[0].texture = m_impl->msaaColorTexture;
+        passDesc.colorAttachments[0].resolveTexture = m_impl->colorTexture;
+        passDesc.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+    } else {
+        passDesc.colorAttachments[0].texture = m_impl->colorTexture;
+        passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    }
 
     const auto& bg = m_settings.backgroundColor;
     passDesc.colorAttachments[0].clearColor = MTLClearColorMake(
@@ -201,7 +223,7 @@ void* MetalRenderer::colorTexture() const {
 }
 
 void MetalRenderer::createRenderTargets() {
-    // Color texture: BGRA8Unorm
+    // Resolved display texture (single-sample, sampled by Qt scene graph).
     MTLTextureDescriptor* colorDesc = [MTLTextureDescriptor
         texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                     width:m_width
@@ -211,15 +233,40 @@ void MetalRenderer::createRenderTargets() {
     colorDesc.storageMode = MTLStorageModePrivate;
     m_impl->colorTexture = [m_impl->device newTextureWithDescriptor:colorDesc];
 
-    // Depth texture: Depth32Float
+    if (m_impl->rasterSampleCount > 1) {
+        MTLTextureDescriptor* msaaColorDesc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                        width:m_width
+                                       height:m_height
+                                    mipmapped:NO];
+        msaaColorDesc.textureType = MTLTextureType2DMultisample;
+        msaaColorDesc.sampleCount = m_impl->rasterSampleCount;
+        msaaColorDesc.usage = MTLTextureUsageRenderTarget;
+        msaaColorDesc.storageMode = MTLStorageModePrivate;
+        m_impl->msaaColorTexture = [m_impl->device newTextureWithDescriptor:msaaColorDesc];
+        if (!m_impl->msaaColorTexture) {
+            qCritical() << "MetalRenderer: failed to create MSAA color texture";
+        }
+    } else {
+        m_impl->msaaColorTexture = nil;
+    }
+
+    // Depth texture (matches raster sample count).
     MTLTextureDescriptor* depthDesc = [MTLTextureDescriptor
         texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
                                     width:m_width
                                    height:m_height
                                 mipmapped:NO];
+    if (m_impl->rasterSampleCount > 1) {
+        depthDesc.textureType = MTLTextureType2DMultisample;
+        depthDesc.sampleCount = m_impl->rasterSampleCount;
+    }
     depthDesc.usage = MTLTextureUsageRenderTarget;
     depthDesc.storageMode = MTLStorageModePrivate;
     m_impl->depthTexture = [m_impl->device newTextureWithDescriptor:depthDesc];
+    if (!m_impl->depthTexture) {
+        qCritical() << "MetalRenderer: failed to create depth texture";
+    }
 }
 
 } // namespace atom::render::metal

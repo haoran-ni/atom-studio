@@ -54,7 +54,7 @@ bool UnitCellRenderer::initialize(ShaderManager* shaderManager) {
         return false;
     }
 
-    createCylinderGeometry(20);
+    createCylinderGeometry(48);
     createJointBillboardGeometry();
 
     // Cylinder-edge VAO layout:

@@ -609,7 +609,7 @@ MetalShaderLibrary::~MetalShaderLibrary() {
     cleanup();
 }
 
-bool MetalShaderLibrary::initialize(void* device) {
+bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
     if (m_initialized) return true;
 
     m_impl->device = (__bridge id<MTLDevice>)device;
@@ -617,6 +617,9 @@ bool MetalShaderLibrary::initialize(void* device) {
         qCritical() << "MetalShaderLibrary: null device";
         return false;
     }
+
+    const NSUInteger rasterSamples =
+        (rasterSampleCount > 1) ? static_cast<NSUInteger>(rasterSampleCount) : 1u;
 
     // Compile all shaders from source
     NSError* error = nil;
@@ -651,6 +654,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"sphere_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"sphere_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -677,6 +681,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"bond_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"bond_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -703,6 +708,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"line_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"line_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -754,6 +760,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"fullscreen_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"display_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = NO;
 
@@ -775,6 +782,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_cylinder_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -800,6 +808,7 @@ bool MetalShaderLibrary::initialize(void* device) {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_sphere_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
+        desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;

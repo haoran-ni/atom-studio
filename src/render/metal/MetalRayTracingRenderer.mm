@@ -13,6 +13,8 @@
 
 namespace atom::render::metal {
 
+static constexpr NSUInteger kPreferredOverlaySampleCount = 4;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -122,6 +124,7 @@ static void createUnitSphereGeometry(int latSegments,
 struct MetalRayTracingRenderer::Impl {
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
+    NSUInteger overlaySampleCount = 1;
 
     // Full-screen quad (6 × float2)
     id<MTLBuffer> quadVertexBuffer = nil;
@@ -130,6 +133,7 @@ struct MetalRayTracingRenderer::Impl {
     id<MTLTexture> accumTexture = nil;
 
     // Display output texture (BGRA8Unorm) — what the viewport shows
+    id<MTLTexture> msaaOutputTexture = nil;
     id<MTLTexture> outputTexture = nil;
 
     // Atom data buffers
@@ -169,8 +173,17 @@ bool MetalRayTracingRenderer::initialize() {
 
     m_impl->commandQueue = [m_impl->device newCommandQueue];
 
+    m_impl->overlaySampleCount =
+        [m_impl->device supportsTextureSampleCount:kPreferredOverlaySampleCount]
+            ? kPreferredOverlaySampleCount
+            : 1;
+    if (m_impl->overlaySampleCount == 1) {
+        qWarning() << "MetalRayTracingRenderer: 4x MSAA not supported for display/overlay; using single-sample";
+    }
+
     // Compile shaders
-    if (!m_shaderLibrary.initialize((__bridge void*)m_impl->device)) {
+    if (!m_shaderLibrary.initialize((__bridge void*)m_impl->device,
+                                    static_cast<int>(m_impl->overlaySampleCount))) {
         return false;
     }
 
@@ -190,7 +203,7 @@ bool MetalRayTracingRenderer::initialize() {
     // Unit-cell overlay meshes (constant topology, instance-transformed).
     std::vector<float> cylinderVertices;
     std::vector<uint32_t> cylinderIndices;
-    createUnitCylinderGeometry(20, cylinderVertices, cylinderIndices);
+    createUnitCylinderGeometry(48, cylinderVertices, cylinderIndices);
     m_impl->unitCellCylinderVertexBuffer = [m_impl->device
         newBufferWithBytes:cylinderVertices.data()
                     length:cylinderVertices.size() * sizeof(float)
@@ -224,6 +237,7 @@ void MetalRayTracingRenderer::cleanup() {
 
     m_impl->quadVertexBuffer = nil;
     m_impl->accumTexture = nil;
+    m_impl->msaaOutputTexture = nil;
     m_impl->outputTexture = nil;
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
@@ -234,6 +248,7 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->unitCellSphereIndexBuffer = nil;
     m_impl->unitCellJointInstanceBuffer = nil;
     m_impl->commandQueue = nil;
+    m_impl->overlaySampleCount = 1;
 
     m_structure = nullptr;
     m_atomCount = 0;
@@ -272,14 +287,17 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
     }
 
     // Ensure render targets exist
-    if (!m_impl->accumTexture || !m_impl->outputTexture) {
+    if (!m_impl->accumTexture || !m_impl->outputTexture ||
+        (m_impl->overlaySampleCount > 1 && !m_impl->msaaOutputTexture)) {
         createRenderTargets();
         resetAccumulation();
     }
 
     if (m_atomCount == 0) {
-        // Clear output to background
-        if (m_impl->outputTexture) {
+        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
+            renderUnitCellOverlay(camera);
+        } else if (m_impl->outputTexture) {
+            // Clear output to background
             id<MTLCommandBuffer> cmd = [m_impl->commandQueue commandBuffer];
             MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
             pass.colorAttachments[0].texture = m_impl->outputTexture;
@@ -292,10 +310,6 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
             [enc endEncoding];
             [cmd commit];
             [cmd waitUntilCompleted];
-        }
-
-        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
-            renderUnitCellOverlay(camera);
         }
         return;
     }
@@ -314,11 +328,7 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
         renderRTPass(camera);
     }
 
-    renderDisplayPass();
-
-    if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
-        renderUnitCellOverlay(camera);
-    }
+    renderDisplayPass(camera);
 }
 
 void MetalRayTracingRenderer::invalidateAtomData() {
@@ -377,6 +387,21 @@ void MetalRayTracingRenderer::createRenderTargets() {
     outputDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     outputDesc.storageMode = MTLStorageModePrivate;
     m_impl->outputTexture = [m_impl->device newTextureWithDescriptor:outputDesc];
+
+    if (m_impl->overlaySampleCount > 1) {
+        MTLTextureDescriptor* msaaOutputDesc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                        width:m_width
+                                       height:m_height
+                                    mipmapped:NO];
+        msaaOutputDesc.textureType = MTLTextureType2DMultisample;
+        msaaOutputDesc.sampleCount = m_impl->overlaySampleCount;
+        msaaOutputDesc.usage = MTLTextureUsageRenderTarget;
+        msaaOutputDesc.storageMode = MTLStorageModePrivate;
+        m_impl->msaaOutputTexture = [m_impl->device newTextureWithDescriptor:msaaOutputDesc];
+    } else {
+        m_impl->msaaOutputTexture = nil;
+    }
 }
 
 void MetalRayTracingRenderer::uploadAtomData() {
@@ -543,16 +568,22 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
     [cmdBuffer waitUntilCompleted];
 }
 
-void MetalRayTracingRenderer::renderDisplayPass() {
+void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera) {
     DisplayUniforms disp{};
     disp.sampleCount = static_cast<float>(m_sampleCount);
 
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].texture = m_impl->outputTexture;
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    if (m_impl->msaaOutputTexture) {
+        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
+        pass.colorAttachments[0].resolveTexture = m_impl->outputTexture;
+        pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+    } else {
+        pass.colorAttachments[0].texture = m_impl->outputTexture;
+        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    }
 
     id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
 
@@ -571,6 +602,65 @@ void MetalRayTracingRenderer::renderDisplayPass() {
     [encoder setFragmentTexture:m_impl->accumTexture atIndex:0];
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+
+    if (m_settings.showUnitCell &&
+        m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0 &&
+        m_impl->unitCellCylinderVertexBuffer && m_impl->unitCellCylinderIndexBuffer &&
+        m_impl->unitCellEdgeInstanceBuffer &&
+        m_impl->unitCellSphereVertexBuffer && m_impl->unitCellSphereIndexBuffer &&
+        m_impl->unitCellJointInstanceBuffer) {
+        RTUnitCellUniforms unitCell{};
+        unitCell.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
+        QVector3D camPos = camera.position();
+        unitCell.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
+        unitCell.atomScale = m_settings.atomScale;
+        unitCell.atomCount = m_atomCount;
+        unitCell.occlusionBias = 0.001f;
+        unitCell.unitCellRadius = std::max(m_settings.unitCellThickness, 0.001f);
+        const QColor color = m_settings.unitCellColor;
+        unitCell.unitCellColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), 1.0f);
+
+        [encoder setDepthStencilState:depthState];
+        [encoder setCullMode:MTLCullModeNone];
+        [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
+
+        // Edge cylinders
+        {
+            id<MTLRenderPipelineState> overlayPipeline =
+                (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtUnitCellCylinderPipeline();
+            [encoder setRenderPipelineState:overlayPipeline];
+            [encoder setVertexBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+            [encoder setVertexBuffer:m_impl->unitCellCylinderVertexBuffer offset:0 atIndex:1];
+            [encoder setVertexBuffer:m_impl->unitCellEdgeInstanceBuffer offset:0 atIndex:2];
+            [encoder setFragmentBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+
+            [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                indexCount:m_unitCellCylinderIndexCount
+                                 indexType:MTLIndexTypeUInt32
+                               indexBuffer:m_impl->unitCellCylinderIndexBuffer
+                         indexBufferOffset:0
+                             instanceCount:m_unitCellEdgeCount];
+        }
+
+        // Corner joints
+        {
+            id<MTLRenderPipelineState> overlayPipeline =
+                (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtUnitCellSpherePipeline();
+            [encoder setRenderPipelineState:overlayPipeline];
+            [encoder setVertexBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+            [encoder setVertexBuffer:m_impl->unitCellSphereVertexBuffer offset:0 atIndex:1];
+            [encoder setVertexBuffer:m_impl->unitCellJointInstanceBuffer offset:0 atIndex:2];
+            [encoder setFragmentBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+
+            [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                indexCount:m_unitCellSphereIndexCount
+                                 indexType:MTLIndexTypeUInt32
+                               indexBuffer:m_impl->unitCellSphereIndexBuffer
+                         indexBufferOffset:0
+                             instanceCount:m_unitCellJointCount];
+        }
+    }
+
     [encoder endEncoding];
 
     [cmdBuffer commit];
@@ -601,9 +691,22 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].texture = m_impl->outputTexture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    if (m_impl->msaaOutputTexture) {
+        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
+        pass.colorAttachments[0].resolveTexture = m_impl->outputTexture;
+        pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+    } else {
+        pass.colorAttachments[0].texture = m_impl->outputTexture;
+        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    }
+    if (m_atomCount == 0) {
+        const auto& bg = m_settings.backgroundColor;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(
+            bg.redF(), bg.greenF(), bg.blueF(), 1.0);
+        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    } else {
+        pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    }
 
     id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
 

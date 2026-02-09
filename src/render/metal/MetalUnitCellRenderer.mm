@@ -47,7 +47,7 @@ bool MetalUnitCellRenderer::initialize(void* device, MetalShaderLibrary* shaderL
         return false;
     }
 
-    createCylinderGeometry(20);
+    createCylinderGeometry(48);
     createJointQuadGeometry();
 
     m_initialized = true;
