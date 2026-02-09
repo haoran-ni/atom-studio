@@ -48,7 +48,7 @@ struct RenderSettings {
     // Ray tracing
     int aoSamples = 4;            // AO rays per pixel per frame
     float aoRadius = 3.0f;        // AO sampling radius in Angstroms
-    int maxRTSamples = 4096;      // Max progressive samples before stopping
+    int maxRTSamples = 1000;      // Max progressive samples before stopping
 };
 
 } // namespace atom::render

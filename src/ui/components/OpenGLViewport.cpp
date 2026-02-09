@@ -142,6 +142,7 @@ public:
         // Sync render settings to active renderer
         m_activeRenderer->settings().showBonds = viewport->m_showBonds;
         m_activeRenderer->settings().atomScale = viewport->m_atomScale;
+        m_activeRenderer->settings().maxRTSamples = viewport->m_maxRTSamples;
         m_activeRenderer->settings().enableAmbientOcclusion = viewport->m_enableAO;
         m_activeRenderer->settings().enableShadows = viewport->m_enableShadows;
 
@@ -219,6 +220,10 @@ int OpenGLViewport::sampleCount() const {
     return m_sampleCount;
 }
 
+int OpenGLViewport::maxRTSamples() const {
+    return m_maxRTSamples;
+}
+
 bool OpenGLViewport::enableAO() const {
     return m_enableAO;
 }
@@ -292,6 +297,19 @@ void OpenGLViewport::setRendererMode(int mode) {
     if (m_rendererMode != mode) {
         m_rendererMode = mode;
         emit rendererModeChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setMaxRTSamples(int samples) {
+    if (samples < 1 || samples > 10000) {
+        qWarning() << "OpenGLViewport: maxRTSamples must be in [1, 10000], got" << samples;
+        return;
+    }
+
+    if (m_maxRTSamples != samples) {
+        m_maxRTSamples = samples;
+        emit maxRTSamplesChanged();
         update();
     }
 }

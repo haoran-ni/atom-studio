@@ -23,6 +23,7 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(float atomScale READ atomScale WRITE setAtomScale NOTIFY atomScaleChanged)
     Q_PROPERTY(int rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(int sampleCount READ sampleCount NOTIFY sampleCountChanged)
+    Q_PROPERTY(int maxRTSamples READ maxRTSamples WRITE setMaxRTSamples NOTIFY maxRTSamplesChanged)
     Q_PROPERTY(bool enableAO READ enableAO WRITE setEnableAO NOTIFY enableAOChanged)
     Q_PROPERTY(bool enableShadows READ enableShadows WRITE setEnableShadows NOTIFY enableShadowsChanged)
 
@@ -38,6 +39,7 @@ public:
     float atomScale() const;
     int rendererMode() const;
     int sampleCount() const;
+    int maxRTSamples() const;
     bool enableAO() const;
     bool enableShadows() const;
 
@@ -50,6 +52,7 @@ public slots:
     void setShowBonds(bool show);
     void setAtomScale(float scale);
     void setRendererMode(int mode);
+    void setMaxRTSamples(int samples);
     void setEnableAO(bool enable);
     void setEnableShadows(bool enable);
 
@@ -61,6 +64,7 @@ signals:
     void atomScaleChanged();
     void rendererModeChanged();
     void sampleCountChanged();
+    void maxRTSamplesChanged();
     void enableAOChanged();
     void enableShadowsChanged();
     void cameraChanged();
@@ -89,6 +93,7 @@ private:
     float m_atomScale = 1.0f;
     int m_rendererMode = 0;
     int m_sampleCount = 0;
+    int m_maxRTSamples = 1000;
     bool m_enableAO = false;
     bool m_enableShadows = false;
     float m_fps = 0.0f;

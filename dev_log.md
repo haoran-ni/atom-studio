@@ -4,6 +4,39 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-09: Ray Tracing Sample Cap + QML Stability Fixes
+
+### Summary
+Added a user-configurable maximum progressive sample cap for **Ray Tracing (Quality)** in the Render Settings panel. The cap now defaults to `1000`, accepts only integers in `[1, 10000]`, and stops accumulation when the current sample count reaches the cap. Accumulation resumes after camera/state changes because the existing reset path sets sample count back to zero.
+
+Also fixed follow-up QML runtime issues from the initial UI integration:
+- `ReferenceError: maxRTSamplesField is not defined`
+- `QML Dialog: Binding loop detected for property "implicitWidth"`
+- Font alias warning caused by explicit `"monospace"` family requests
+
+### Files Modified (8 files)
+| File | Change |
+|------|--------|
+| `src/render/common/RenderSettings.h` | Changed default `maxRTSamples` from `4096` to `1000` |
+| `src/ui/components/OpenGLViewport.h` | Added `maxRTSamples` Q_PROPERTY, getter/setter, change signal, and default member value |
+| `src/ui/components/OpenGLViewport.cpp` | Synced `maxRTSamples` into renderer settings and added range validation in setter (`1..10000`) |
+| `src/ui/components/MetalViewport.h` | Added `maxRTSamples` Q_PROPERTY, getter/setter, change signal, and default member value |
+| `src/ui/components/MetalViewport.mm` | Synced `maxRTSamples` into renderer settings and added range validation in setter (`1..10000`) |
+| `src/ui/qml/Sidebar.qml` | Added RT sample input field (shown only in RT mode), hover tooltip text, validation/error dialog, and fixed field scope/binding issues |
+| `src/ui/qml/ViewportPanel.qml` | Removed explicit monospace family declarations to avoid font alias fallback warning |
+| `dev_log.md` | Added this entry |
+
+### Behavior Notes
+- Tooltip on the RT sample input is: `"Enter any integer between 1 and 10000"`.
+- Invalid input (non-integer, `< 1`, `> 10000`) is rejected and reverted to the last valid value.
+- The cap applies to both implemented RT backends (OpenGL and Metal), because both use `m_settings.maxRTSamples` for convergence checks.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Manual run verification: RT sample cap works as expected; entering invalid values shows error and preserves prior valid value.
+
+---
+
 ## 2026-02-08: Metal Rendering Backend
 
 ### Summary

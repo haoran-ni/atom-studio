@@ -126,21 +126,18 @@ Rectangle {
                 text: "FPS: " + (viewportPanel.viewport ? viewportPanel.viewport.fps.toFixed(1) : "0.0")
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
                 text: "Atoms: " + (viewportPanel.viewport ? viewportPanel.viewport.atomCount : 0)
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
                 text: "Bonds: " + (viewportPanel.viewport ? viewportPanel.viewport.bondCount : 0)
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
@@ -148,7 +145,6 @@ Rectangle {
                 text: "Mode: Ray Tracing"
                 color: "#88ccff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
@@ -156,7 +152,6 @@ Rectangle {
                 text: "Samples: " + (viewportPanel.viewport ? viewportPanel.viewport.sampleCount : 0)
                 color: "#88ccff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
         }
     }
@@ -181,28 +176,24 @@ Rectangle {
                 text: "LMB: Rotate"
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
                 text: "RMB: Pan"
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
                 text: "Scroll: Zoom"
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
 
             Label {
                 text: "DblClick: Reset"
                 color: "#ffffff"
                 font.pixelSize: 10
-                font.family: "monospace"
             }
         }
     }

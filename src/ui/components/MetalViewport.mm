@@ -77,6 +77,7 @@ bool MetalViewport::showBonds() const { return m_showBonds; }
 float MetalViewport::atomScale() const { return m_atomScale; }
 int MetalViewport::rendererMode() const { return m_rendererMode; }
 int MetalViewport::sampleCount() const { return m_sampleCount; }
+int MetalViewport::maxRTSamples() const { return m_maxRTSamples; }
 bool MetalViewport::enableAO() const { return m_enableAO; }
 bool MetalViewport::enableShadows() const { return m_enableShadows; }
 
@@ -148,6 +149,19 @@ void MetalViewport::setRendererMode(int mode) {
     if (m_rendererMode != mode) {
         m_rendererMode = mode;
         emit rendererModeChanged();
+        update();
+    }
+}
+
+void MetalViewport::setMaxRTSamples(int samples) {
+    if (samples < 1 || samples > 10000) {
+        qWarning() << "MetalViewport: maxRTSamples must be in [1, 10000], got" << samples;
+        return;
+    }
+
+    if (m_maxRTSamples != samples) {
+        m_maxRTSamples = samples;
+        emit maxRTSamplesChanged();
         update();
     }
 }
@@ -230,6 +244,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     // 4. Sync state
     m_impl->activeRenderer->settings().showBonds = m_showBonds;
     m_impl->activeRenderer->settings().atomScale = m_atomScale;
+    m_impl->activeRenderer->settings().maxRTSamples = m_maxRTSamples;
     m_impl->activeRenderer->settings().enableAmbientOcclusion = m_enableAO;
     m_impl->activeRenderer->settings().enableShadows = m_enableShadows;
 

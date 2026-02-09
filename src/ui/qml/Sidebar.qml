@@ -7,6 +7,12 @@ Rectangle {
     id: sidebar
 
     property var viewport: null
+    property string maxRTSamplesErrorMessage: ""
+
+    function showMaxRTSamplesError(message) {
+        maxRTSamplesErrorMessage = message
+        maxRTSamplesErrorDialog.open()
+    }
 
     color: "#252526"
 
@@ -240,6 +246,66 @@ Rectangle {
                             }
                         }
 
+                        Label {
+                            text: qsTr("Max RT Samples")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.viewport && sidebar.viewport.rendererMode === 1
+                        }
+
+                        TextField {
+                            id: maxRTSamplesField
+                            Layout.fillWidth: true
+                            visible: sidebar.viewport && sidebar.viewport.rendererMode === 1
+                            text: sidebar.viewport ? sidebar.viewport.maxRTSamples.toString() : "1000"
+                            placeholderText: qsTr("1000")
+                            hoverEnabled: true
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            validator: IntValidator { bottom: 1; top: 10000 }
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Enter any integer between 1 and 10000")
+
+                            onEditingFinished: {
+                                if (!sidebar.viewport) {
+                                    return
+                                }
+
+                                const rawText = text.trim()
+                                if (!/^\d+$/.test(rawText)) {
+                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
+                                    text = sidebar.viewport.maxRTSamples.toString()
+                                    return
+                                }
+
+                                const parsed = Number(rawText)
+                                if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
+                                    text = sidebar.viewport.maxRTSamples.toString()
+                                    return
+                                }
+
+                                sidebar.viewport.maxRTSamples = parsed
+                                text = sidebar.viewport.maxRTSamples.toString()
+                            }
+
+                            Connections {
+                                target: sidebar.viewport
+                                ignoreUnknownSignals: true
+
+                                function onMaxRTSamplesChanged() {
+                                    if (sidebar.viewport) {
+                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
+                                    }
+                                }
+
+                                function onRendererModeChanged() {
+                                    if (sidebar.viewport && sidebar.viewport.rendererMode === 1) {
+                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
+                                    }
+                                }
+                            }
+                        }
+
                         CheckBox {
                             text: qsTr("Ambient Occlusion")
                             checked: sidebar.viewport ? sidebar.viewport.enableAO : false
@@ -287,6 +353,24 @@ Rectangle {
                     Layout.fillHeight: true
                 }
             }
+        }
+    }
+
+    Dialog {
+        id: maxRTSamplesErrorDialog
+        title: qsTr("Invalid Sample Limit")
+        modal: true
+        standardButtons: Dialog.Ok
+        width: 340
+        x: Math.round((sidebar.width - width) * 0.5)
+        y: Math.round((sidebar.height - height) * 0.5)
+
+        contentItem: Label {
+            text: sidebar.maxRTSamplesErrorMessage
+            width: 316
+            color: "#cccccc"
+            wrapMode: Text.WordWrap
+            padding: 12
         }
     }
 
