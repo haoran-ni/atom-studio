@@ -113,7 +113,7 @@ void OpenGLRenderer::render(const Camera& camera) {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
-    // Render unit cell lines (behind everything, no depth write interference)
+    // Render unit-cell object (thick wireframe cuboid built from lattice)
     m_unitCellRenderer.render(camera, m_settings);
 
     // Render bonds

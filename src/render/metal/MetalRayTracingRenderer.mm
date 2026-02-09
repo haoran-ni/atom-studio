@@ -6,8 +6,10 @@
 #include <QDebug>
 #include <QMatrix4x4>
 #include <array>
+#include <algorithm>
 #include <cstring>
 #include <functional>
+#include <vector>
 
 namespace atom::render::metal {
 
@@ -27,6 +29,90 @@ static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
     bias(2, 2) = 0.5f;
     bias(2, 3) = 0.5f;
     return qMatToSimd(bias * proj);
+}
+
+static void createUnitCylinderGeometry(int segments,
+                                       std::vector<float>& vertices,
+                                       std::vector<uint32_t>& indices) {
+    vertices.clear();
+    indices.clear();
+
+    const float pi = 3.14159265358979323846f;
+    for (int i = 0; i <= segments; ++i) {
+        const float angle = (2.0f * pi * i) / segments;
+        const float x = std::cos(angle);
+        const float y = std::sin(angle);
+
+        // Unit cylinder aligned to +Z from z=0 to z=1.
+        vertices.push_back(x);
+        vertices.push_back(y);
+        vertices.push_back(0.0f);
+
+        vertices.push_back(x);
+        vertices.push_back(y);
+        vertices.push_back(1.0f);
+    }
+
+    for (int i = 0; i < segments; ++i) {
+        const int b0 = i * 2;
+        const int t0 = i * 2 + 1;
+        const int b1 = (i + 1) * 2;
+        const int t1 = (i + 1) * 2 + 1;
+
+        indices.push_back(b0);
+        indices.push_back(b1);
+        indices.push_back(t0);
+
+        indices.push_back(t0);
+        indices.push_back(b1);
+        indices.push_back(t1);
+    }
+}
+
+static void createUnitSphereGeometry(int latSegments,
+                                     int lonSegments,
+                                     std::vector<float>& vertices,
+                                     std::vector<uint32_t>& indices) {
+    vertices.clear();
+    indices.clear();
+
+    const float pi = 3.14159265358979323846f;
+
+    for (int lat = 0; lat <= latSegments; ++lat) {
+        const float v = static_cast<float>(lat) / latSegments;
+        const float theta = v * pi;
+        const float sinTheta = std::sin(theta);
+        const float cosTheta = std::cos(theta);
+
+        for (int lon = 0; lon <= lonSegments; ++lon) {
+            const float u = static_cast<float>(lon) / lonSegments;
+            const float phi = u * (2.0f * pi);
+            const float sinPhi = std::sin(phi);
+            const float cosPhi = std::cos(phi);
+
+            vertices.push_back(sinTheta * cosPhi);
+            vertices.push_back(cosTheta);
+            vertices.push_back(sinTheta * sinPhi);
+        }
+    }
+
+    const int stride = lonSegments + 1;
+    for (int lat = 0; lat < latSegments; ++lat) {
+        for (int lon = 0; lon < lonSegments; ++lon) {
+            const uint32_t i0 = static_cast<uint32_t>(lat * stride + lon);
+            const uint32_t i1 = static_cast<uint32_t>((lat + 1) * stride + lon);
+            const uint32_t i2 = i0 + 1;
+            const uint32_t i3 = i1 + 1;
+
+            indices.push_back(i0);
+            indices.push_back(i1);
+            indices.push_back(i2);
+
+            indices.push_back(i2);
+            indices.push_back(i1);
+            indices.push_back(i3);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -50,9 +136,14 @@ struct MetalRayTracingRenderer::Impl {
     id<MTLBuffer> atomPositionBuffer = nil;  // float4(x,y,z,radius) per atom
     id<MTLBuffer> atomColorBuffer = nil;     // float4(r,g,b,a) per atom
 
-    // Unit cell line buffers (8 vertices, 24 indices)
-    id<MTLBuffer> unitCellVertexBuffer = nil;
-    id<MTLBuffer> unitCellIndexBuffer = nil;
+    // Unit-cell overlay geometry + instance buffers
+    id<MTLBuffer> unitCellCylinderVertexBuffer = nil;   // unit cylinder mesh (packed_float3)
+    id<MTLBuffer> unitCellCylinderIndexBuffer = nil;
+    id<MTLBuffer> unitCellEdgeInstanceBuffer = nil;     // 12 × BondInstance
+
+    id<MTLBuffer> unitCellSphereVertexBuffer = nil;     // unit sphere mesh (packed_float3)
+    id<MTLBuffer> unitCellSphereIndexBuffer = nil;
+    id<MTLBuffer> unitCellJointInstanceBuffer = nil;    // 8 × SphereInstance
 };
 
 MetalRayTracingRenderer::MetalRayTracingRenderer()
@@ -96,18 +187,32 @@ bool MetalRayTracingRenderer::initialize() {
                                                            length:sizeof(quadVerts)
                                                           options:MTLResourceStorageModeShared];
 
-    // Unit cell edge index buffer (constant topology)
-    const std::array<uint32_t, 24> unitCellIndices = {{
-        0, 1,   0, 2,   0, 3,
-        1, 4,   1, 5,
-        2, 4,   2, 6,
-        3, 5,   3, 6,
-        4, 7,   5, 7,   6, 7
-    }};
-    m_impl->unitCellIndexBuffer = [m_impl->device
-        newBufferWithBytes:unitCellIndices.data()
-                    length:unitCellIndices.size() * sizeof(uint32_t)
+    // Unit-cell overlay meshes (constant topology, instance-transformed).
+    std::vector<float> cylinderVertices;
+    std::vector<uint32_t> cylinderIndices;
+    createUnitCylinderGeometry(20, cylinderVertices, cylinderIndices);
+    m_impl->unitCellCylinderVertexBuffer = [m_impl->device
+        newBufferWithBytes:cylinderVertices.data()
+                    length:cylinderVertices.size() * sizeof(float)
                    options:MTLResourceStorageModeShared];
+    m_impl->unitCellCylinderIndexBuffer = [m_impl->device
+        newBufferWithBytes:cylinderIndices.data()
+                    length:cylinderIndices.size() * sizeof(uint32_t)
+                   options:MTLResourceStorageModeShared];
+    m_unitCellCylinderIndexCount = static_cast<int>(cylinderIndices.size());
+
+    std::vector<float> sphereVertices;
+    std::vector<uint32_t> sphereIndices;
+    createUnitSphereGeometry(10, 16, sphereVertices, sphereIndices);
+    m_impl->unitCellSphereVertexBuffer = [m_impl->device
+        newBufferWithBytes:sphereVertices.data()
+                    length:sphereVertices.size() * sizeof(float)
+                   options:MTLResourceStorageModeShared];
+    m_impl->unitCellSphereIndexBuffer = [m_impl->device
+        newBufferWithBytes:sphereIndices.data()
+                    length:sphereIndices.size() * sizeof(uint32_t)
+                   options:MTLResourceStorageModeShared];
+    m_unitCellSphereIndexCount = static_cast<int>(sphereIndices.size());
 
     m_initialized = true;
     qInfo() << "MetalRayTracingRenderer: initialized successfully";
@@ -122,13 +227,20 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->outputTexture = nil;
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
-    m_impl->unitCellVertexBuffer = nil;
-    m_impl->unitCellIndexBuffer = nil;
+    m_impl->unitCellCylinderVertexBuffer = nil;
+    m_impl->unitCellCylinderIndexBuffer = nil;
+    m_impl->unitCellEdgeInstanceBuffer = nil;
+    m_impl->unitCellSphereVertexBuffer = nil;
+    m_impl->unitCellSphereIndexBuffer = nil;
+    m_impl->unitCellJointInstanceBuffer = nil;
     m_impl->commandQueue = nil;
 
     m_structure = nullptr;
     m_atomCount = 0;
     m_unitCellEdgeCount = 0;
+    m_unitCellJointCount = 0;
+    m_unitCellCylinderIndexCount = 0;
+    m_unitCellSphereIndexCount = 0;
     m_initialized = false;
 }
 
@@ -182,7 +294,7 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
             [cmd waitUntilCompleted];
         }
 
-        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0) {
+        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
             renderUnitCellOverlay(camera);
         }
         return;
@@ -204,7 +316,7 @@ void MetalRayTracingRenderer::render(const Camera& camera) {
 
     renderDisplayPass();
 
-    if (m_settings.showUnitCell && m_unitCellEdgeCount > 0) {
+    if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
         renderUnitCellOverlay(camera);
     }
 }
@@ -295,8 +407,10 @@ void MetalRayTracingRenderer::uploadAtomData() {
 
 void MetalRayTracingRenderer::uploadUnitCellData() {
     if (!m_structure || !m_structure->hasLattice()) {
-        m_impl->unitCellVertexBuffer = nil;
+        m_impl->unitCellEdgeInstanceBuffer = nil;
+        m_impl->unitCellJointInstanceBuffer = nil;
         m_unitCellEdgeCount = 0;
+        m_unitCellJointCount = 0;
         m_unitCellDataDirty = false;
         return;
     }
@@ -314,23 +428,51 @@ void MetalRayTracingRenderer::uploadUnitCellData() {
     const float cy = static_cast<float>(mat[2][1]);
     const float cz = static_cast<float>(mat[2][2]);
 
-    const simd_float4 white = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
-    const std::array<LineVertex, 8> vertices = {{
-        { simd_make_float3(0.0f, 0.0f, 0.0f),                        0.0f, white }, // O
-        { simd_make_float3(ax, ay, az),                              0.0f, white }, // A
-        { simd_make_float3(bx, by, bz),                              0.0f, white }, // B
-        { simd_make_float3(cx, cy, cz),                              0.0f, white }, // C
-        { simd_make_float3(ax + bx, ay + by, az + bz),               0.0f, white }, // A+B
-        { simd_make_float3(ax + cx, ay + cy, az + cz),               0.0f, white }, // A+C
-        { simd_make_float3(bx + cx, by + cy, bz + cz),               0.0f, white }, // B+C
-        { simd_make_float3(ax + bx + cx, ay + by + cy, az + bz + cz),0.0f, white }, // A+B+C
+    const std::array<simd_float3, 8> corners = {{
+        simd_make_float3(0.0f, 0.0f, 0.0f),                        // O
+        simd_make_float3(ax, ay, az),                              // A
+        simd_make_float3(bx, by, bz),                              // B
+        simd_make_float3(cx, cy, cz),                              // C
+        simd_make_float3(ax + bx, ay + by, az + bz),               // A+B
+        simd_make_float3(ax + cx, ay + cy, az + cz),               // A+C
+        simd_make_float3(bx + cx, by + cy, bz + cz),               // B+C
+        simd_make_float3(ax + bx + cx, ay + by + cy, az + bz + cz) // A+B+C
     }};
 
-    m_impl->unitCellVertexBuffer = [m_impl->device
-        newBufferWithBytes:vertices.data()
-                    length:vertices.size() * sizeof(LineVertex)
+    const std::array<uint32_t, 24> edgeIndices = {{
+        0, 1,   0, 2,   0, 3,
+        1, 4,   1, 5,
+        2, 4,   2, 6,
+        3, 5,   3, 6,
+        4, 7,   5, 7,   6, 7
+    }};
+
+    const simd_float4 white = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
+
+    std::array<BondInstance, 12> edgeInstances{};
+    for (int i = 0; i < 12; ++i) {
+        edgeInstances[i].start = corners[edgeIndices[i * 2 + 0]];
+        edgeInstances[i].end = corners[edgeIndices[i * 2 + 1]];
+        edgeInstances[i].color = white;
+    }
+
+    std::array<SphereInstance, 8> jointInstances{};
+    for (int i = 0; i < 8; ++i) {
+        jointInstances[i].positionAndRadius = simd_make_float4(corners[i], 1.0f);
+        jointInstances[i].color = white;
+    }
+
+    m_impl->unitCellEdgeInstanceBuffer = [m_impl->device
+        newBufferWithBytes:edgeInstances.data()
+                    length:edgeInstances.size() * sizeof(BondInstance)
                    options:MTLResourceStorageModeShared];
+    m_impl->unitCellJointInstanceBuffer = [m_impl->device
+        newBufferWithBytes:jointInstances.data()
+                    length:jointInstances.size() * sizeof(SphereInstance)
+                   options:MTLResourceStorageModeShared];
+
     m_unitCellEdgeCount = 12;
+    m_unitCellJointCount = 8;
     m_unitCellDataDirty = false;
 }
 
@@ -436,20 +578,25 @@ void MetalRayTracingRenderer::renderDisplayPass() {
 }
 
 void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
-    if (!m_impl->outputTexture || !m_impl->unitCellVertexBuffer ||
-        !m_impl->unitCellIndexBuffer || m_unitCellEdgeCount == 0) {
+    if (!m_impl->outputTexture ||
+        !m_impl->unitCellCylinderVertexBuffer || !m_impl->unitCellCylinderIndexBuffer ||
+        !m_impl->unitCellEdgeInstanceBuffer ||
+        !m_impl->unitCellSphereVertexBuffer || !m_impl->unitCellSphereIndexBuffer ||
+        !m_impl->unitCellJointInstanceBuffer ||
+        m_unitCellEdgeCount == 0 || m_unitCellJointCount == 0) {
         return;
     }
 
-    RTLineUniforms line{};
-    line.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
+    RTUnitCellUniforms unitCell{};
+    unitCell.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
     QVector3D camPos = camera.position();
-    line.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
-    line.atomScale = m_settings.atomScale;
-    line.atomCount = m_atomCount;
-    line.occlusionBias = 0.001f;
+    unitCell.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
+    unitCell.atomScale = m_settings.atomScale;
+    unitCell.atomCount = m_atomCount;
+    unitCell.occlusionBias = 0.001f;
+    unitCell.unitCellRadius = std::max(m_settings.unitCellThickness, 0.001f);
     const QColor color = m_settings.unitCellColor;
-    line.lineColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), color.alphaF());
+    unitCell.unitCellColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), 1.0f);
 
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
@@ -464,26 +611,49 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
         static_cast<double>(m_width), static_cast<double>(m_height),
         0.0, 1.0}];
 
-    id<MTLRenderPipelineState> pipeline =
-        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtLinePipeline();
     id<MTLDepthStencilState> depthState =
         (__bridge id<MTLDepthStencilState>)m_shaderLibrary.depthDisabledState();
 
-    [encoder setRenderPipelineState:pipeline];
     [encoder setDepthStencilState:depthState];
     [encoder setCullMode:MTLCullModeNone];
 
-    [encoder setVertexBytes:&line length:sizeof(RTLineUniforms) atIndex:0];
-    [encoder setVertexBuffer:m_impl->unitCellVertexBuffer offset:0 atIndex:1];
-
-    [encoder setFragmentBytes:&line length:sizeof(RTLineUniforms) atIndex:0];
     [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
 
-    [encoder drawIndexedPrimitives:MTLPrimitiveTypeLine
-                        indexCount:m_unitCellEdgeCount * 2
-                         indexType:MTLIndexTypeUInt32
-                       indexBuffer:m_impl->unitCellIndexBuffer
-                 indexBufferOffset:0];
+    // Edge cylinders
+    {
+        id<MTLRenderPipelineState> pipeline =
+            (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtUnitCellCylinderPipeline();
+        [encoder setRenderPipelineState:pipeline];
+        [encoder setVertexBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+        [encoder setVertexBuffer:m_impl->unitCellCylinderVertexBuffer offset:0 atIndex:1];
+        [encoder setVertexBuffer:m_impl->unitCellEdgeInstanceBuffer offset:0 atIndex:2];
+        [encoder setFragmentBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+
+        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                            indexCount:m_unitCellCylinderIndexCount
+                             indexType:MTLIndexTypeUInt32
+                           indexBuffer:m_impl->unitCellCylinderIndexBuffer
+                     indexBufferOffset:0
+                         instanceCount:m_unitCellEdgeCount];
+    }
+
+    // Corner joints
+    {
+        id<MTLRenderPipelineState> pipeline =
+            (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.rtUnitCellSpherePipeline();
+        [encoder setRenderPipelineState:pipeline];
+        [encoder setVertexBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+        [encoder setVertexBuffer:m_impl->unitCellSphereVertexBuffer offset:0 atIndex:1];
+        [encoder setVertexBuffer:m_impl->unitCellJointInstanceBuffer offset:0 atIndex:2];
+        [encoder setFragmentBytes:&unitCell length:sizeof(RTUnitCellUniforms) atIndex:0];
+
+        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                            indexCount:m_unitCellSphereIndexCount
+                             indexType:MTLIndexTypeUInt32
+                           indexBuffer:m_impl->unitCellSphereIndexBuffer
+                     indexBufferOffset:0
+                         instanceCount:m_unitCellJointCount];
+    }
     [encoder endEncoding];
 
     [cmdBuffer commit];

@@ -172,9 +172,9 @@ void MetalRenderer::render(const Camera& camera) {
         static_cast<double>(m_width), static_cast<double>(m_height),
         0.0, 1.0}];
 
-    // Render order: unit cell -> bonds -> spheres (back to front)
+    // Render order: unit-cell object -> bonds -> spheres
     if (m_settings.showUnitCell) {
-        m_unitCellRenderer.render((__bridge void*)encoder, uniforms);
+        m_unitCellRenderer.render((__bridge void*)encoder, uniforms, m_settings);
     }
     if (m_settings.showBonds) {
         m_bondRenderer.render((__bridge void*)encoder, uniforms);

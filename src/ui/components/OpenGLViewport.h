@@ -2,6 +2,7 @@
 
 #include <QQuickFramebufferObject>
 #include <QOpenGLFramebufferObject>
+#include <QColor>
 #include <QtQml/qqmlregistration.h>
 #include <memory>
 
@@ -32,6 +33,9 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(int bondCount READ bondCount NOTIFY bondCountChanged)
     Q_PROPERTY(float fps READ fps NOTIFY fpsChanged)
     Q_PROPERTY(bool showBonds READ showBonds WRITE setShowBonds NOTIFY showBondsChanged)
+    Q_PROPERTY(bool showUnitCell READ showUnitCell WRITE setShowUnitCell NOTIFY showUnitCellChanged)
+    Q_PROPERTY(float unitCellThickness READ unitCellThickness WRITE setUnitCellThickness NOTIFY unitCellThicknessChanged)
+    Q_PROPERTY(QColor unitCellColor READ unitCellColor WRITE setUnitCellColor NOTIFY unitCellColorChanged)
     Q_PROPERTY(float atomScale READ atomScale WRITE setAtomScale NOTIFY atomScaleChanged)
     Q_PROPERTY(int rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(int sampleCount READ sampleCount NOTIFY sampleCountChanged)
@@ -50,6 +54,9 @@ public:
     int bondCount() const;
     float fps() const;
     bool showBonds() const;
+    bool showUnitCell() const;
+    float unitCellThickness() const;
+    QColor unitCellColor() const;
     float atomScale() const;
     int rendererMode() const;
     int sampleCount() const;
@@ -64,6 +71,9 @@ public slots:
     void fitToView();
     void resetCamera();
     void setShowBonds(bool show);
+    void setShowUnitCell(bool show);
+    void setUnitCellThickness(float thickness);
+    void setUnitCellColor(const QColor& color);
     void setAtomScale(float scale);
     void setRendererMode(int mode);
     void setMaxRTSamples(int samples);
@@ -75,6 +85,9 @@ signals:
     void bondCountChanged();
     void fpsChanged();
     void showBondsChanged();
+    void showUnitCellChanged();
+    void unitCellThicknessChanged();
+    void unitCellColorChanged();
     void atomScaleChanged();
     void rendererModeChanged();
     void sampleCountChanged();
@@ -103,6 +116,9 @@ private:
     Qt::MouseButtons m_pressedButtons;
 
     bool m_showBonds = true;
+    bool m_showUnitCell = true;
+    float m_unitCellThickness = 0.12f;
+    QColor m_unitCellColor = QColor(255, 255, 255);
     float m_atomScale = 1.0f;
     int m_rendererMode = 0;       // 0 = Raster, 1 = RayTracing
     int m_sampleCount = 0;

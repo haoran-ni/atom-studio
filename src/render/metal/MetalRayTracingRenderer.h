@@ -58,6 +58,9 @@ private:
     bool m_atomDataDirty = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;
+    int m_unitCellJointCount = 0;
+    int m_unitCellCylinderIndexCount = 0;
+    int m_unitCellSphereIndexCount = 0;
     uint64_t m_lastStateHash = 0;
 };
 

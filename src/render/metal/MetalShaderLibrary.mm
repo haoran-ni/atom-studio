@@ -77,14 +77,15 @@ struct DisplayUniforms {
     float _pad[3];
 };
 
-struct RTLineUniforms {
+struct RTUnitCellUniforms {
     float4x4 viewProjectionMatrix;
     float3   cameraPosition;
     float    atomScale;
     int      atomCount;
     float    occlusionBias;
-    float    _pad[2];
-    float4   lineColor;
+    float    unitCellRadius;
+    float    _pad0;
+    float4   unitCellColor;
 };
 
 // -------------------------------------------------------
@@ -282,66 +283,95 @@ fragment float4 line_fragment(LineVertexOut in [[stage_in]])
 }
 
 // -------------------------------------------------------
-// RT unit cell overlay line shader (simple lines + atom occlusion)
+// RT unit-cell object overlay shaders (cylinders + joints)
 // -------------------------------------------------------
 
-struct RTLineVertexOut {
+struct RTUnitCellVertexOut {
     float4 position [[position]];
     float3 worldPos;
 };
 
-vertex RTLineVertexOut rt_line_vertex(
+vertex RTUnitCellVertexOut rt_unit_cell_cylinder_vertex(
     uint vid [[vertex_id]],
-    constant RTLineUniforms& line [[buffer(0)]],
-    constant LineVertex* vertices [[buffer(1)]])
+    uint iid [[instance_id]],
+    constant RTUnitCellUniforms& unitCell [[buffer(0)]],
+    constant packed_float3* vertices [[buffer(1)]],
+    constant BondInstance* edges [[buffer(2)]])
 {
-    RTLineVertexOut out;
-    LineVertex v = vertices[vid];
-    out.worldPos = v.position;
-    out.position = line.viewProjectionMatrix * float4(v.position, 1.0);
+    RTUnitCellVertexOut out;
+    BondInstance edge = edges[iid];
+
+    float3 bondDir = edge.end - edge.start;
+    float bondLength = length(bondDir);
+    bondDir = (bondLength > 1e-6) ? (bondDir / bondLength) : float3(0.0, 0.0, 1.0);
+
+    float3 up = abs(bondDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, bondDir));
+    up = cross(bondDir, right);
+
+    float3 local = float3(vertices[vid]);
+    float3 worldPos = edge.start +
+                      right * local.x * unitCell.unitCellRadius +
+                      up * local.y * unitCell.unitCellRadius +
+                      bondDir * local.z * bondLength;
+
+    out.worldPos = worldPos;
+    out.position = unitCell.viewProjectionMatrix * float4(worldPos, 1.0);
     return out;
 }
 
-fragment float4 rt_line_fragment(
-    RTLineVertexOut in [[stage_in]],
-    constant RTLineUniforms& line [[buffer(0)]],
+vertex RTUnitCellVertexOut rt_unit_cell_sphere_vertex(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant RTUnitCellUniforms& unitCell [[buffer(0)]],
+    constant packed_float3* vertices [[buffer(1)]],
+    constant SphereInstance* joints [[buffer(2)]])
+{
+    RTUnitCellVertexOut out;
+    SphereInstance joint = joints[iid];
+    float3 center = joint.positionAndRadius.xyz;
+    float3 local = float3(vertices[vid]);
+    float3 worldPos = center + local * unitCell.unitCellRadius;
+
+    out.worldPos = worldPos;
+    out.position = unitCell.viewProjectionMatrix * float4(worldPos, 1.0);
+    return out;
+}
+
+fragment float4 rt_unit_cell_fragment(
+    RTUnitCellVertexOut in [[stage_in]],
+    constant RTUnitCellUniforms& unitCell [[buffer(0)]],
     device const float4* atomPositions [[buffer(1)]])
 {
-    // Cast a ray from the camera to this line fragment and discard if any atom
-    // is intersected before reaching the line point.
-    float3 ro = line.cameraPosition;
-    float3 toLine = in.worldPos - ro;
-    float lineDist = length(toLine);
+    // Cast a ray from camera to the unit-cell fragment and hide it if an atom
+    // is intersected first. This keeps atom-only occlusion while unit cell
+    // remains outside RT accumulation.
+    float3 ro = unitCell.cameraPosition;
+    float3 toPoint = in.worldPos - ro;
+    float pointDist = length(toPoint);
 
-    if (line.atomCount > 0 && lineDist > 1e-6) {
-        float3 rd = toLine / lineDist;
-        float maxT = max(lineDist - line.occlusionBias, 0.0);
+    if (unitCell.atomCount > 0 && pointDist > 1e-6) {
+        float3 rd = toPoint / pointDist;
+        float maxT = max(pointDist - unitCell.occlusionBias, 0.0);
 
-        for (int i = 0; i < line.atomCount; ++i) {
+        for (int i = 0; i < unitCell.atomCount; ++i) {
             float4 atom = atomPositions[i];
-            float r = atom.w * line.atomScale;
+            float r = atom.w * unitCell.atomScale;
 
             float3 oc = ro - atom.xyz;
             float b = dot(oc, rd);
             float c = dot(oc, oc) - r * r;
             float disc = b * b - c;
-            if (disc < 0.0) {
-                continue;
-            }
+            if (disc < 0.0) continue;
 
             float sqrtDisc = sqrt(disc);
             float t = -b - sqrtDisc;
-            if (t <= 0.001) {
-                t = -b + sqrtDisc;
-            }
-
-            if (t > 0.001 && t < maxT) {
-                discard_fragment();
-            }
+            if (t <= 0.001) t = -b + sqrtDisc;
+            if (t > 0.001 && t < maxT) discard_fragment();
         }
     }
 
-    return line.lineColor;
+    return unitCell.unitCellColor;
 }
 
 // -------------------------------------------------------
@@ -564,7 +594,8 @@ struct MetalShaderLibrary::Impl {
     id<MTLRenderPipelineState> linePipeline = nil;
     id<MTLRenderPipelineState> rtPipeline = nil;
     id<MTLRenderPipelineState> displayPipeline = nil;
-    id<MTLRenderPipelineState> rtLinePipeline = nil;
+    id<MTLRenderPipelineState> rtUnitCellCylinderPipeline = nil;
+    id<MTLRenderPipelineState> rtUnitCellSpherePipeline = nil;
     id<MTLDepthStencilState> depthLessWriteState = nil;
     id<MTLDepthStencilState> depthDisabledState = nil;
 };
@@ -739,11 +770,11 @@ bool MetalShaderLibrary::initialize(void* device) {
         }
     }
 
-    // --- RT unit cell overlay line pipeline (alpha blend, BGRA8, no depth) ---
+    // --- RT unit-cell cylinder overlay pipeline (alpha blend, BGRA8, no depth) ---
     {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
-        desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_line_vertex"];
-        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_line_fragment"];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_cylinder_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -752,13 +783,38 @@ bool MetalShaderLibrary::initialize(void* device) {
         desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {
-            qCritical() << "MetalShaderLibrary: RT line shader functions not found";
+            qCritical() << "MetalShaderLibrary: RT unit-cell cylinder shader functions not found";
             return false;
         }
 
-        m_impl->rtLinePipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
-        if (!m_impl->rtLinePipeline) {
-            qCritical() << "MetalShaderLibrary: RT line pipeline failed:"
+        m_impl->rtUnitCellCylinderPipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->rtUnitCellCylinderPipeline) {
+            qCritical() << "MetalShaderLibrary: RT unit-cell cylinder pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
+    // --- RT unit-cell sphere overlay pipeline (alpha blend, BGRA8, no depth) ---
+    {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_sphere_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+
+        if (!desc.vertexFunction || !desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: RT unit-cell sphere shader functions not found";
+            return false;
+        }
+
+        m_impl->rtUnitCellSpherePipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->rtUnitCellSpherePipeline) {
+            qCritical() << "MetalShaderLibrary: RT unit-cell sphere pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -776,7 +832,8 @@ void MetalShaderLibrary::cleanup() {
         m_impl->linePipeline = nil;
         m_impl->rtPipeline = nil;
         m_impl->displayPipeline = nil;
-        m_impl->rtLinePipeline = nil;
+        m_impl->rtUnitCellCylinderPipeline = nil;
+        m_impl->rtUnitCellSpherePipeline = nil;
         m_impl->depthLessWriteState = nil;
         m_impl->depthDisabledState = nil;
         m_impl->library = nil;
@@ -805,8 +862,12 @@ void* MetalShaderLibrary::displayPipeline() const {
     return (__bridge void*)m_impl->displayPipeline;
 }
 
-void* MetalShaderLibrary::rtLinePipeline() const {
-    return (__bridge void*)m_impl->rtLinePipeline;
+void* MetalShaderLibrary::rtUnitCellCylinderPipeline() const {
+    return (__bridge void*)m_impl->rtUnitCellCylinderPipeline;
+}
+
+void* MetalShaderLibrary::rtUnitCellSpherePipeline() const {
+    return (__bridge void*)m_impl->rtUnitCellSpherePipeline;
 }
 
 void* MetalShaderLibrary::depthLessWriteState() const {

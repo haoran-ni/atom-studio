@@ -21,8 +21,8 @@ struct RenderSettings {
 
     // Unit cell
     bool showUnitCell = true;
-    QColor unitCellColor = QColor(255, 255, 255, 128);
-    float unitCellLineWidth = 1.5f;
+    QColor unitCellColor = QColor(255, 255, 255);
+    float unitCellThickness = 0.12f;  // Cylinder/sphere radius in Angstroms
 
     // Lighting
     float ambientStrength = 0.3f;

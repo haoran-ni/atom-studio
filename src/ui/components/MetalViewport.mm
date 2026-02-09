@@ -15,6 +15,7 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QDebug>
+#include <algorithm>
 
 // Qt 6 native interface for wrapping Metal textures
 #include <QSGTexture>
@@ -74,6 +75,9 @@ int MetalViewport::bondCount() const {
 
 float MetalViewport::fps() const { return m_fps; }
 bool MetalViewport::showBonds() const { return m_showBonds; }
+bool MetalViewport::showUnitCell() const { return m_showUnitCell; }
+float MetalViewport::unitCellThickness() const { return m_unitCellThickness; }
+QColor MetalViewport::unitCellColor() const { return m_unitCellColor; }
 float MetalViewport::atomScale() const { return m_atomScale; }
 int MetalViewport::rendererMode() const { return m_rendererMode; }
 int MetalViewport::sampleCount() const { return m_sampleCount; }
@@ -133,6 +137,33 @@ void MetalViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        update();
+    }
+}
+
+void MetalViewport::setShowUnitCell(bool show) {
+    if (m_showUnitCell != show) {
+        m_showUnitCell = show;
+        emit showUnitCellChanged();
+        update();
+    }
+}
+
+void MetalViewport::setUnitCellThickness(float thickness) {
+    const float clamped = std::clamp(thickness, 0.01f, 2.0f);
+    if (!qFuzzyCompare(m_unitCellThickness, clamped)) {
+        m_unitCellThickness = clamped;
+        emit unitCellThicknessChanged();
+        update();
+    }
+}
+
+void MetalViewport::setUnitCellColor(const QColor& color) {
+    QColor opaque = color;
+    opaque.setAlpha(255);
+    if (m_unitCellColor != opaque) {
+        m_unitCellColor = opaque;
+        emit unitCellColorChanged();
         update();
     }
 }
@@ -243,6 +274,9 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
 
     // 4. Sync state
     m_impl->activeRenderer->settings().showBonds = m_showBonds;
+    m_impl->activeRenderer->settings().showUnitCell = m_showUnitCell;
+    m_impl->activeRenderer->settings().unitCellThickness = m_unitCellThickness;
+    m_impl->activeRenderer->settings().unitCellColor = m_unitCellColor;
     m_impl->activeRenderer->settings().atomScale = m_atomScale;
     m_impl->activeRenderer->settings().maxRTSamples = m_maxRTSamples;
     m_impl->activeRenderer->settings().enableAmbientOcclusion = m_enableAO;

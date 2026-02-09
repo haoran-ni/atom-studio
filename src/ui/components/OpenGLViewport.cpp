@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QOpenGLFramebufferObjectFormat>
 #include <QDebug>
+#include <algorithm>
 
 namespace atom::ui {
 
@@ -141,6 +142,9 @@ public:
 
         // Sync render settings to active renderer
         m_activeRenderer->settings().showBonds = viewport->m_showBonds;
+        m_activeRenderer->settings().showUnitCell = viewport->m_showUnitCell;
+        m_activeRenderer->settings().unitCellThickness = viewport->m_unitCellThickness;
+        m_activeRenderer->settings().unitCellColor = viewport->m_unitCellColor;
         m_activeRenderer->settings().atomScale = viewport->m_atomScale;
         m_activeRenderer->settings().maxRTSamples = viewport->m_maxRTSamples;
         m_activeRenderer->settings().enableAmbientOcclusion = viewport->m_enableAO;
@@ -206,6 +210,18 @@ float OpenGLViewport::fps() const {
 
 bool OpenGLViewport::showBonds() const {
     return m_showBonds;
+}
+
+bool OpenGLViewport::showUnitCell() const {
+    return m_showUnitCell;
+}
+
+float OpenGLViewport::unitCellThickness() const {
+    return m_unitCellThickness;
+}
+
+QColor OpenGLViewport::unitCellColor() const {
+    return m_unitCellColor;
 }
 
 float OpenGLViewport::atomScale() const {
@@ -281,6 +297,33 @@ void OpenGLViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setShowUnitCell(bool show) {
+    if (m_showUnitCell != show) {
+        m_showUnitCell = show;
+        emit showUnitCellChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setUnitCellThickness(float thickness) {
+    const float clamped = std::clamp(thickness, 0.01f, 2.0f);
+    if (!qFuzzyCompare(m_unitCellThickness, clamped)) {
+        m_unitCellThickness = clamped;
+        emit unitCellThicknessChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setUnitCellColor(const QColor& color) {
+    QColor opaque = color;
+    opaque.setAlpha(255);
+    if (m_unitCellColor != opaque) {
+        m_unitCellColor = opaque;
+        emit unitCellColorChanged();
         update();
     }
 }

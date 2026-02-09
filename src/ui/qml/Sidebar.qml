@@ -158,9 +158,139 @@ Rectangle {
                             }
                         }
 
+                    }
+                }
+
+                // Unit Cell Section
+                CollapsibleSection {
+                    title: qsTr("Unit Cell")
+                    Layout.fillWidth: true
+
+                    content: ColumnLayout {
+                        spacing: 8
+
                         CheckBox {
                             text: qsTr("Show Unit Cell")
-                            checked: true
+                            checked: sidebar.viewport ? sidebar.viewport.showUnitCell : true
+                            onCheckedChanged: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.showUnitCell = checked
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Thickness")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Slider {
+                            id: unitCellThicknessSlider
+                            Layout.fillWidth: true
+                            from: 0.01
+                            to: 2.0
+                            value: sidebar.viewport ? sidebar.viewport.unitCellThickness : 0.12
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.unitCellThickness = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("RGB Color")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 24
+                            radius: 2
+                            border.color: "#3c3c3c"
+                            border.width: 1
+                            color: Qt.rgba(
+                                unitCellRedSlider.value / 255.0,
+                                unitCellGreenSlider.value / 255.0,
+                                unitCellBlueSlider.value / 255.0,
+                                1.0
+                            )
+                        }
+
+                        Label {
+                            text: qsTr("R")
+                            color: "#ff7777"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: unitCellRedSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.r * 255) : 255
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.unitCellColor = Qt.rgba(
+                                        value / 255.0,
+                                        unitCellGreenSlider.value / 255.0,
+                                        unitCellBlueSlider.value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("G")
+                            color: "#77ff77"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: unitCellGreenSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.g * 255) : 255
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.unitCellColor = Qt.rgba(
+                                        unitCellRedSlider.value / 255.0,
+                                        value / 255.0,
+                                        unitCellBlueSlider.value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("B")
+                            color: "#7777ff"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: unitCellBlueSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.b * 255) : 255
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.unitCellColor = Qt.rgba(
+                                        unitCellRedSlider.value / 255.0,
+                                        unitCellGreenSlider.value / 255.0,
+                                        value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
                         }
                     }
                 }

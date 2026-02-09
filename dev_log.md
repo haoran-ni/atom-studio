@@ -4,6 +4,64 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-09: Replace Unit Cell Lines with Dedicated Unit-Cell Object
+
+### Summary
+Replaced the previous line-primitive unit-cell visualization with a dedicated **unit-cell object** rendered as a thick wireframe cuboid:
+- 12 cylindrical edges
+- 8 corner joints for smooth edge intersections
+
+The new unit-cell object is rendered outside ray-tracing accumulation and outside shadow logic. Atom objects remain the only geometry participating in ray tracing, AO, and shadows.
+
+Added a dedicated **Unit Cell** section in the sidebar with runtime controls for:
+- Show/hide unit cell
+- Unit-cell thickness (cylinder/joint radius)
+- Unit-cell color (RGB, opaque)
+
+### Files Modified (18 files)
+| File | Change |
+|------|--------|
+| `src/render/common/RenderSettings.h` | Replaced `unitCellLineWidth` with `unitCellThickness`; default unit-cell color is opaque RGB |
+| `src/render/opengl/UnitCellRenderer.h` | Refactored renderer interface/state from line buffers to cylinder+joint object buffers |
+| `src/render/opengl/UnitCellRenderer.cpp` | Implemented unit-cell object generation/rendering (instanced cylinders + corner sphere joints) |
+| `src/render/opengl/OpenGLRenderer.cpp` | Updated unit-cell render stage comment/usage for object rendering |
+| `src/render/metal/MetalUnitCellRenderer.h` | Updated API to render with full settings (thickness/color) |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Replaced line rendering with cylinder edges + sphere-joint object rendering |
+| `src/render/metal/MetalRenderer.mm` | Updated unit-cell render call to pass settings and object path |
+| `src/render/metal/MetalTypes.h` | Replaced RT line overlay uniforms with `RTUnitCellUniforms` |
+| `src/render/metal/MetalShaderLibrary.h` | Replaced old RT line pipeline accessor with cylinder/sphere unit-cell overlay accessors |
+| `src/render/metal/MetalShaderLibrary.mm` | Replaced RT line overlay shader/pipeline with RT unit-cell object overlay shaders/pipelines |
+| `src/render/metal/MetalRayTracingRenderer.h` | Added unit-cell overlay object state counters (edges/joints/index counts) |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Replaced RT line overlay with object overlay (cylinders + joints), atom-occlusion-only fragment logic preserved |
+| `src/ui/components/OpenGLViewport.h` | Added Q_PROPERTY controls for `showUnitCell`, `unitCellThickness`, `unitCellColor` |
+| `src/ui/components/OpenGLViewport.cpp` | Wired unit-cell settings into renderer sync; added setters/getters/signals |
+| `src/ui/components/MetalViewport.h` | Added Q_PROPERTY controls for `showUnitCell`, `unitCellThickness`, `unitCellColor` |
+| `src/ui/components/MetalViewport.mm` | Wired unit-cell settings into renderer sync; added setters/getters/signals |
+| `src/ui/qml/Sidebar.qml` | Added dedicated Unit Cell customization section (toggle, thickness slider, RGB sliders + swatch) |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Unit Cell as Its Own Rendered Object
+The unit cell is now represented by explicit raster geometry (edge cylinders + corner joints), not API line primitives. This makes thickness and color behavior stable and visually consistent.
+
+#### 2. Smooth Edge Connectivity
+Each corner uses a spherical joint so adjacent cylindrical edges blend without visible gaps or hard line joins.
+
+#### 3. Keep Unit Cell Outside Ray-Tracing/Shadows
+- RT accumulation remains atom-only.
+- Unit cell in Metal RT mode is composited in a dedicated post-display overlay pass.
+- Overlay visibility uses atom-only occlusion tests; unit-cell geometry itself is not ray traced and does not cast/receive shadows.
+
+#### 4. Centralized Runtime Controls
+Unit-cell visibility, thickness, and RGB color are exposed in both viewport backends and bound directly to sidebar controls for immediate live updates.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Runtime validation: not executed in this session (build-only verification).
+
+---
+
 ## 2026-02-09: Metal RT Unit Cell Overlay (Non-Ray-Traced)
 
 ### Summary
