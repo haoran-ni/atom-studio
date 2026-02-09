@@ -151,6 +151,9 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms) 
 
     [encoder setRenderPipelineState:pipeline];
     [encoder setDepthStencilState:depthState];
+    // Mesh indices are authored CCW; make winding explicit instead of relying on
+    // Metal's encoder default.
+    [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
     [encoder setCullMode:MTLCullModeBack];
 
     [encoder setVertexBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];

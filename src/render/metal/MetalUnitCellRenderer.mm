@@ -243,6 +243,9 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
         id<MTLRenderPipelineState> pipeline = (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->bondPipeline();
         [encoder setRenderPipelineState:pipeline];
         [encoder setDepthStencilState:depthState];
+        // Mesh indices are authored CCW; make winding explicit so back-face culling
+        // consistently removes the far shell instead of the near shell.
+        [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
         [encoder setCullMode:MTLCullModeBack];
 
         [encoder setVertexBytes:&unitCellUniforms length:sizeof(SceneUniforms) atIndex:0];

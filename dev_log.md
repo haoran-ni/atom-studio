@@ -4,6 +4,36 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-09: Fix Metal Raster Unit-Cell Cylinder Interior Artifact
+
+### Summary
+Fixed a Metal raster rendering artifact where unit-cell cylinders could appear to show their interior shell when intersecting atom spheres.
+
+Root cause: cylinder draws used back-face culling but did not explicitly set front-face winding on the Metal render encoder, so culling behavior could depend on implicit defaults. The cylinder index topology is authored as counter-clockwise (CCW), so we now set front-face winding explicitly before culling.
+
+Applied the same fix to the shared bond-cylinder renderer path to keep cylinder face handling consistent across Metal raster geometry.
+
+### Files Modified (3 files)
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalUnitCellRenderer.mm` | Set `MTLWindingCounterClockwise` before `MTLCullModeBack` for unit-cell edge-cylinder draw |
+| `src/render/metal/MetalBondRenderer.mm` | Set `MTLWindingCounterClockwise` before `MTLCullModeBack` for bond-cylinder draw |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Make Face Orientation Explicit in Metal Raster Cylinder Passes
+For cylinder meshes with authored CCW indices, explicitly setting front-face winding prevents dependency on encoder defaults and keeps back-face culling deterministic.
+
+#### 2. Keep Cylinder Behavior Consistent Between Unit Cell and Bonds
+Both passes use the same geometric convention; applying the same winding policy avoids class-specific rendering discrepancies.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Runtime validation: not executed in this session (build-only verification).
+
+---
+
 ## 2026-02-09: Replace Unit Cell Lines with Dedicated Unit-Cell Object
 
 ### Summary
