@@ -24,7 +24,7 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
-    void render(const Camera& camera) override;
+    void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
 

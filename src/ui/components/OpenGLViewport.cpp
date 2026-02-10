@@ -36,7 +36,7 @@ public:
             return;
         }
 
-        m_activeRenderer->render(*m_viewport->m_camera);
+        m_activeRenderer->render(*m_viewport->m_camera, m_viewport->m_renderSettings);
 
         // For RT mode: update sample count and keep rendering until converged
         if (m_currentMode == 1 && m_rtRenderer) {
@@ -140,15 +140,15 @@ public:
             viewport->m_needsStructureUpdate = false;
         }
 
-        // Sync render settings to active renderer
-        m_activeRenderer->settings().showBonds = viewport->m_showBonds;
-        m_activeRenderer->settings().showUnitCell = viewport->m_showUnitCell;
-        m_activeRenderer->settings().unitCellThickness = viewport->m_unitCellThickness;
-        m_activeRenderer->settings().unitCellColor = viewport->m_unitCellColor;
-        m_activeRenderer->settings().atomScale = viewport->m_atomScale;
-        m_activeRenderer->settings().maxRTSamples = viewport->m_maxRTSamples;
-        m_activeRenderer->settings().enableAmbientOcclusion = viewport->m_enableAO;
-        m_activeRenderer->settings().enableShadows = viewport->m_enableShadows;
+        // Build render settings from viewport properties
+        viewport->m_renderSettings.showBonds = viewport->m_showBonds;
+        viewport->m_renderSettings.showUnitCell = viewport->m_showUnitCell;
+        viewport->m_renderSettings.unitCellThickness = viewport->m_unitCellThickness;
+        viewport->m_renderSettings.unitCellColor = viewport->m_unitCellColor;
+        viewport->m_renderSettings.atomScale = viewport->m_atomScale;
+        viewport->m_renderSettings.maxRTSamples = viewport->m_maxRTSamples;
+        viewport->m_renderSettings.enableAmbientOcclusion = viewport->m_enableAO;
+        viewport->m_renderSettings.enableShadows = viewport->m_enableShadows;
 
         // Update FPS
         qint64 currentTime = QDateTime::currentMSecsSinceEpoch();

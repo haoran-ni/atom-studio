@@ -65,7 +65,8 @@ in vec4 vColor;
 in vec3 vViewPosOnQuad; // Interpolated view-space position on billboard
 
 uniform mat4 uProjectionMatrix;
-uniform vec3 uLightDir;     // Normalized, in view space
+uniform mat4 uViewMatrix;
+uniform vec3 uLightDir;     // World space, transformed to view space below
 uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
@@ -102,8 +103,8 @@ void main() {
     vec3 hitPos = t * rayDir;
     vec3 normal = normalize(hitPos - C);
 
-    // Lighting calculation
-    vec3 lightDir = normalize(uLightDir);
+    // Lighting calculation — transform world-space light to view space
+    vec3 lightDir = normalize(mat3(uViewMatrix) * uLightDir);
     vec3 viewDir = normalize(-hitPos);
 
     // Ambient
@@ -183,6 +184,7 @@ in vec3 vNormal;
 in vec3 vViewPos;
 in vec4 vColor;
 
+uniform mat4 uViewMatrix;
 uniform vec3 uLightDir;
 uniform float uAmbient;
 uniform float uDiffuse;
@@ -193,7 +195,8 @@ out vec4 fragColor;
 
 void main() {
     vec3 normal = normalize(vNormal);
-    vec3 lightDir = normalize(uLightDir);
+    // Transform world-space light direction to view space
+    vec3 lightDir = normalize(mat3(uViewMatrix) * uLightDir);
     vec3 viewDir = normalize(-vViewPos);
 
     // Ambient

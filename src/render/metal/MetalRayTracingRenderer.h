@@ -23,7 +23,7 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
-    void render(const Camera& camera) override;
+    void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
 
@@ -49,6 +49,7 @@ private:
 
     MetalShaderLibrary m_shaderLibrary;
 
+    RenderSettings m_settings;  // Local copy for isConverged() / computeStateHash()
     const data::Structure* m_structure = nullptr;
     int m_width = 0;
     int m_height = 0;

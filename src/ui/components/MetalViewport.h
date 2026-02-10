@@ -5,6 +5,8 @@
 #include <QtQml/qqmlregistration.h>
 #include <memory>
 
+#include "../../render/common/RenderSettings.h"
+
 namespace atom::data { class Structure; }
 namespace atom::render { class Camera; }
 
@@ -98,6 +100,7 @@ private:
 
     std::shared_ptr<data::Structure> m_structure;
     std::unique_ptr<render::Camera> m_camera;
+    render::RenderSettings m_renderSettings;
 
     QPointF m_lastMousePos;
     Qt::MouseButtons m_pressedButtons;

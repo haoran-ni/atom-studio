@@ -276,8 +276,11 @@ void MetalRayTracingRenderer::setStructure(const data::Structure* structure) {
     resetAccumulation();
 }
 
-void MetalRayTracingRenderer::render(const Camera& camera) {
+void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
+
+    // Store settings for isConverged() and computeStateHash()
+    m_settings = settings;
 
     if (m_atomDataDirty) {
         uploadAtomData();

@@ -169,8 +169,8 @@ fragment SphereFragmentOut sphere_fragment(
     float3 hitPos = t * rayDir;
     float3 normal = normalize(hitPos - C);
 
-    // Blinn-Phong lighting
-    float3 lightDir = normalize(scene.lightDir);
+    // Blinn-Phong lighting — transform world-space light to view space
+    float3 lightDir = normalize((scene.viewMatrix * float4(scene.lightDir, 0.0)).xyz);
     float3 viewDir = normalize(-hitPos);
 
     float3 ambient = scene.ambient * in.color.rgb;
@@ -243,7 +243,8 @@ fragment float4 bond_fragment(
     constant SceneUniforms& scene [[buffer(0)]])
 {
     float3 normal = normalize(in.normal);
-    float3 lightDir = normalize(scene.lightDir);
+    // Transform world-space light direction to view space
+    float3 lightDir = normalize((scene.viewMatrix * float4(scene.lightDir, 0.0)).xyz);
     float3 viewDir = normalize(-in.viewPos);
 
     float3 ambient = scene.ambient * in.color.rgb;

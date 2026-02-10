@@ -160,7 +160,7 @@ void SphereRenderer::render(const Camera& camera, const RenderSettings& settings
     shader->setUniformValue("uViewMatrix", camera.viewMatrix());
     shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
 
-    // Light direction in view space
+    // Light direction (world space — shader transforms to view space)
     QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
     lightDir.normalize();
     shader->setUniformValue("uLightDir", lightDir);

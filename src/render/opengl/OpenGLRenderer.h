@@ -27,7 +27,7 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
-    void render(const Camera& camera) override;
+    void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
 
@@ -41,7 +41,7 @@ public:
     int viewportHeight() const { return m_height; }
 
 private:
-    void renderBackground();
+    void renderBackground(const RenderSettings& settings);
 
     ShaderManager m_shaderManager;
     SphereRenderer m_sphereRenderer;

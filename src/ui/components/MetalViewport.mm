@@ -272,15 +272,15 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         }
     }
 
-    // 4. Sync state
-    m_impl->activeRenderer->settings().showBonds = m_showBonds;
-    m_impl->activeRenderer->settings().showUnitCell = m_showUnitCell;
-    m_impl->activeRenderer->settings().unitCellThickness = m_unitCellThickness;
-    m_impl->activeRenderer->settings().unitCellColor = m_unitCellColor;
-    m_impl->activeRenderer->settings().atomScale = m_atomScale;
-    m_impl->activeRenderer->settings().maxRTSamples = m_maxRTSamples;
-    m_impl->activeRenderer->settings().enableAmbientOcclusion = m_enableAO;
-    m_impl->activeRenderer->settings().enableShadows = m_enableShadows;
+    // 4. Build render settings from viewport properties
+    m_renderSettings.showBonds = m_showBonds;
+    m_renderSettings.showUnitCell = m_showUnitCell;
+    m_renderSettings.unitCellThickness = m_unitCellThickness;
+    m_renderSettings.unitCellColor = m_unitCellColor;
+    m_renderSettings.atomScale = m_atomScale;
+    m_renderSettings.maxRTSamples = m_maxRTSamples;
+    m_renderSettings.enableAmbientOcclusion = m_enableAO;
+    m_renderSettings.enableShadows = m_enableShadows;
 
     if (m_needsStructureUpdate) {
         m_impl->activeRenderer->setStructure(m_structure.get());
@@ -303,7 +303,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     // 6. Render
-    m_impl->activeRenderer->render(*m_camera);
+    m_impl->activeRenderer->render(*m_camera, m_renderSettings);
 
     // 7. Get the output texture
     void* mtlTexture = nullptr;

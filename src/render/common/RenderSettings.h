@@ -30,7 +30,7 @@ struct RenderSettings {
     float specularStrength = 0.5f;
     float shininess = 32.0f;
 
-    // Light direction (in view space, pointing towards light)
+    // Light direction (in world space, pointing towards light)
     float lightDirX = 0.3f;
     float lightDirY = 0.8f;
     float lightDirZ = 0.5f;

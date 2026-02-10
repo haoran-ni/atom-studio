@@ -4,6 +4,51 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-10: Unify Camera and Light Source Across Renderers
+
+### Summary
+Fixed lighting inconsistency when switching between Raster and Ray Tracing renderers. The root cause was a coordinate-space mismatch: raster shaders interpreted the light direction as **view space** (headlamp fixed to camera), while RT shaders interpreted it as **world space** (sun fixed in scene). The same default value `(0.3, 0.8, 0.5)` produced different visual results depending on the active renderer.
+
+Also refactored render settings ownership: `RenderSettings` was previously owned by each renderer (via the `Renderer` base class), and the viewport only synced a subset of fields to the active renderer — lighting params were never synced and stayed at hard-coded defaults. Now the viewport owns `RenderSettings` and passes it to `render()`, so all renderers share identical settings.
+
+### Files Modified (17 files)
+| File | Change |
+|------|--------|
+| `src/render/common/Renderer.h` | Changed `render()` to accept `const RenderSettings&`; removed `m_settings` member and `settings()` accessors |
+| `src/render/common/RenderSettings.h` | Updated lightDir comment from "view space" to "world space" |
+| `src/render/opengl/OpenGLRenderer.h` | Updated `render()` and `renderBackground()` signatures |
+| `src/render/opengl/OpenGLRenderer.cpp` | Use `settings` parameter instead of `m_settings`; pass to sub-renderers |
+| `src/render/opengl/RayTracingRenderer.h` | Updated `render()` signature; added private `m_settings` for `isConverged()`/`computeStateHash()` |
+| `src/render/opengl/RayTracingRenderer.cpp` | Accept and store settings at top of `render()` |
+| `src/render/opengl/ShaderManager.cpp` | Sphere and bond fragment shaders: added `uniform mat4 uViewMatrix`, transform lightDir from world to view space |
+| `src/render/opengl/SphereRenderer.cpp` | Updated comment: light direction is world space, shader transforms to view space |
+| `src/render/metal/MetalRenderer.h` | Updated `render()` signature |
+| `src/render/metal/MetalRenderer.mm` | Use `settings` parameter instead of `m_settings` throughout |
+| `src/render/metal/MetalRayTracingRenderer.h` | Updated `render()` signature; added private `m_settings` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Accept and store settings at top of `render()` |
+| `src/render/metal/MetalShaderLibrary.mm` | Sphere and bond fragment shaders: transform lightDir from world to view space via `viewMatrix` |
+| `src/ui/components/OpenGLViewport.h` | Added `RenderSettings m_renderSettings` member |
+| `src/ui/components/OpenGLViewport.cpp` | Build settings from viewport properties; pass to `render()`; removed per-field sync via `settings()` |
+| `src/ui/components/MetalViewport.h` | Added `RenderSettings m_renderSettings` member |
+| `src/ui/components/MetalViewport.mm` | Build settings from viewport properties; pass to `render()`; removed per-field sync via `settings()` |
+
+### Architecture Decisions
+
+#### 1. Canonicalize Light Direction as World Space
+All renderers now interpret `lightDir` as world space. Raster shaders (GLSL and MSL) transform to view space in the fragment shader: `lightDir_view = mat3(viewMatrix) * lightDir_world`. RT shaders already used world space — no change needed there.
+
+#### 2. Viewport Owns RenderSettings
+`RenderSettings` moved from `Renderer` base class to the viewport. The viewport builds settings from its member variables and passes them into `render(const Camera&, const RenderSettings&)`. This ensures both renderers always see identical settings, including lighting parameters that were previously never synced.
+
+#### 3. RT Renderers Keep a Local Settings Copy
+`isConverged()` and `computeStateHash()` are called outside `render()`, so RT renderers store a private `m_settings` copy updated at the top of each `render()` call.
+
+### Verification
+- Build: `cmake --build build` — success (only expected OpenGL deprecation warnings on macOS).
+- Runtime validation: not executed in this session (build-only verification).
+
+---
+
 ## 2026-02-09: Add MSAA for Metal Unit-Cell Rendering + Increase Cylinder Resolution
 
 ### Summary

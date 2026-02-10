@@ -345,8 +345,11 @@ void RayTracingRenderer::setStructure(const data::Structure* structure) {
     resetAccumulation();
 }
 
-void RayTracingRenderer::render(const Camera& camera) {
+void RayTracingRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
+
+    // Store settings for isConverged() and computeStateHash()
+    m_settings = settings;
 
     // Upload atom data if dirty
     if (m_atomDataDirty) {

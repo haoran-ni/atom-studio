@@ -81,13 +81,13 @@ void OpenGLRenderer::invalidateBondData() {
     m_bondDataDirty = true;
 }
 
-void OpenGLRenderer::renderBackground() {
-    const auto& bg = m_settings.backgroundColor;
+void OpenGLRenderer::renderBackground(const RenderSettings& settings) {
+    const auto& bg = settings.backgroundColor;
     glClearColor(bg.redF(), bg.greenF(), bg.blueF(), 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLRenderer::render(const Camera& camera) {
+void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized) return;
 
     // Update GPU data if needed
@@ -107,20 +107,20 @@ void OpenGLRenderer::render(const Camera& camera) {
     }
 
     // Clear
-    renderBackground();
+    renderBackground(settings);
 
     // Enable depth testing
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
     // Render unit-cell object (thick wireframe cuboid built from lattice)
-    m_unitCellRenderer.render(camera, m_settings);
+    m_unitCellRenderer.render(camera, settings);
 
     // Render bonds
-    m_bondRenderer.render(camera, m_settings);
+    m_bondRenderer.render(camera, settings);
 
     // Render atoms
-    m_sphereRenderer.render(camera, m_settings);
+    m_sphereRenderer.render(camera, settings);
 }
 
 } // namespace atom::render

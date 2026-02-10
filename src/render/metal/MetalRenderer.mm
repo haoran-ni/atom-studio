@@ -129,7 +129,7 @@ void MetalRenderer::setStructure(const data::Structure* structure) {
     m_unitCellDataDirty = true;
 }
 
-void MetalRenderer::render(const Camera& camera) {
+void MetalRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
     if (!m_impl->colorTexture || !m_impl->depthTexture) return;
     if (m_impl->rasterSampleCount > 1 && !m_impl->msaaColorTexture) return;
@@ -154,15 +154,15 @@ void MetalRenderer::render(const Camera& camera) {
     uniforms.projectionMatrix = remapDepthToMetal(camera.projectionMatrix());
     uniforms.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
 
-    QVector3D lightDir(m_settings.lightDirX, m_settings.lightDirY, m_settings.lightDirZ);
+    QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
     lightDir.normalize();
     uniforms.lightDir = simd_make_float3(lightDir.x(), lightDir.y(), lightDir.z());
-    uniforms.ambient = m_settings.ambientStrength;
-    uniforms.diffuse = m_settings.diffuseStrength;
-    uniforms.specular = m_settings.specularStrength;
-    uniforms.shininess = m_settings.shininess;
-    uniforms.atomScale = m_settings.atomScale;
-    uniforms.bondRadius = m_settings.bondRadius;
+    uniforms.ambient = settings.ambientStrength;
+    uniforms.diffuse = settings.diffuseStrength;
+    uniforms.specular = settings.specularStrength;
+    uniforms.shininess = settings.shininess;
+    uniforms.atomScale = settings.atomScale;
+    uniforms.bondRadius = settings.bondRadius;
 
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
@@ -178,7 +178,7 @@ void MetalRenderer::render(const Camera& camera) {
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
 
-    const auto& bg = m_settings.backgroundColor;
+    const auto& bg = settings.backgroundColor;
     passDesc.colorAttachments[0].clearColor = MTLClearColorMake(
         bg.redF(), bg.greenF(), bg.blueF(), 1.0);
 
@@ -195,13 +195,13 @@ void MetalRenderer::render(const Camera& camera) {
         0.0, 1.0}];
 
     // Render order: unit-cell object -> bonds -> spheres
-    if (m_settings.showUnitCell) {
-        m_unitCellRenderer.render((__bridge void*)encoder, uniforms, m_settings);
+    if (settings.showUnitCell) {
+        m_unitCellRenderer.render((__bridge void*)encoder, uniforms, settings);
     }
-    if (m_settings.showBonds) {
+    if (settings.showBonds) {
         m_bondRenderer.render((__bridge void*)encoder, uniforms);
     }
-    if (m_settings.showAtoms) {
+    if (settings.showAtoms) {
         m_sphereRenderer.render((__bridge void*)encoder, uniforms);
     }
 
