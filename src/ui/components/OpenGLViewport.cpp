@@ -150,6 +150,15 @@ public:
         viewport->m_renderSettings.maxRTSamples = viewport->m_maxRTSamples;
         viewport->m_renderSettings.enableAmbientOcclusion = viewport->m_enableAO;
         viewport->m_renderSettings.enableShadows = viewport->m_enableShadows;
+        viewport->m_renderSettings.aoSamples = viewport->m_aoSamples;
+        viewport->m_renderSettings.aoRadius = viewport->m_aoRadius;
+        viewport->m_renderSettings.ambientStrength = viewport->m_ambientStrength;
+        viewport->m_renderSettings.diffuseStrength = viewport->m_diffuseStrength;
+        viewport->m_renderSettings.specularStrength = viewport->m_specularStrength;
+        viewport->m_renderSettings.shininess = viewport->m_shininess;
+        viewport->m_renderSettings.lightDirX = viewport->m_lightDirX;
+        viewport->m_renderSettings.lightDirY = viewport->m_lightDirY;
+        viewport->m_renderSettings.lightDirZ = viewport->m_lightDirZ;
 
         // Update FPS
         qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
@@ -251,6 +260,42 @@ bool OpenGLViewport::enableAO() const {
 
 bool OpenGLViewport::enableShadows() const {
     return m_enableShadows;
+}
+
+int OpenGLViewport::aoSamples() const {
+    return m_aoSamples;
+}
+
+float OpenGLViewport::aoRadius() const {
+    return m_aoRadius;
+}
+
+float OpenGLViewport::ambientStrength() const {
+    return m_ambientStrength;
+}
+
+float OpenGLViewport::diffuseStrength() const {
+    return m_diffuseStrength;
+}
+
+float OpenGLViewport::specularStrength() const {
+    return m_specularStrength;
+}
+
+float OpenGLViewport::shininess() const {
+    return m_shininess;
+}
+
+float OpenGLViewport::lightDirX() const {
+    return m_lightDirX;
+}
+
+float OpenGLViewport::lightDirY() const {
+    return m_lightDirY;
+}
+
+float OpenGLViewport::lightDirZ() const {
+    return m_lightDirZ;
 }
 
 QVariantList OpenGLViewport::getAxisDirections() const {
@@ -384,6 +429,87 @@ void OpenGLViewport::setEnableShadows(bool enable) {
     if (m_enableShadows != enable) {
         m_enableShadows = enable;
         emit enableShadowsChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setAOSamples(int samples) {
+    const int clamped = std::clamp(samples, 1, 16);
+    if (m_aoSamples != clamped) {
+        m_aoSamples = clamped;
+        emit aoSamplesChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setAORadius(float radius) {
+    const float clamped = std::clamp(radius, 1.0f, 10.0f);
+    if (!qFuzzyCompare(m_aoRadius, clamped)) {
+        m_aoRadius = clamped;
+        emit aoRadiusChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setAmbientStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_ambientStrength, clamped)) {
+        m_ambientStrength = clamped;
+        emit ambientStrengthChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setDiffuseStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_diffuseStrength, clamped)) {
+        m_diffuseStrength = clamped;
+        emit diffuseStrengthChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setSpecularStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_specularStrength, clamped)) {
+        m_specularStrength = clamped;
+        emit specularStrengthChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setShininess(float shininess) {
+    const float clamped = std::clamp(shininess, 1.0f, 128.0f);
+    if (!qFuzzyCompare(m_shininess, clamped)) {
+        m_shininess = clamped;
+        emit shininessChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setLightDirX(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirX, clamped)) {
+        m_lightDirX = clamped;
+        emit lightDirXChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setLightDirY(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirY, clamped)) {
+        m_lightDirY = clamped;
+        emit lightDirYChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setLightDirZ(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirZ, clamped)) {
+        m_lightDirZ = clamped;
+        emit lightDirZChanged();
         update();
     }
 }

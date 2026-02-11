@@ -33,6 +33,15 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(int maxRTSamples READ maxRTSamples WRITE setMaxRTSamples NOTIFY maxRTSamplesChanged)
     Q_PROPERTY(bool enableAO READ enableAO WRITE setEnableAO NOTIFY enableAOChanged)
     Q_PROPERTY(bool enableShadows READ enableShadows WRITE setEnableShadows NOTIFY enableShadowsChanged)
+    Q_PROPERTY(int aoSamples READ aoSamples WRITE setAOSamples NOTIFY aoSamplesChanged)
+    Q_PROPERTY(float aoRadius READ aoRadius WRITE setAORadius NOTIFY aoRadiusChanged)
+    Q_PROPERTY(float ambientStrength READ ambientStrength WRITE setAmbientStrength NOTIFY ambientStrengthChanged)
+    Q_PROPERTY(float diffuseStrength READ diffuseStrength WRITE setDiffuseStrength NOTIFY diffuseStrengthChanged)
+    Q_PROPERTY(float specularStrength READ specularStrength WRITE setSpecularStrength NOTIFY specularStrengthChanged)
+    Q_PROPERTY(float shininess READ shininess WRITE setShininess NOTIFY shininessChanged)
+    Q_PROPERTY(float lightDirX READ lightDirX WRITE setLightDirX NOTIFY lightDirXChanged)
+    Q_PROPERTY(float lightDirY READ lightDirY WRITE setLightDirY NOTIFY lightDirYChanged)
+    Q_PROPERTY(float lightDirZ READ lightDirZ WRITE setLightDirZ NOTIFY lightDirZChanged)
 
 public:
     explicit MetalViewport(QQuickItem* parent = nullptr);
@@ -53,6 +62,15 @@ public:
     int maxRTSamples() const;
     bool enableAO() const;
     bool enableShadows() const;
+    int aoSamples() const;
+    float aoRadius() const;
+    float ambientStrength() const;
+    float diffuseStrength() const;
+    float specularStrength() const;
+    float shininess() const;
+    float lightDirX() const;
+    float lightDirY() const;
+    float lightDirZ() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
 
@@ -70,6 +88,15 @@ public slots:
     void setMaxRTSamples(int samples);
     void setEnableAO(bool enable);
     void setEnableShadows(bool enable);
+    void setAOSamples(int samples);
+    void setAORadius(float radius);
+    void setAmbientStrength(float strength);
+    void setDiffuseStrength(float strength);
+    void setSpecularStrength(float strength);
+    void setShininess(float shininess);
+    void setLightDirX(float value);
+    void setLightDirY(float value);
+    void setLightDirZ(float value);
 
 signals:
     void atomCountChanged();
@@ -86,6 +113,15 @@ signals:
     void maxRTSamplesChanged();
     void enableAOChanged();
     void enableShadowsChanged();
+    void aoSamplesChanged();
+    void aoRadiusChanged();
+    void ambientStrengthChanged();
+    void diffuseStrengthChanged();
+    void specularStrengthChanged();
+    void shininessChanged();
+    void lightDirXChanged();
+    void lightDirYChanged();
+    void lightDirZChanged();
     void cameraChanged();
 
 protected:
@@ -121,6 +157,15 @@ private:
     int m_maxRTSamples = 1000;
     bool m_enableAO = false;
     bool m_enableShadows = false;
+    int m_aoSamples = 4;
+    float m_aoRadius = 3.0f;
+    float m_ambientStrength = 0.3f;
+    float m_diffuseStrength = 0.7f;
+    float m_specularStrength = 0.5f;
+    float m_shininess = 32.0f;
+    float m_lightDirX = 0.3f;
+    float m_lightDirY = 0.8f;
+    float m_lightDirZ = 0.5f;
     float m_fps = 0.0f;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;

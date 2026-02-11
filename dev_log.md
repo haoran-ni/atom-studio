@@ -4,6 +4,53 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: Exposed Ray-Tracing Parameter Controls in Sidebar (OpenGL + Metal)
+
+### Summary
+Implemented user-facing ray-tracing parameter controls and plumbing across both viewport backends, plus UX follow-ups:
+1. Exposed AO/lighting/shininess/light-direction RT parameters to QML for both OpenGL and Metal viewports.
+2. Added RT-only controls under `Render Settings` in the sidebar (hidden in raster mode).
+3. Added `Reset RT Settings` button to restore RT defaults.
+4. Added hover help prompts on parameter names and applied requested parameter label renames.
+5. Fixed QML startup regression by replacing invalid `Label.hoverEnabled` usage with `MouseArea`-based hover detection.
+
+### Files Modified (6 files)
+| File | Change |
+|------|--------|
+| `src/ui/components/OpenGLViewport.h` | Added new Q_PROPERTY declarations/signals/members for RT parameters |
+| `src/ui/components/OpenGLViewport.cpp` | Added getters/setters with clamping and wired new fields into `m_renderSettings` sync |
+| `src/ui/components/MetalViewport.h` | Added matching Q_PROPERTY declarations/signals/members for RT parameters |
+| `src/ui/components/MetalViewport.mm` | Added getters/setters with clamping and wired new fields into `m_renderSettings` sync |
+| `src/ui/qml/Sidebar.qml` | Added RT-only controls, reset button, tooltips-on-name labels, and requested label renames |
+| `dev_log.md` | Added this session entry |
+
+### Exposed RT Parameters
+- `aoSamples` (default `4`, range `1..16`)
+- `aoRadius` (default `3.0`, range `1..10`)
+- `ambientStrength` (default `0.3`, range `0..1`)
+- `diffuseStrength` (default `0.7`, range `0..1`)
+- `specularStrength` (default `0.5`, range `0..1`)
+- `shininess` (default `32`, range `1..128`)
+- `lightDirX/Y/Z` (defaults `0.3/0.8/0.5`, range `-1..1`)
+
+### UI/UX Notes
+- All ray-tracing parameter controls are gated by `rendererMode === 1` and hidden in `Raster (Fast)` mode.
+- Added reset action restoring:
+  - `maxRTSamples=1000`
+  - `enableAO=false`
+  - `enableShadows=false`
+  - all newly exposed RT parameter defaults above
+- Parameter name tooltips now appear only when hovering names (not sliders), using per-label `MouseArea.containsMouse`.
+- Applied renames:
+  - `AO Samples` -> `Ambient occlusion samples`
+  - `AO Radius` -> `Ambient occlusion radius`
+  - `Light Dir X/Y/Z` -> `Light direction (X/Y/Z)`
+
+### Verification
+- Build: `cmake --build build -j4` — success.
+
+---
+
 ## 2026-02-11: BVH Upload Guard Cleanup + Follow-up Notes Retirement
 
 ### Summary

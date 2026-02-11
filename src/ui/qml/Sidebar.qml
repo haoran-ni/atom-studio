@@ -8,10 +8,30 @@ Rectangle {
 
     property var viewport: null
     property string maxRTSamplesErrorMessage: ""
+    readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
 
     function showMaxRTSamplesError(message) {
         maxRTSamplesErrorMessage = message
         maxRTSamplesErrorDialog.open()
+    }
+
+    function resetRayTracingSettings() {
+        if (!sidebar.viewport) {
+            return
+        }
+
+        sidebar.viewport.maxRTSamples = 1000
+        sidebar.viewport.enableAO = false
+        sidebar.viewport.enableShadows = false
+        sidebar.viewport.aoSamples = 4
+        sidebar.viewport.aoRadius = 3.0
+        sidebar.viewport.ambientStrength = 0.3
+        sidebar.viewport.diffuseStrength = 0.7
+        sidebar.viewport.specularStrength = 0.5
+        sidebar.viewport.shininess = 32
+        sidebar.viewport.lightDirX = 0.3
+        sidebar.viewport.lightDirY = 0.8
+        sidebar.viewport.lightDirZ = 0.5
     }
 
     color: "#252526"
@@ -380,13 +400,13 @@ Rectangle {
                             text: qsTr("Max RT Samples")
                             color: "#cccccc"
                             font.pixelSize: 11
-                            visible: sidebar.viewport && sidebar.viewport.rendererMode === 1
+                            visible: sidebar.rtSettingsVisible
                         }
 
                         TextField {
                             id: maxRTSamplesField
                             Layout.fillWidth: true
-                            visible: sidebar.viewport && sidebar.viewport.rendererMode === 1
+                            visible: sidebar.rtSettingsVisible
                             text: sidebar.viewport ? sidebar.viewport.maxRTSamples.toString() : "1000"
                             placeholderText: qsTr("1000")
                             hoverEnabled: true
@@ -429,7 +449,7 @@ Rectangle {
                                 }
 
                                 function onRendererModeChanged() {
-                                    if (sidebar.viewport && sidebar.viewport.rendererMode === 1) {
+                                    if (sidebar.rtSettingsVisible) {
                                         maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
                                     }
                                 }
@@ -438,6 +458,7 @@ Rectangle {
 
                         CheckBox {
                             text: qsTr("Ambient Occlusion")
+                            visible: sidebar.rtSettingsVisible
                             checked: sidebar.viewport ? sidebar.viewport.enableAO : false
                             onCheckedChanged: {
                                 if (sidebar.viewport) {
@@ -448,12 +469,269 @@ Rectangle {
 
                         CheckBox {
                             text: qsTr("Shadows")
+                            visible: sidebar.rtSettingsVisible
                             checked: sidebar.viewport ? sidebar.viewport.enableShadows : false
                             onCheckedChanged: {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.enableShadows = checked
                                 }
                             }
+                        }
+
+                        Label {
+                            id: aoSamplesLabel
+                            text: qsTr("Ambient occlusion samples: %1").arg(sidebar.viewport ? sidebar.viewport.aoSamples : 4)
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: aoSamplesHoverArea.containsMouse
+                            ToolTip.text: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
+
+                            MouseArea {
+                                id: aoSamplesHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 1
+                            to: 16
+                            stepSize: 1
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.aoSamples : 4
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.aoSamples = Math.round(value)
+                                }
+                            }
+                        }
+
+                        Label {
+                            id: aoRadiusLabel
+                            text: qsTr("Ambient occlusion radius: %1").arg(sidebar.viewport ? sidebar.viewport.aoRadius.toFixed(1) : "3.0")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: aoRadiusHoverArea.containsMouse
+                            ToolTip.text: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
+
+                            MouseArea {
+                                id: aoRadiusHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 1
+                            to: 10
+                            stepSize: 0.1
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.aoRadius : 3.0
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.aoRadius = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            id: ambientLabel
+                            text: qsTr("Ambient: %1").arg(sidebar.viewport ? sidebar.viewport.ambientStrength.toFixed(2) : "0.30")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: ambientHoverArea.containsMouse
+                            ToolTip.text: qsTr("Base light intensity applied everywhere. Higher values brighten the whole scene, including shadowed areas.")
+
+                            MouseArea {
+                                id: ambientHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.3
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.ambientStrength = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            id: diffuseLabel
+                            text: qsTr("Diffuse: %1").arg(sidebar.viewport ? sidebar.viewport.diffuseStrength.toFixed(2) : "0.70")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: diffuseHoverArea.containsMouse
+                            ToolTip.text: qsTr("Strength of directional matte lighting. Higher values increase light-facing contrast and shape definition.")
+
+                            MouseArea {
+                                id: diffuseHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.diffuseStrength : 0.7
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.diffuseStrength = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            id: specularLabel
+                            text: qsTr("Specular: %1").arg(sidebar.viewport ? sidebar.viewport.specularStrength.toFixed(2) : "0.50")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: specularHoverArea.containsMouse
+                            ToolTip.text: qsTr("Brightness of reflective highlights. Higher values make highlights stronger and more noticeable.")
+
+                            MouseArea {
+                                id: specularHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.specularStrength : 0.5
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.specularStrength = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            id: shininessLabel
+                            text: qsTr("Shininess: %1").arg(sidebar.viewport ? Math.round(sidebar.viewport.shininess) : 32)
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                            ToolTip.visible: shininessHoverArea.containsMouse
+                            ToolTip.text: qsTr("Sharpness of specular highlights. Higher values make highlights tighter; lower values make them softer.")
+
+                            MouseArea {
+                                id: shininessHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: 1
+                            to: 128
+                            stepSize: 1
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.shininess : 32
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.shininess = Math.round(value)
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Light direction (X): %1").arg(sidebar.viewport ? sidebar.viewport.lightDirX.toFixed(2) : "0.30")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: -1
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.lightDirX : 0.3
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.lightDirX = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Light direction (Y): %1").arg(sidebar.viewport ? sidebar.viewport.lightDirY.toFixed(2) : "0.80")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: -1
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.lightDirY : 0.8
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.lightDirY = value
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Light direction (Z): %1").arg(sidebar.viewport ? sidebar.viewport.lightDirZ.toFixed(2) : "0.50")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                            visible: sidebar.rtSettingsVisible
+                        }
+
+                        Slider {
+                            Layout.fillWidth: true
+                            from: -1
+                            to: 1
+                            stepSize: 0.01
+                            visible: sidebar.rtSettingsVisible
+                            value: sidebar.viewport ? sidebar.viewport.lightDirZ : 0.5
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.lightDirZ = value
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: qsTr("Reset RT Settings")
+                            Layout.fillWidth: true
+                            visible: sidebar.rtSettingsVisible
+                            onClicked: sidebar.resetRayTracingSettings()
                         }
                     }
                 }

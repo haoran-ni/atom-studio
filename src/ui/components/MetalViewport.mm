@@ -175,6 +175,15 @@ int MetalViewport::sampleCount() const { return m_sampleCount; }
 int MetalViewport::maxRTSamples() const { return m_maxRTSamples; }
 bool MetalViewport::enableAO() const { return m_enableAO; }
 bool MetalViewport::enableShadows() const { return m_enableShadows; }
+int MetalViewport::aoSamples() const { return m_aoSamples; }
+float MetalViewport::aoRadius() const { return m_aoRadius; }
+float MetalViewport::ambientStrength() const { return m_ambientStrength; }
+float MetalViewport::diffuseStrength() const { return m_diffuseStrength; }
+float MetalViewport::specularStrength() const { return m_specularStrength; }
+float MetalViewport::shininess() const { return m_shininess; }
+float MetalViewport::lightDirX() const { return m_lightDirX; }
+float MetalViewport::lightDirY() const { return m_lightDirY; }
+float MetalViewport::lightDirZ() const { return m_lightDirZ; }
 
 QVariantList MetalViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
@@ -314,6 +323,87 @@ void MetalViewport::setEnableShadows(bool enable) {
     }
 }
 
+void MetalViewport::setAOSamples(int samples) {
+    const int clamped = std::clamp(samples, 1, 16);
+    if (m_aoSamples != clamped) {
+        m_aoSamples = clamped;
+        emit aoSamplesChanged();
+        update();
+    }
+}
+
+void MetalViewport::setAORadius(float radius) {
+    const float clamped = std::clamp(radius, 1.0f, 10.0f);
+    if (!qFuzzyCompare(m_aoRadius, clamped)) {
+        m_aoRadius = clamped;
+        emit aoRadiusChanged();
+        update();
+    }
+}
+
+void MetalViewport::setAmbientStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_ambientStrength, clamped)) {
+        m_ambientStrength = clamped;
+        emit ambientStrengthChanged();
+        update();
+    }
+}
+
+void MetalViewport::setDiffuseStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_diffuseStrength, clamped)) {
+        m_diffuseStrength = clamped;
+        emit diffuseStrengthChanged();
+        update();
+    }
+}
+
+void MetalViewport::setSpecularStrength(float strength) {
+    const float clamped = std::clamp(strength, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_specularStrength, clamped)) {
+        m_specularStrength = clamped;
+        emit specularStrengthChanged();
+        update();
+    }
+}
+
+void MetalViewport::setShininess(float shininess) {
+    const float clamped = std::clamp(shininess, 1.0f, 128.0f);
+    if (!qFuzzyCompare(m_shininess, clamped)) {
+        m_shininess = clamped;
+        emit shininessChanged();
+        update();
+    }
+}
+
+void MetalViewport::setLightDirX(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirX, clamped)) {
+        m_lightDirX = clamped;
+        emit lightDirXChanged();
+        update();
+    }
+}
+
+void MetalViewport::setLightDirY(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirY, clamped)) {
+        m_lightDirY = clamped;
+        emit lightDirYChanged();
+        update();
+    }
+}
+
+void MetalViewport::setLightDirZ(float value) {
+    const float clamped = std::clamp(value, -1.0f, 1.0f);
+    if (!qFuzzyCompare(m_lightDirZ, clamped)) {
+        m_lightDirZ = clamped;
+        emit lightDirZChanged();
+        update();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scene graph: updatePaintNode
 // ---------------------------------------------------------------------------
@@ -387,6 +477,15 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.maxRTSamples = m_maxRTSamples;
     m_renderSettings.enableAmbientOcclusion = m_enableAO;
     m_renderSettings.enableShadows = m_enableShadows;
+    m_renderSettings.aoSamples = m_aoSamples;
+    m_renderSettings.aoRadius = m_aoRadius;
+    m_renderSettings.ambientStrength = m_ambientStrength;
+    m_renderSettings.diffuseStrength = m_diffuseStrength;
+    m_renderSettings.specularStrength = m_specularStrength;
+    m_renderSettings.shininess = m_shininess;
+    m_renderSettings.lightDirX = m_lightDirX;
+    m_renderSettings.lightDirY = m_lightDirY;
+    m_renderSettings.lightDirZ = m_lightDirZ;
 
     if (m_needsStructureUpdate) {
         m_impl->activeRenderer->setStructure(m_structure.get());
