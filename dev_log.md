@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: Replace Header Strip with Floating Viewport Tab Bar
+
+### Summary
+Reworked the UI shell for viewport controls:
+- collapsed all `Properties` sidebar sections by default on startup
+- removed the in-window header strip from `Main.qml`
+- introduced a floating rounded tab bar overlay inside the viewport
+- migrated previous menu content into the floating bar, then reduced it to `File` and `Edit` tabs per updated requirement
+- added long-press drag repositioning for the floating bar
+- added robust default placement logic: centered horizontally and `3%` from the top of the viewport
+- added drag-handle UX polish: slightly smaller vertical handle block, hover tooltip, and double-click reset to default position
+
+On macOS, this avoids relying on native menu-bar placement and keeps the control surface directly in the viewport region.
+
+### Files Modified (4 files)
+| File | Change |
+|------|--------|
+| `src/ui/qml/Main.qml` | Removed in-window `HeaderBar` usage and separator so `SplitView` starts at top |
+| `src/ui/qml/Sidebar.qml` | Changed collapsible sections default from expanded to collapsed |
+| `src/ui/qml/ViewportPanel.qml` | Added floating tab bar UI, `File`/`Edit` menus, long-press drag, bounds clamping, default placement (`center + top 3%`), hover tooltip, and double-click reset |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Keep Menu Surface in Viewport Space
+Instead of the old header strip, controls now live in `ViewportPanel.qml` so positioning and interaction are consistent across platforms, including macOS where `MenuBar` is otherwise promoted to the system menu bar.
+
+#### 2. Drag Requires Explicit Long Press
+Floating-bar movement is gated behind `pressAndHold` to avoid accidental drags during normal clicking. Once armed, drag is bounded to viewport extents.
+
+#### 3. Preserve Deterministic Default Placement
+A dedicated `placeDefaultPosition()` function computes startup position from current viewport size (`x` centered, `y = 0.03 * height`). Repositioning is reapplied during early resizes until the user manually drags the bar.
+
+#### 4. Add Fast Recovery Gesture
+Double-click on the drag handle clears manual position state and restores default placement immediately.
+
+### Verification
+- Build: `cmake --build build` — success.
+- Runtime smoke check: `QT_QPA_PLATFORM=offscreen ./build/bin/atom-studio.app/Contents/MacOS/atom-studio` — startup success, no QML load errors in this session.
+
+---
+
 ## 2026-02-10: Unify Camera and Light Source Across Renderers
 
 ### Summary

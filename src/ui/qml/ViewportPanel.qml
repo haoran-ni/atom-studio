@@ -33,6 +33,205 @@ Rectangle {
         MetalViewport {}
     }
 
+    // Floating tab bar with menu actions (replaces the old window header menu)
+    Rectangle {
+        id: floatingTabBar
+        z: 50
+        color: "#2d2d2d"
+        radius: 10
+        border.color: "#4a4a4a"
+        border.width: 1
+        height: 38
+        width: tabRow.implicitWidth + 16
+
+        property bool dragArmed: false
+        property bool positioned: false
+        property bool userMoved: false
+
+        function clampToBounds() {
+            x = Math.max(0, Math.min(x, Math.max(0, viewportPanel.width - width)))
+            y = Math.max(0, Math.min(y, Math.max(0, viewportPanel.height - height)))
+        }
+
+        function placeDefaultPosition() {
+            if (viewportPanel.width <= 0 || viewportPanel.height <= 0 || width <= 0 || height <= 0) {
+                return
+            }
+
+            x = Math.round((viewportPanel.width - width) * 0.5)
+            y = Math.round(viewportPanel.height * 0.03)
+            positioned = true
+            clampToBounds()
+        }
+
+        function showMenu(menu, button) {
+            menu.x = Math.round(floatingTabBar.x + tabRow.x + button.x)
+            menu.y = Math.round(floatingTabBar.y + floatingTabBar.height + 4)
+            menu.open()
+        }
+
+        Component.onCompleted: placeDefaultPosition()
+
+        onWidthChanged: {
+            if (!userMoved) {
+                placeDefaultPosition()
+            } else if (positioned) {
+                clampToBounds()
+            }
+        }
+
+        onHeightChanged: {
+            if (!userMoved) {
+                placeDefaultPosition()
+            } else if (positioned) {
+                clampToBounds()
+            }
+        }
+
+        RowLayout {
+            id: tabRow
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            spacing: 4
+
+            Rectangle {
+                id: dragHandle
+                Layout.preferredWidth: 18
+                Layout.preferredHeight: Math.max(20, floatingTabBar.height - 10)
+                Layout.alignment: Qt.AlignVCenter
+                radius: 6
+                color: dragMouseArea.containsPress ? "#555555" : "#3a3a3a"
+                ToolTip.visible: dragMouseArea.containsMouse
+                ToolTip.text: qsTr("Hold and drag to move.\nDouble-click to reset.")
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "||"
+                    color: "#a0a0a0"
+                    font.pixelSize: 10
+                }
+
+                MouseArea {
+                    id: dragMouseArea
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    hoverEnabled: true
+                    pressAndHoldInterval: 350
+                    cursorShape: floatingTabBar.dragArmed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                    drag.target: floatingTabBar.dragArmed ? floatingTabBar : undefined
+                    drag.axis: Drag.XAndYAxis
+                    drag.minimumX: 0
+                    drag.maximumX: Math.max(0, viewportPanel.width - floatingTabBar.width)
+                    drag.minimumY: 0
+                    drag.maximumY: Math.max(0, viewportPanel.height - floatingTabBar.height)
+
+                    onPressed: floatingTabBar.dragArmed = false
+                    onPressAndHold: floatingTabBar.dragArmed = true
+                    onPositionChanged: {
+                        if (floatingTabBar.dragArmed && drag.active) {
+                            floatingTabBar.userMoved = true
+                        }
+                    }
+                    onDoubleClicked: {
+                        floatingTabBar.dragArmed = false
+                        floatingTabBar.userMoved = false
+                        floatingTabBar.placeDefaultPosition()
+                    }
+                    onReleased: floatingTabBar.dragArmed = false
+                    onCanceled: floatingTabBar.dragArmed = false
+                }
+            }
+
+            ToolButton {
+                id: fileTabButton
+                text: qsTr("File")
+                onClicked: floatingTabBar.showMenu(fileMenu, fileTabButton)
+            }
+
+            ToolButton {
+                id: editTabButton
+                text: qsTr("Edit")
+                onClicked: floatingTabBar.showMenu(editMenu, editTabButton)
+            }
+        }
+    }
+
+    Menu {
+        id: fileMenu
+        parent: viewportPanel
+
+        Action {
+            text: qsTr("Open...")
+            shortcut: StandardKey.Open
+            onTriggered: FileController.openFileDialog()
+        }
+
+        Action {
+            text: qsTr("Open Recent")
+            enabled: false
+        }
+
+        MenuSeparator {}
+
+        Action {
+            text: qsTr("Save Image...")
+            shortcut: StandardKey.Save
+            onTriggered: console.log("Save image triggered")
+        }
+
+        Action {
+            text: qsTr("Export...")
+            onTriggered: console.log("Export triggered")
+        }
+
+        MenuSeparator {}
+
+        Action {
+            text: qsTr("Quit")
+            shortcut: StandardKey.Quit
+            onTriggered: Qt.quit()
+        }
+    }
+
+    Menu {
+        id: editMenu
+        parent: viewportPanel
+
+        Action {
+            text: qsTr("Undo")
+            shortcut: StandardKey.Undo
+            enabled: false
+        }
+
+        Action {
+            text: qsTr("Redo")
+            shortcut: StandardKey.Redo
+            enabled: false
+        }
+
+        MenuSeparator {}
+
+        Action {
+            text: qsTr("Select All")
+            shortcut: StandardKey.SelectAll
+            onTriggered: console.log("Select all triggered")
+        }
+
+        Action {
+            text: qsTr("Deselect All")
+            onTriggered: console.log("Deselect all triggered")
+        }
+
+        MenuSeparator {}
+
+        Action {
+            text: qsTr("Preferences...")
+            onTriggered: console.log("Preferences triggered")
+        }
+    }
+
     // Placeholder content (shown when no structure loaded)
     Item {
         anchors.fill: parent
@@ -292,6 +491,22 @@ Rectangle {
             if (drop.hasUrls) {
                 FileController.loadFileUrl(drop.urls[0])
             }
+        }
+    }
+
+    onWidthChanged: {
+        if (!floatingTabBar.userMoved || !floatingTabBar.positioned) {
+            floatingTabBar.placeDefaultPosition()
+        } else if (floatingTabBar.positioned) {
+            floatingTabBar.clampToBounds()
+        }
+    }
+
+    onHeightChanged: {
+        if (!floatingTabBar.userMoved || !floatingTabBar.positioned) {
+            floatingTabBar.placeDefaultPosition()
+        } else if (floatingTabBar.positioned) {
+            floatingTabBar.clampToBounds()
         }
     }
 }

@@ -31,20 +31,6 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
-        // Header bar at the top
-        HeaderBar {
-            id: headerBar
-            Layout.fillWidth: true
-            Layout.preferredHeight: 40
-        }
-
-        // Separator line
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: "#3c3c3c"
-        }
-
         // Main content area with SplitView
         SplitView {
             id: mainSplitView

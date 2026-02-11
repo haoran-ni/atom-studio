@@ -510,7 +510,7 @@ Rectangle {
 
         property string title: ""
         property alias content: contentLoader.sourceComponent
-        property bool expanded: true
+        property bool expanded: false
 
         spacing: 0
         Layout.fillWidth: true
