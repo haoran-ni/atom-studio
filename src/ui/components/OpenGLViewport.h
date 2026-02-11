@@ -35,6 +35,7 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(int bondCount READ bondCount NOTIFY bondCountChanged)
     Q_PROPERTY(float fps READ fps NOTIFY fpsChanged)
     Q_PROPERTY(bool showBonds READ showBonds WRITE setShowBonds NOTIFY showBondsChanged)
+    Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
     Q_PROPERTY(bool showUnitCell READ showUnitCell WRITE setShowUnitCell NOTIFY showUnitCellChanged)
     Q_PROPERTY(float unitCellThickness READ unitCellThickness WRITE setUnitCellThickness NOTIFY unitCellThicknessChanged)
     Q_PROPERTY(QColor unitCellColor READ unitCellColor WRITE setUnitCellColor NOTIFY unitCellColorChanged)
@@ -56,6 +57,7 @@ public:
     int bondCount() const;
     float fps() const;
     bool showBonds() const;
+    QColor backgroundColor() const;
     bool showUnitCell() const;
     float unitCellThickness() const;
     QColor unitCellColor() const;
@@ -73,6 +75,7 @@ public slots:
     void fitToView();
     void resetCamera();
     void setShowBonds(bool show);
+    void setBackgroundColor(const QColor& color);
     void setShowUnitCell(bool show);
     void setUnitCellThickness(float thickness);
     void setUnitCellColor(const QColor& color);
@@ -87,6 +90,7 @@ signals:
     void bondCountChanged();
     void fpsChanged();
     void showBondsChanged();
+    void backgroundColorChanged();
     void showUnitCellChanged();
     void unitCellThicknessChanged();
     void unitCellColorChanged();
@@ -119,6 +123,7 @@ private:
     Qt::MouseButtons m_pressedButtons;
 
     bool m_showBonds = true;
+    QColor m_backgroundColor = QColor(230, 230, 230);
     bool m_showUnitCell = true;
     float m_unitCellThickness = 0.12f;
     QColor m_unitCellColor = QColor(255, 255, 255);

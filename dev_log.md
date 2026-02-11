@@ -4,6 +4,52 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: Background UX Refactor + Immediate RT Background Updates
+
+### Summary
+Refactored viewport background controls and behavior:
+- simplified empty-viewport placeholder visuals (`ATOM STUDIO` only, removed grid and extra helper text)
+- changed default background color to neutral light gray RGB `(230, 230, 230)`
+- removed background control from `Render Settings` and introduced a dedicated `Background` sidebar section
+- added live RGB background controls and a `Reset to Default` button in the new section
+- exposed background color as a backend-agnostic viewport property for both OpenGL and Metal viewports
+- fixed RT accumulation behavior so background color changes apply immediately during progressive sampling
+- cleaned bottom-left viewport info overlay by removing `Atoms` and `Bonds` lines
+
+### Files Modified (10 files)
+| File | Change |
+|------|--------|
+| `src/render/common/RenderSettings.h` | Updated default background color to RGB `(230, 230, 230)` |
+| `src/ui/components/OpenGLViewport.h` | Added `backgroundColor` Q_PROPERTY/getter/setter/signal and default member |
+| `src/ui/components/OpenGLViewport.cpp` | Synced viewport `backgroundColor` into `RenderSettings`; implemented getter/setter |
+| `src/ui/components/MetalViewport.h` | Added `backgroundColor` Q_PROPERTY/getter/setter/signal and default member |
+| `src/ui/components/MetalViewport.mm` | Synced viewport `backgroundColor` into `RenderSettings`; implemented getter/setter |
+| `src/ui/qml/Sidebar.qml` | Removed old background row under `Render Settings`; added new `Background` section with RGB sliders, preview swatch, and `Reset to Default` button |
+| `src/ui/qml/ViewportPanel.qml` | Updated placeholder text/content; removed startup grid; set panel placeholder background defaults; removed `Atoms`/`Bonds` rows from viewport info overlay |
+| `src/render/opengl/RayTracingRenderer.cpp` | Added background RGB channels to RT state hash so background edits trigger immediate accumulation reset |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Added background RGB channels to RT state hash so background edits trigger immediate accumulation reset |
+| `dev_log.md` | Added this entry |
+
+### Architecture Decisions
+
+#### 1. Dedicated Background Controls
+Background configuration now lives in its own sidebar section to separate scene/background concerns from renderer mode and quality controls.
+
+#### 2. Single Source of Truth Per Viewport Backend
+Both viewport implementations now expose a `backgroundColor` property that is copied into `RenderSettings` every frame. This keeps QML control wiring backend-independent and avoids hidden renderer-local divergence.
+
+#### 3. RT Accumulation Resets on Background Changes
+Progressive RT output is an average over accumulated samples. To avoid slow color blending artifacts when background changes mid-sampling, background RGB is part of RT state hashing so changes force `resetAccumulation()` immediately.
+
+#### 4. Cleaner Startup and HUD
+Removed non-essential startup visual noise (grid + helper text) and reduced HUD clutter by removing always-on `Atoms`/`Bonds` rows from the bottom-left overlay.
+
+### Verification
+- Build: `cmake --build build -j4` — success.
+- Notes: only existing macOS OpenGL deprecation warnings were emitted (no new build errors).
+
+---
+
 ## 2026-02-11: Replace Header Strip with Floating Viewport Tab Bar
 
 ### Summary

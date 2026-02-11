@@ -684,6 +684,9 @@ uint64_t RayTracingRenderer::computeStateHash(const Camera& camera) const {
     combine(hf(m_settings.lightDirX));
     combine(hf(m_settings.lightDirY));
     combine(hf(m_settings.lightDirZ));
+    combine(hi(m_settings.backgroundColor.red()));
+    combine(hi(m_settings.backgroundColor.green()));
+    combine(hi(m_settings.backgroundColor.blue()));
 
     return h;
 }

@@ -8,12 +8,12 @@ Rectangle {
 
     property var viewport: viewportLoader.item
 
-    color: "#1a1a2e"
+    color: "#e6e6e6"
 
     // Placeholder gradient background (shown when no structure is loaded)
     gradient: Gradient {
-        GradientStop { position: 0.0; color: "#1a1a2e" }
-        GradientStop { position: 1.0; color: "#16213e" }
+        GradientStop { position: 0.0; color: "#e6e6e6" }
+        GradientStop { position: 1.0; color: "#e6e6e6" }
     }
 
     // Platform-conditional viewport: Metal on macOS, OpenGL elsewhere
@@ -237,68 +237,16 @@ Rectangle {
         anchors.fill: parent
         visible: !StructureModel.hasStructure
 
-        // Grid pattern to show the viewport area
-        Canvas {
-            id: gridCanvas
-            anchors.fill: parent
-            opacity: 0.1
-
-            onPaint: {
-                var ctx = getContext("2d");
-                ctx.clearRect(0, 0, width, height);
-                ctx.strokeStyle = "#ffffff";
-                ctx.lineWidth = 1;
-
-                var gridSize = 50;
-
-                // Draw vertical lines
-                for (var x = 0; x <= width; x += gridSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, height);
-                    ctx.stroke();
-                }
-
-                // Draw horizontal lines
-                for (var y = 0; y <= height; y += gridSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(width, y);
-                    ctx.stroke();
-                }
-            }
-
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
-        }
-
         // Center placeholder text
         ColumnLayout {
             anchors.centerIn: parent
             spacing: 15
 
             Label {
-                text: "ATOM-STUDIO"
-                color: "#ffffff"
-                opacity: 0.3
-                font.pixelSize: 36
+                text: "ATOM STUDIO"
+                color: "#000000"
+                font.pixelSize: 40
                 font.bold: true
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Label {
-                text: "Drop a file or use File > Open"
-                color: "#ffffff"
-                opacity: 0.2
-                font.pixelSize: 16
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Label {
-                text: "Supported: XYZ, LAMMPS dump, CIF"
-                color: "#ffffff"
-                opacity: 0.15
-                font.pixelSize: 12
                 Layout.alignment: Qt.AlignHCenter
             }
         }
@@ -323,18 +271,6 @@ Rectangle {
 
             Label {
                 text: "FPS: " + (viewportPanel.viewport ? viewportPanel.viewport.fps.toFixed(1) : "0.0")
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                text: "Atoms: " + (viewportPanel.viewport ? viewportPanel.viewport.atomCount : 0)
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                text: "Bonds: " + (viewportPanel.viewport ? viewportPanel.viewport.bondCount : 0)
                 color: "#ffffff"
                 font.pixelSize: 10
             }

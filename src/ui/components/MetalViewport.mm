@@ -75,6 +75,7 @@ int MetalViewport::bondCount() const {
 
 float MetalViewport::fps() const { return m_fps; }
 bool MetalViewport::showBonds() const { return m_showBonds; }
+QColor MetalViewport::backgroundColor() const { return m_backgroundColor; }
 bool MetalViewport::showUnitCell() const { return m_showUnitCell; }
 float MetalViewport::unitCellThickness() const { return m_unitCellThickness; }
 QColor MetalViewport::unitCellColor() const { return m_unitCellColor; }
@@ -137,6 +138,16 @@ void MetalViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        update();
+    }
+}
+
+void MetalViewport::setBackgroundColor(const QColor& color) {
+    QColor opaque = color;
+    opaque.setAlpha(255);
+    if (m_backgroundColor != opaque) {
+        m_backgroundColor = opaque;
+        emit backgroundColorChanged();
         update();
     }
 }
@@ -273,6 +284,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     // 4. Build render settings from viewport properties
+    m_renderSettings.backgroundColor = m_backgroundColor;
     m_renderSettings.showBonds = m_showBonds;
     m_renderSettings.showUnitCell = m_showUnitCell;
     m_renderSettings.unitCellThickness = m_unitCellThickness;

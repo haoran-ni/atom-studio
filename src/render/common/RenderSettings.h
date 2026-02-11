@@ -9,7 +9,7 @@ namespace atom::render {
  */
 struct RenderSettings {
     // Background
-    QColor backgroundColor = QColor(26, 26, 46);  // Dark blue-ish
+    QColor backgroundColor = QColor(230, 230, 230);  // Light neutral default
 
     // Atom rendering
     float atomScale = 1.0f;           // Scale factor for atom radii

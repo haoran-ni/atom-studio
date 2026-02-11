@@ -455,9 +455,20 @@ Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Background Section
+                CollapsibleSection {
+                    title: qsTr("Background")
+                    Layout.fillWidth: true
+                    expanded: false
+
+                    content: ColumnLayout {
+                        spacing: 8
 
                         Label {
-                            text: qsTr("Background Color")
+                            text: qsTr("RGB Color")
                             color: "#cccccc"
                             font.pixelSize: 11
                         }
@@ -465,14 +476,107 @@ Rectangle {
                         Rectangle {
                             Layout.fillWidth: true
                             height: 24
-                            color: "#1a1a2e"
+                            radius: 2
                             border.color: "#3c3c3c"
                             border.width: 1
-                            radius: 2
+                            color: Qt.rgba(
+                                backgroundRedSlider.value / 255.0,
+                                backgroundGreenSlider.value / 255.0,
+                                backgroundBlueSlider.value / 255.0,
+                                1.0
+                            )
+                        }
 
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: console.log("Color picker clicked")
+                        Label {
+                            text: qsTr("R")
+                            color: "#ff7777"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: backgroundRedSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.r * 255) : 230
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.backgroundColor = Qt.rgba(
+                                        value / 255.0,
+                                        backgroundGreenSlider.value / 255.0,
+                                        backgroundBlueSlider.value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("G")
+                            color: "#77ff77"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: backgroundGreenSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.g * 255) : 230
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.backgroundColor = Qt.rgba(
+                                        backgroundRedSlider.value / 255.0,
+                                        value / 255.0,
+                                        backgroundBlueSlider.value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("B")
+                            color: "#7777ff"
+                            font.pixelSize: 10
+                        }
+
+                        Slider {
+                            id: backgroundBlueSlider
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 255
+                            stepSize: 1
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.b * 255) : 230
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.backgroundColor = Qt.rgba(
+                                        backgroundRedSlider.value / 255.0,
+                                        backgroundGreenSlider.value / 255.0,
+                                        value / 255.0,
+                                        1.0
+                                    )
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: qsTr("Reset to Default")
+                            Layout.fillWidth: true
+                            onClicked: {
+                                backgroundRedSlider.value = 230
+                                backgroundGreenSlider.value = 230
+                                backgroundBlueSlider.value = 230
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.backgroundColor = Qt.rgba(
+                                        230 / 255.0,
+                                        230 / 255.0,
+                                        230 / 255.0,
+                                        1.0
+                                    )
+                                }
                             }
                         }
                     }

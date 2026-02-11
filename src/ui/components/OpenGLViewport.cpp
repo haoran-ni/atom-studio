@@ -141,6 +141,7 @@ public:
         }
 
         // Build render settings from viewport properties
+        viewport->m_renderSettings.backgroundColor = viewport->m_backgroundColor;
         viewport->m_renderSettings.showBonds = viewport->m_showBonds;
         viewport->m_renderSettings.showUnitCell = viewport->m_showUnitCell;
         viewport->m_renderSettings.unitCellThickness = viewport->m_unitCellThickness;
@@ -210,6 +211,10 @@ float OpenGLViewport::fps() const {
 
 bool OpenGLViewport::showBonds() const {
     return m_showBonds;
+}
+
+QColor OpenGLViewport::backgroundColor() const {
+    return m_backgroundColor;
 }
 
 bool OpenGLViewport::showUnitCell() const {
@@ -297,6 +302,16 @@ void OpenGLViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setBackgroundColor(const QColor& color) {
+    QColor opaque = color;
+    opaque.setAlpha(255);
+    if (m_backgroundColor != opaque) {
+        m_backgroundColor = opaque;
+        emit backgroundColorChanged();
         update();
     }
 }
