@@ -306,12 +306,15 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
         resetAccumulation();
     }
 
+    // Single command buffer for the entire frame — sub-passes encode into it
+    // as separate render command encoders, committed once at the end.
+    id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+
     if (m_atomCount == 0) {
         if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
-            renderUnitCellOverlay(camera);
+            renderUnitCellOverlay(camera, (__bridge void*)cmdBuffer);
         } else if (m_impl->outputTexture) {
             // Clear output to background
-            id<MTLCommandBuffer> cmd = [m_impl->commandQueue commandBuffer];
             MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
             pass.colorAttachments[0].texture = m_impl->outputTexture;
             pass.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -319,11 +322,11 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             const auto& bg = m_settings.backgroundColor;
             pass.colorAttachments[0].clearColor = MTLClearColorMake(
                 bg.redF(), bg.greenF(), bg.blueF(), 1.0);
-            id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
+            id<MTLRenderCommandEncoder> enc = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
             [enc endEncoding];
-            [cmd commit];
-            [cmd waitUntilCompleted];
         }
+        [cmdBuffer commit];
+        [cmdBuffer waitUntilCompleted];
         return;
     }
 
@@ -338,10 +341,13 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     // overlays (unit cell) and RT output refresh remain responsive.
     if (!isConverged()) {
         m_sampleCount++;
-        renderRTPass(camera);
+        renderRTPass(camera, (__bridge void*)cmdBuffer);
     }
 
-    renderDisplayPass(camera);
+    renderDisplayPass(camera, (__bridge void*)cmdBuffer);
+
+    [cmdBuffer commit];
+    [cmdBuffer waitUntilCompleted];
 }
 
 void MetalRayTracingRenderer::invalidateAtomData() {
@@ -355,21 +361,7 @@ void MetalRayTracingRenderer::invalidateBondData() {
 
 void MetalRayTracingRenderer::resetAccumulation() {
     m_sampleCount = 0;
-
-    if (m_impl->accumTexture && m_initialized) {
-        // Clear accumulation texture to black
-        id<MTLCommandBuffer> cmd = [m_impl->commandQueue commandBuffer];
-        MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-        pass.colorAttachments[0].texture = m_impl->accumTexture;
-        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
-
-        id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
-        [enc endEncoding];
-        [cmd commit];
-        [cmd waitUntilCompleted];
-    }
+    m_accumNeedsClear = true;
 }
 
 void* MetalRayTracingRenderer::outputTexture() const {
@@ -562,7 +554,7 @@ void MetalRayTracingRenderer::uploadUnitCellData() {
     m_unitCellDataDirty = false;
 }
 
-void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
+void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     // Build RT uniforms
     RTUniforms rt{};
     rt.invView = qMatToSimd(camera.viewMatrix().inverted());
@@ -593,12 +585,19 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
     rt.maxSamples = m_settings.maxRTSamples;
     rt.bvhNodeCount = m_bvhNodeCount;
 
-    // Render
-    id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+    id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = m_impl->accumTexture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionLoad; // keep existing accumulation
+    // Deferred accumulation clear: use Clear on first sample after reset,
+    // then Load for subsequent samples to preserve existing accumulation.
+    if (m_accumNeedsClear) {
+        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        m_accumNeedsClear = false;
+    } else {
+        pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    }
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 
     id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
@@ -629,16 +628,13 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
     [encoder endEncoding];
-
-    [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
 }
 
-void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera) {
+void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdBuf) {
     DisplayUniforms disp{};
     disp.sampleCount = static_cast<float>(m_sampleCount);
 
-    id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+    id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
@@ -728,12 +724,9 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera) {
     }
 
     [encoder endEncoding];
-
-    [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
 }
 
-void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
+void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* cmdBuf) {
     if (!m_impl->outputTexture ||
         !m_impl->unitCellCylinderVertexBuffer || !m_impl->unitCellCylinderIndexBuffer ||
         !m_impl->unitCellEdgeInstanceBuffer ||
@@ -754,7 +747,7 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
     const QColor color = m_settings.unitCellColor;
     unitCell.unitCellColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), 1.0f);
 
-    id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+    id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     if (m_impl->msaaOutputTexture) {
@@ -824,9 +817,6 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera) {
                          instanceCount:m_unitCellJointCount];
     }
     [encoder endEncoding];
-
-    [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
 }
 
 uint64_t MetalRayTracingRenderer::computeStateHash(const Camera& camera) const {

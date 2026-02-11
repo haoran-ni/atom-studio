@@ -4,6 +4,34 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: Metal RT Single Command Buffer + Deferred Accumulation Clear
+
+### Summary
+Consolidated the Metal ray-tracing renderer from 2-3 `waitUntilCompleted` syncs per frame down to 1, and replaced the immediate accumulation-clear pass with a deferred flag.
+
+### Files Modified (2 files)
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalRayTracingRenderer.h` | Added `m_accumNeedsClear` flag; changed `renderRTPass` / `renderDisplayPass` / `renderUnitCellOverlay` signatures to accept `void* cmdBuffer` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | `render()` creates one `MTLCommandBuffer` and passes it to all sub-passes; `resetAccumulation()` just sets flag instead of submitting a GPU clear; `renderRTPass()` uses `loadAction = Clear` on first sample after reset |
+
+### Implementation Details
+
+#### 1. Single command buffer per frame
+- Previously each sub-pass (`renderRTPass`, `renderDisplayPass`, `renderUnitCellOverlay`, `resetAccumulation`) created its own `MTLCommandBuffer`, committed, and called `waitUntilCompleted`.
+- Now `render()` creates one command buffer, passes it (as `void*` through the C++ header boundary) to each sub-pass which adds render command encoders to it, and commits+waits once at the end.
+- Metal handles resource dependencies between render passes within a single command buffer automatically.
+
+#### 2. Deferred accumulation clear
+- `resetAccumulation()` no longer submits a GPU command. It sets `m_sampleCount = 0` and `m_accumNeedsClear = true`.
+- `renderRTPass()` checks the flag: if set, uses `loadAction = MTLLoadActionClear` (clearing to black) and resets the flag; otherwise uses `loadAction = MTLLoadActionLoad` to preserve existing accumulation.
+- This eliminates a separate clear-only command buffer + sync that fired on every camera/settings change.
+
+### Verification
+- Build: `cmake --build build -j4` — success.
+
+---
+
 ## 2026-02-11: BVH Traversal Optimization + Builder Safety Fix
 
 ### Summary
