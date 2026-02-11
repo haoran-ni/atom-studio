@@ -4,6 +4,56 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: RT State Hash Unification + Metal Unit-Cell Shared Helper Extraction
+
+### Summary
+Implemented follow-up fixes #5 and #6 from `renderer_performance_followup.md`:
+1. Removed duplicated RT state-hash logic across OpenGL and Metal by moving it to shared common code.
+2. Extracted shared Metal unit-cell geometry/instance/uniform packing helpers and refactored both raster and RT paths to use them.
+
+### Files Modified (11 files)
+| File | Change |
+|------|--------|
+| `src/render/common/RenderStateHash.h` | Added shared RT state-hash function declaration |
+| `src/render/common/RenderStateHash.cpp` | Added shared RT state-hash implementation |
+| `src/render/opengl/RayTracingRenderer.h` | Removed backend-local `computeStateHash()` declaration |
+| `src/render/opengl/RayTracingRenderer.cpp` | Replaced local hash call with `computeRenderStateHash(...)`; removed duplicated implementation |
+| `src/render/metal/MetalUnitCellShared.h` | Added shared unit-cell helper API (mesh builders, instance packing, style/uniform packing) |
+| `src/render/metal/MetalUnitCellShared.cpp` | Added shared unit-cell helper implementations |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Switched cylinder mesh build, lattice instance build, and style packing to shared helper |
+| `src/render/metal/MetalRayTracingRenderer.h` | Removed backend-local `computeStateHash`; added overlay helper method declarations |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Switched to shared RT state hash + shared unit-cell builders; deduplicated overlay draw setup via `encodeUnitCellOverlayDraws(...)` |
+| `src/render/CMakeLists.txt` | Added new common hash and metal unit-cell helper sources to build |
+| `renderer_performance_followup.md` | Marked items #5 and #6 as fixed and updated implementation order |
+
+### Implementation Details
+
+#### 1. Shared RT state hash in common code
+- Added `computeRenderStateHash(const Camera&, const RenderSettings&)` in `src/render/common/`.
+- OpenGL RT and Metal RT now call this shared function for accumulation reset state checks.
+- Removed duplicated per-backend hash implementations and now-unused `<functional>` includes.
+
+#### 2. Shared unit-cell helper module for Metal
+- Added `MetalUnitCellShared` helper module with:
+  - `buildUnitCylinderMesh(...)`
+  - `buildUnitSphereMesh(...)`
+  - `buildUnitCellInstances(...)`
+  - `makeUnitCellStyle(...)`
+  - `makeRTUnitCellUniforms(...)`
+- `MetalUnitCellRenderer` now reuses shared geometry/data/style logic.
+- `MetalRayTracingRenderer` now reuses shared geometry/data/uniform logic.
+
+#### 3. RT overlay draw-path deduplication
+- Added:
+  - `hasUnitCellOverlayData() const`
+  - `encodeUnitCellOverlayDraws(void* encoder, const RTUnitCellUniforms&)`
+- Both RT overlay call sites (`renderDisplayPass()` and `renderUnitCellOverlay()`) now call the same draw encoder helper, eliminating duplicated pipeline/buffer binding and draw-call code.
+
+### Verification
+- Build: `cmake --build build --target atom-render` — success.
+
+---
+
 ## 2026-02-11: Metal RT Unit-Cell Overlay Occlusion Migrated to BVH
 
 ### Summary

@@ -1,10 +1,10 @@
 #include "RayTracingRenderer.h"
 #include "../common/Camera.h"
 #include "../common/BVH.h"
+#include "../common/RenderStateHash.h"
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <cstring>
-#include <functional>
 
 namespace atom::render {
 
@@ -475,7 +475,7 @@ void RayTracingRenderer::setStructure(const data::Structure* structure) {
 void RayTracingRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
 
-    // Store settings for isConverged() and computeStateHash()
+    // Store settings for isConverged() and state hashing.
     m_settings = settings;
 
     // Upload atom data if dirty
@@ -492,7 +492,7 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
     }
 
     // Check if state changed (camera, settings, etc.)
-    uint64_t currentHash = computeStateHash(camera);
+    uint64_t currentHash = computeRenderStateHash(camera, m_settings);
     if (currentHash != m_lastStateHash) {
         m_lastStateHash = currentHash;
         resetAccumulation();
@@ -848,50 +848,6 @@ void RayTracingRenderer::renderDisplayPass() {
     glBindVertexArray(0);
 
     m_displayShader->release();
-}
-
-uint64_t RayTracingRenderer::computeStateHash(const Camera& camera) const {
-    // Hash camera parameters + render settings that affect the image.
-    // Any change triggers accumulation reset.
-    std::hash<float> hf;
-    std::hash<int> hi;
-    std::hash<bool> hb;
-
-    uint64_t h = 0;
-    auto combine = [&](uint64_t val) {
-        h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-    };
-
-    // Camera
-    combine(hf(camera.azimuth()));
-    combine(hf(camera.elevation()));
-    combine(hf(camera.distance()));
-    combine(hf(camera.target().x()));
-    combine(hf(camera.target().y()));
-    combine(hf(camera.target().z()));
-    combine(hf(camera.fieldOfView()));
-    combine(hf(camera.aspectRatio()));
-    combine(hb(camera.isPerspective()));
-    combine(hf(camera.orthoScale()));
-
-    // Settings that affect the image
-    combine(hf(m_settings.atomScale));
-    combine(hb(m_settings.enableShadows));
-    combine(hb(m_settings.enableAmbientOcclusion));
-    combine(hi(m_settings.aoSamples));
-    combine(hf(m_settings.aoRadius));
-    combine(hf(m_settings.ambientStrength));
-    combine(hf(m_settings.diffuseStrength));
-    combine(hf(m_settings.specularStrength));
-    combine(hf(m_settings.shininess));
-    combine(hf(m_settings.lightDirX));
-    combine(hf(m_settings.lightDirY));
-    combine(hf(m_settings.lightDirZ));
-    combine(hi(m_settings.backgroundColor.red()));
-    combine(hi(m_settings.backgroundColor.green()));
-    combine(hi(m_settings.backgroundColor.blue()));
-
-    return h;
 }
 
 } // namespace atom::render

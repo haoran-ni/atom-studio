@@ -7,6 +7,8 @@
 
 namespace atom::render::metal {
 
+struct RTUnitCellUniforms;
+
 /// Fragment-shader ray tracing renderer with progressive accumulation.
 /// Parallel to the OpenGL RayTracingRenderer — brute-force ray-sphere
 /// traversal in a fullscreen fragment shader, additive accumulation into
@@ -42,14 +44,15 @@ private:
     void renderRTPass(const Camera& camera, void* cmdBuffer);
     void renderDisplayPass(const Camera& camera, void* cmdBuffer);
     void renderUnitCellOverlay(const Camera& camera, void* cmdBuffer);
-    uint64_t computeStateHash(const Camera& camera) const;
+    bool hasUnitCellOverlayData() const;
+    void encodeUnitCellOverlayDraws(void* encoder, const RTUnitCellUniforms& unitCell);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 
     MetalShaderLibrary m_shaderLibrary;
 
-    RenderSettings m_settings;  // Local copy for isConverged() / computeStateHash()
+    RenderSettings m_settings;  // Local copy for isConverged() / state hashing
     const data::Structure* m_structure = nullptr;
     int m_width = 0;
     int m_height = 0;

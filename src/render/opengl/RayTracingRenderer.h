@@ -44,9 +44,6 @@ private:
     void renderRTPass(const Camera& camera);
     void renderDisplayPass();
 
-    // State change detection
-    uint64_t computeStateHash(const Camera& camera) const;
-
     // --- GL resources ---
 
     // Shaders
@@ -78,7 +75,7 @@ private:
     GLuint m_bvhPrimTex = 0;      // Texture view (R32UI)
 
     // --- State ---
-    RenderSettings m_settings;  // Local copy for isConverged() / computeStateHash()
+    RenderSettings m_settings;  // Local copy for isConverged() / state hashing
     const data::Structure* m_structure = nullptr;
     int m_width = 0;
     int m_height = 0;

@@ -1,15 +1,13 @@
 #import <Metal/Metal.h>
 #include "MetalUnitCellRenderer.h"
 #include "MetalShaderLibrary.h"
+#include "MetalUnitCellShared.h"
 #include "MetalTypes.h"
 #include "../common/RenderSettings.h"
 #include "../../data/Structure.h"
 
 #include <QDebug>
 
-#include <algorithm>
-#include <array>
-#include <cmath>
 #include <vector>
 
 namespace atom::render::metal {
@@ -70,36 +68,7 @@ void MetalUnitCellRenderer::cleanup() {
 void MetalUnitCellRenderer::createCylinderGeometry(int segments) {
     std::vector<float> vertices;
     std::vector<uint32_t> indices;
-
-    const float pi = 3.14159265358979323846f;
-    for (int i = 0; i <= segments; ++i) {
-        float angle = (2.0f * pi * i) / segments;
-        float x = std::cos(angle);
-        float y = std::sin(angle);
-
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(0.0f);
-
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(1.0f);
-    }
-
-    for (int i = 0; i < segments; ++i) {
-        int b0 = i * 2;
-        int t0 = i * 2 + 1;
-        int b1 = (i + 1) * 2;
-        int t1 = (i + 1) * 2 + 1;
-
-        indices.push_back(b0);
-        indices.push_back(b1);
-        indices.push_back(t0);
-
-        indices.push_back(t0);
-        indices.push_back(b1);
-        indices.push_back(t1);
-    }
+    buildUnitCylinderMesh(segments, vertices, indices);
 
     m_cylinderIndexCount = static_cast<int>(indices.size());
 
@@ -133,7 +102,8 @@ void MetalUnitCellRenderer::createJointQuadGeometry() {
 void MetalUnitCellRenderer::setUnitCellData(const data::Structure* structure) {
     if (!m_initialized) return;
 
-    if (!structure || !structure->hasLattice()) {
+    UnitCellInstanceData instances;
+    if (!buildUnitCellInstances(structure, instances)) {
         m_edgeCount = 0;
         m_jointCount = 0;
         m_impl->edgeInstanceBuffer = nil;
@@ -141,65 +111,18 @@ void MetalUnitCellRenderer::setUnitCellData(const data::Structure* structure) {
         return;
     }
 
-    const auto& lattice = structure->lattice();
-    const auto& mat = lattice.matrix;
-
-    const float ax = static_cast<float>(mat[0][0]);
-    const float ay = static_cast<float>(mat[0][1]);
-    const float az = static_cast<float>(mat[0][2]);
-    const float bx = static_cast<float>(mat[1][0]);
-    const float by = static_cast<float>(mat[1][1]);
-    const float bz = static_cast<float>(mat[1][2]);
-    const float cx = static_cast<float>(mat[2][0]);
-    const float cy = static_cast<float>(mat[2][1]);
-    const float cz = static_cast<float>(mat[2][2]);
-
-    const std::array<simd_float3, 8> corners = {{
-        simd_make_float3(0.0f, 0.0f, 0.0f),
-        simd_make_float3(ax, ay, az),
-        simd_make_float3(bx, by, bz),
-        simd_make_float3(cx, cy, cz),
-        simd_make_float3(ax + bx, ay + by, az + bz),
-        simd_make_float3(ax + cx, ay + cy, az + cz),
-        simd_make_float3(bx + cx, by + cy, bz + cz),
-        simd_make_float3(ax + bx + cx, ay + by + cy, az + bz + cz),
-    }};
-
-    const std::array<uint32_t, 24> edgeIndices = {{
-        0, 1,   0, 2,   0, 3,
-        1, 4,   1, 5,
-        2, 4,   2, 6,
-        3, 5,   3, 6,
-        4, 7,   5, 7,   6, 7
-    }};
-
-    const simd_float4 white = simd_make_float4(1.0f, 1.0f, 1.0f, 1.0f);
-
-    std::array<BondInstance, 12> edges{};
-    for (int i = 0; i < 12; ++i) {
-        edges[i].start = corners[edgeIndices[i * 2 + 0]];
-        edges[i].end = corners[edgeIndices[i * 2 + 1]];
-        edges[i].color = white;
-    }
-
-    std::array<SphereInstance, 8> joints{};
-    for (int i = 0; i < 8; ++i) {
-        joints[i].positionAndRadius = simd_make_float4(corners[i], 1.0f);
-        joints[i].color = white;
-    }
-
     m_impl->edgeInstanceBuffer = [m_impl->device
-        newBufferWithBytes:edges.data()
-                    length:edges.size() * sizeof(BondInstance)
+        newBufferWithBytes:instances.edges.data()
+                    length:instances.edges.size() * sizeof(BondInstance)
                    options:MTLResourceStorageModeShared];
 
     m_impl->jointInstanceBuffer = [m_impl->device
-        newBufferWithBytes:joints.data()
-                    length:joints.size() * sizeof(SphereInstance)
+        newBufferWithBytes:instances.joints.data()
+                    length:instances.joints.size() * sizeof(SphereInstance)
                    options:MTLResourceStorageModeShared];
 
-    m_edgeCount = 12;
-    m_jointCount = 8;
+    m_edgeCount = kUnitCellEdgeCount;
+    m_jointCount = kUnitCellJointCount;
 }
 
 void MetalUnitCellRenderer::render(void* encoderPtr,
@@ -213,9 +136,8 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
     id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)encoderPtr;
     id<MTLDepthStencilState> depthState = (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthLessWriteState();
 
-    const float radius = std::max(settings.unitCellThickness, 0.001f);
-    const QColor color = settings.unitCellColor;
-    const simd_float4 unitCellColor = simd_make_float4(color.redF(), color.greenF(), color.blueF(), 1.0f);
+    const UnitCellStyle style = makeUnitCellStyle(settings);
+    const simd_float4 unitCellColor = style.color;
 
     // Keep colors dynamic so UI RGB sliders update without geometry rebuild.
     BondInstance* edgeData = static_cast<BondInstance*>([m_impl->edgeInstanceBuffer contents]);
@@ -229,8 +151,8 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
     }
 
     SceneUniforms unitCellUniforms = uniforms;
-    unitCellUniforms.atomScale = radius;
-    unitCellUniforms.bondRadius = radius;
+    unitCellUniforms.atomScale = style.radius;
+    unitCellUniforms.bondRadius = style.radius;
 
     // Flat color: no shading terms for the unit-cell object.
     unitCellUniforms.ambient = 1.0f;

@@ -9,6 +9,8 @@ set(RENDER_COMMON_SOURCES
     common/BVH.h
     common/Camera.cpp
     common/Camera.h
+    common/RenderStateHash.cpp
+    common/RenderStateHash.h
     common/Renderer.h
     common/RenderSettings.h
 )
@@ -49,6 +51,8 @@ set(RENDER_METAL_SOURCES
     metal/MetalSphereRenderer.mm
     metal/MetalBondRenderer.h
     metal/MetalBondRenderer.mm
+    metal/MetalUnitCellShared.h
+    metal/MetalUnitCellShared.cpp
     metal/MetalUnitCellRenderer.h
     metal/MetalUnitCellRenderer.mm
     metal/MetalRenderer.h

@@ -24,25 +24,24 @@ Additional lifecycle fixes:
 
 **Resolved**: `rt_unit_cell_fragment` now uses BVH `traceAnyHit(...)` instead of a linear atom loop. Overlay passes bind BVH buffers (`nodeMin`, `nodeMax`, `nodeMeta`, `primIndices`) and pass `bvhNodeCount` through `RTUnitCellUniforms`, preserving the same discard rule (hide unit-cell fragment only if an atom is hit before `maxT`).
 
-## 5) Duplicated `computeStateHash` across OpenGL and Metal RT renderers
+## ~~5) Duplicated `computeStateHash` across OpenGL and Metal RT renderers~~ (FIXED)
 
-- Potential problem:
-  - Both `RayTracingRenderer` (OpenGL) and `MetalRayTracingRenderer` have nearly identical `computeStateHash()` implementations that hash camera and settings fields. Any future settings addition must be updated in both places or accumulation resets will silently break for one backend.
-- Problematic code location:
-  - `src/render/opengl/RayTracingRenderer.cpp` — `computeStateHash()` near end of file
-  - `src/render/metal/MetalRayTracingRenderer.mm` — `computeStateHash()` near end of file
-- Corresponding fix:
-  - Extract a shared `computeStateHash(const Camera&, const RenderSettings&)` free function (or static method on `Renderer`) into `src/render/common/`.
+**Resolved**: extracted a shared `computeRenderStateHash(const Camera&, const RenderSettings&)` helper into `src/render/common/RenderStateHash.h/.cpp`, and switched both RT backends to use it. Backend-local `computeStateHash()` methods were removed from:
+- `src/render/opengl/RayTracingRenderer.*`
+- `src/render/metal/MetalRayTracingRenderer.*`
 
-## 6) Duplicated unit-cell overlay rendering code in Metal RT renderer
+This removes cross-backend drift risk when adding settings that should trigger accumulation reset.
 
-- Potential problem:
-  - `MetalRayTracingRenderer::renderUnitCellOverlay()` duplicates vertex packing, uniform setup, and draw-call logic that already exists in `MetalRenderer` (raster). Changes to unit-cell visual style must be applied in two places.
-- Problematic code location:
-  - `src/render/metal/MetalRayTracingRenderer.mm` — `renderUnitCellOverlay()`
-  - `src/render/metal/MetalRenderer.mm` — unit-cell rendering path
-- Corresponding fix:
-  - Extract shared unit-cell geometry building and uniform packing into a common helper, or have the RT renderer delegate the overlay pass to `MetalRenderer`'s unit-cell pipeline.
+## ~~6) Duplicated unit-cell overlay rendering code in Metal RT renderer~~ (FIXED)
+
+**Resolved**: extracted shared unit-cell geometry/data/uniform logic into `src/render/metal/MetalUnitCellShared.h/.cpp`, including:
+- unit cylinder mesh builder
+- unit sphere mesh builder
+- lattice -> edge/joint instance packing
+- shared unit-cell style packing
+- shared RT unit-cell uniform packing
+
+`MetalUnitCellRenderer` and `MetalRayTracingRenderer` now both consume these helpers. In addition, RT overlay draw setup was deduplicated by routing both overlay call sites through `MetalRayTracingRenderer::encodeUnitCellOverlayDraws(...)`.
 
 ## 7) Dead empty-buffer guard checks in BVH upload code
 
@@ -69,7 +68,7 @@ Additional lifecycle fixes:
 2. ~~Deferred accumulation clear (`clear-on-next-RT-pass`).~~ (DONE)
 3. ~~`QSGTexture` wrapper cache/reuse in `MetalViewport`.~~ (DONE)
 4. ~~BVH traversal for unit-cell overlay occlusion path.~~ (DONE)
-5. Extract shared `computeStateHash` to common code.
-6. Extract shared unit-cell overlay code.
+5. ~~Extract shared `computeStateHash` to common code.~~ (DONE)
+6. ~~Extract shared unit-cell overlay code.~~ (DONE)
 7. Remove dead empty-buffer guards (trivial).
 8. Remove unused `#include <cstring>` (trivial).
