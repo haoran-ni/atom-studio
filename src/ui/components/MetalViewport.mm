@@ -15,7 +15,9 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QDebug>
+#include <QRunnable>
 #include <algorithm>
+#include <vector>
 
 // Qt 6 native interface for wrapping Metal textures
 #include <QSGTexture>
@@ -27,12 +29,100 @@ namespace atom::ui {
 // ---------------------------------------------------------------------------
 
 struct MetalViewport::Impl {
+    struct TextureCacheEntry {
+        void* nativeTexture = nullptr;
+        QSize size;
+        QQuickWindow* window = nullptr;
+        QSGTexture* wrapper = nullptr;
+        uint64_t lastUsedTick = 0;
+    };
+
+    static constexpr std::size_t kMaxCachedTextures = 8;
+
     std::unique_ptr<render::metal::MetalRenderer> rasterRenderer;
     std::unique_ptr<render::metal::MetalRayTracingRenderer> rtRenderer;
     render::Renderer* activeRenderer = nullptr;
     int currentMode = 0;
 
-    QSGTexture* cachedTexture = nullptr; // Owned by scene graph
+    std::vector<TextureCacheEntry> textureCache; // Owned by viewport cache
+    uint64_t textureCacheTick = 0;
+
+    QSGTexture* findCachedTexture(void* nativeTexture, const QSize& size, QQuickWindow* window) {
+        for (auto& entry : textureCache) {
+            if (entry.nativeTexture == nativeTexture &&
+                entry.size == size &&
+                entry.window == window) {
+                entry.lastUsedTick = ++textureCacheTick;
+                return entry.wrapper;
+            }
+        }
+        return nullptr;
+    }
+
+    void insertCachedTexture(void* nativeTexture,
+                             const QSize& size,
+                             QQuickWindow* window,
+                             QSGTexture* wrapper) {
+        textureCache.push_back(TextureCacheEntry{
+            nativeTexture,
+            size,
+            window,
+            wrapper,
+            ++textureCacheTick
+        });
+    }
+
+    void pruneTextureCache(QSGTexture* keepTexture = nullptr) {
+        while (textureCache.size() > kMaxCachedTextures) {
+            std::size_t oldestIndex = textureCache.size();
+            uint64_t oldestTick = UINT64_MAX;
+
+            for (std::size_t i = 0; i < textureCache.size(); ++i) {
+                const auto& entry = textureCache[i];
+                if (!entry.wrapper || entry.wrapper == keepTexture) {
+                    continue;
+                }
+                if (entry.lastUsedTick < oldestTick) {
+                    oldestTick = entry.lastUsedTick;
+                    oldestIndex = i;
+                }
+            }
+
+            if (oldestIndex == textureCache.size()) {
+                break;
+            }
+
+            delete textureCache[oldestIndex].wrapper;
+            textureCache.erase(textureCache.begin() + static_cast<std::ptrdiff_t>(oldestIndex));
+        }
+    }
+
+    std::vector<QSGTexture*> takeAllCachedTextures() {
+        std::vector<QSGTexture*> textures;
+        textures.reserve(textureCache.size());
+        for (const auto& entry : textureCache) {
+            if (entry.wrapper) {
+                textures.push_back(entry.wrapper);
+            }
+        }
+        textureCache.clear();
+        return textures;
+    }
+};
+
+class TextureCacheCleanupJob final : public QRunnable {
+public:
+    explicit TextureCacheCleanupJob(std::vector<QSGTexture*> textures)
+        : m_textures(std::move(textures)) {}
+
+    void run() override {
+        for (QSGTexture* texture : m_textures) {
+            delete texture;
+        }
+    }
+
+private:
+    std::vector<QSGTexture*> m_textures;
 };
 
 // ---------------------------------------------------------------------------
@@ -230,10 +320,14 @@ void MetalViewport::setEnableShadows(bool enable) {
 
 QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     // This runs on the render thread with the GUI thread blocked.
+    QQuickWindow* renderWindow = window();
+    if (!renderWindow) {
+        return oldNode;
+    }
 
     // 1. Get Metal device from Qt's scene graph
-    QSGRendererInterface* ri = window()->rendererInterface();
-    void* devicePtr = ri->getResource(window(), QSGRendererInterface::DeviceResource);
+    QSGRendererInterface* ri = renderWindow->rendererInterface();
+    void* devicePtr = ri->getResource(renderWindow, QSGRendererInterface::DeviceResource);
     if (!devicePtr) {
         qWarning() << "MetalViewport: could not get Metal device from Qt";
         return oldNode;
@@ -306,7 +400,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     // 5. Resize
-    qreal dpr = window()->devicePixelRatio();
+    qreal dpr = renderWindow->devicePixelRatio();
     int pw = static_cast<int>(width() * dpr);
     int ph = static_cast<int>(height() * dpr);
     if (pw > 0 && ph > 0) {
@@ -336,22 +430,24 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     if (!node) {
         node = new QSGSimpleTextureNode();
         node->setTextureCoordinatesTransform(QSGSimpleTextureNode::MirrorVertically);
+        node->setOwnsTexture(false); // Texture lifetime is managed by m_impl->textureCache.
     }
 
-    // Create QSGTexture from native Metal texture
-    // Use QQuickWindow::createTextureFromNativeObject for cross-version compatibility
-    QSGTexture* tex = QNativeInterface::QSGMetalTexture::fromNative(
-        (__bridge id<MTLTexture>)mtlTexture,
-        window(),
-        QSize(pw, ph));
+    const QSize textureSize(pw, ph);
+    QSGTexture* tex = m_impl->findCachedTexture(mtlTexture, textureSize, renderWindow);
+    if (!tex) {
+        tex = QNativeInterface::QSGMetalTexture::fromNative(
+            (__bridge id<MTLTexture>)mtlTexture,
+            renderWindow,
+            textureSize);
+        if (tex) {
+            m_impl->insertCachedTexture(mtlTexture, textureSize, renderWindow, tex);
+        }
+    }
 
     if (tex) {
-        // Clean up previous texture if it exists
-        if (m_impl->cachedTexture && m_impl->cachedTexture != tex) {
-            delete m_impl->cachedTexture;
-        }
-        m_impl->cachedTexture = tex;
         node->setTexture(tex);
+        m_impl->pruneTextureCache(tex);
     }
 
     node->setRect(boundingRect());
@@ -377,6 +473,28 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     return node;
+}
+
+void MetalViewport::releaseResources() {
+    if (!m_impl) {
+        return;
+    }
+
+    std::vector<QSGTexture*> textures = m_impl->takeAllCachedTextures();
+    if (textures.empty()) {
+        return;
+    }
+
+    QQuickWindow* renderWindow = window();
+    if (renderWindow) {
+        renderWindow->scheduleRenderJob(
+            new TextureCacheCleanupJob(std::move(textures)),
+            QQuickWindow::BeforeSynchronizingStage);
+    } else {
+        for (QSGTexture* texture : textures) {
+            delete texture;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

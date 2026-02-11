@@ -90,6 +90,7 @@ signals:
 
 protected:
     QSGNode* updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* data) override;
+    void releaseResources() override;
     void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
 
     void mousePressEvent(QMouseEvent* event) override;

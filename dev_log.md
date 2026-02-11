@@ -4,6 +4,47 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: MetalViewport QSGTexture Cache (Eliminate Per-Frame Wrapper Churn)
+
+### Summary
+Fixed a render-thread hot-path inefficiency in `MetalViewport`: the scene graph wrapper (`QSGTexture`) for the Metal output texture was being recreated every frame via `fromNative(...)`, and the previous wrapper was deleted immediately. Replaced this with keyed wrapper caching + explicit scene-graph resource cleanup.
+
+### Files Modified (2 files)
+| File | Change |
+|------|--------|
+| `src/ui/components/MetalViewport.h` | Added `releaseResources()` override for scene-graph teardown cleanup |
+| `src/ui/components/MetalViewport.mm` | Added bounded texture-wrapper cache (native texture handle + size + window key), LRU pruning, render-thread cleanup job, and switched node ownership to `setOwnsTexture(false)` |
+
+### Implementation Details
+
+#### 1. Keyed wrapper reuse in `updatePaintNode()`
+- Replaced unconditional per-frame `QNativeInterface::QSGMetalTexture::fromNative(...)` calls with cache lookup first.
+- Cache key includes:
+  - native `MTLTexture` pointer (as `void*`)
+  - texture size
+  - `QQuickWindow*` (wrapper is window-bound)
+- On cache miss, create wrapper once and store it; on hit, reuse existing wrapper.
+
+#### 2. Explicit ownership model for texture wrappers
+- `QSGSimpleTextureNode` now uses `setOwnsTexture(false)`.
+- Wrapper lifetime is managed by the viewport cache rather than per-frame node replacement/deletion behavior.
+
+#### 3. Bounded cache with pruning
+- Added a small bounded cache (`kMaxCachedTextures = 8`) with LRU-style pruning to prevent unbounded growth if output textures rotate across resizes/mode switches.
+
+#### 4. Safe scene-graph teardown cleanup
+- Implemented `releaseResources()` to flush cached wrappers.
+- Cleanup is scheduled as a render job (`scheduleRenderJob`) so wrapper deletion happens on the render thread during scene-graph lifecycle transitions.
+
+### Behavioral Impact
+- Steady-state rendering no longer allocates/frees a `QSGTexture` wrapper every frame.
+- Wrapper recreation now occurs only when the underlying native output texture identity or size changes.
+
+### Verification
+- Build: `cmake --build build -j4` — success.
+
+---
+
 ## 2026-02-11: Metal RT Single Command Buffer + Deferred Accumulation Clear
 
 ### Summary
