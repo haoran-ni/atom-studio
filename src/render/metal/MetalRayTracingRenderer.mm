@@ -8,6 +8,7 @@
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <QMatrix4x4>
+#include <cassert>
 #include <cstring>
 #include <vector>
 
@@ -349,6 +350,8 @@ void MetalRayTracingRenderer::uploadAtomData() {
                                  m_structure->positionsZ(),
                                  m_structure->radii(),
                                  m_structure->atomCount());
+    assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
+    assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
     std::vector<simd_float4> nodeMins(static_cast<size_t>(m_bvhNodeCount));
@@ -371,19 +374,19 @@ void MetalRayTracingRenderer::uploadAtomData() {
     }
 
     m_impl->bvhNodeMinBuffer = [m_impl->device
-        newBufferWithBytes:nodeMins.empty() ? nullptr : nodeMins.data()
+        newBufferWithBytes:nodeMins.data()
                     length:nodeMins.size() * sizeof(simd_float4)
                    options:MTLResourceStorageModeShared];
     m_impl->bvhNodeMaxBuffer = [m_impl->device
-        newBufferWithBytes:nodeMaxs.empty() ? nullptr : nodeMaxs.data()
+        newBufferWithBytes:nodeMaxs.data()
                     length:nodeMaxs.size() * sizeof(simd_float4)
                    options:MTLResourceStorageModeShared];
     m_impl->bvhNodeMetaBuffer = [m_impl->device
-        newBufferWithBytes:nodeMeta.empty() ? nullptr : nodeMeta.data()
+        newBufferWithBytes:nodeMeta.data()
                     length:nodeMeta.size() * sizeof(simd_uint4)
                    options:MTLResourceStorageModeShared];
     m_impl->bvhPrimIndexBuffer = [m_impl->device
-        newBufferWithBytes:bvh.primitiveIndices.empty() ? nullptr : bvh.primitiveIndices.data()
+        newBufferWithBytes:bvh.primitiveIndices.data()
                     length:bvh.primitiveIndices.size() * sizeof(uint32_t)
                    options:MTLResourceStorageModeShared];
 

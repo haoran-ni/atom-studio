@@ -4,6 +4,44 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: BVH Upload Guard Cleanup + Follow-up Notes Retirement
+
+### Summary
+Completed follow-up items #7 and #8:
+1. Removed dead BVH upload empty-buffer guard patterns in both OpenGL and Metal RT upload paths.
+2. Added debug assertions to enforce BVH invariants for non-empty structures.
+3. Retired `renderer_performance_followup.md` after all tracked items were completed.
+
+### Files Modified (4 files)
+| File | Change |
+|------|--------|
+| `src/render/opengl/RayTracingRenderer.cpp` | Added BVH non-empty assertions after `buildSphereBVH(...)`; removed dead `empty() ? nullptr : data()` upload branches; replaced unused `<cstring>` include with `<cassert>` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Added BVH non-empty assertions after `buildSphereBVH(...)`; removed dead `empty() ? nullptr : data()` upload branches; added `<cassert>` include |
+| `renderer_performance_followup.md` | Marked #7/#8 as fixed before retirement |
+| `dev_log.md` | Added this session log entry |
+
+### Implementation Details
+
+#### 1. Enforced expected BVH invariants in upload paths
+- In both RT backends, immediately after BVH construction:
+  - `assert(!bvh.nodes.empty())`
+  - `assert(!bvh.primitiveIndices.empty())`
+- This documents and enforces the assumption that `atomCount > 0` yields at least one BVH root node and at least one primitive index.
+
+#### 2. Removed dead empty-pointer upload branches
+- OpenGL path now uploads BVH arrays using direct `.data()` pointers.
+- Metal path now creates BVH buffers using direct `.data()` pointers.
+- The old `empty() ? nullptr : data()` pattern was unreachable in normal non-empty-structure flow and is now removed for clarity.
+
+#### 3. Follow-up notes retirement
+- `renderer_performance_followup.md` was used to track renderer performance cleanup tasks.
+- With all listed items completed, the file is removed and the completion record is kept in `dev_log.md`.
+
+### Verification
+- Build: `cmake --build build -j4` — success (only existing macOS OpenGL deprecation warnings).
+
+---
+
 ## 2026-02-11: RT State Hash Unification + Metal Unit-Cell Shared Helper Extraction
 
 ### Summary

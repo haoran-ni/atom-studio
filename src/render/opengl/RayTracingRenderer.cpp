@@ -4,7 +4,7 @@
 #include "../common/RenderStateHash.h"
 #include "../../data/Structure.h"
 #include <QDebug>
-#include <cstring>
+#include <cassert>
 
 namespace atom::render {
 
@@ -690,6 +690,8 @@ void RayTracingRenderer::uploadAtomData() {
                                  m_structure->positionsZ(),
                                  m_structure->radii(),
                                  m_structure->atomCount());
+    assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
+    assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
 
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
@@ -709,7 +711,7 @@ void RayTracingRenderer::uploadAtomData() {
     glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMinBuf);
     glBufferData(GL_TEXTURE_BUFFER,
                  static_cast<GLsizeiptr>(nodeMinData.size() * sizeof(float)),
-                 nodeMinData.empty() ? nullptr : nodeMinData.data(),
+                 nodeMinData.data(),
                  GL_STATIC_DRAW);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMinTex);
@@ -718,7 +720,7 @@ void RayTracingRenderer::uploadAtomData() {
     glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMaxBuf);
     glBufferData(GL_TEXTURE_BUFFER,
                  static_cast<GLsizeiptr>(nodeMaxData.size() * sizeof(float)),
-                 nodeMaxData.empty() ? nullptr : nodeMaxData.data(),
+                 nodeMaxData.data(),
                  GL_STATIC_DRAW);
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMaxTex);
@@ -727,7 +729,7 @@ void RayTracingRenderer::uploadAtomData() {
     glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMetaBuf);
     glBufferData(GL_TEXTURE_BUFFER,
                  static_cast<GLsizeiptr>(nodeMetaData.size() * sizeof(uint32_t)),
-                 nodeMetaData.empty() ? nullptr : nodeMetaData.data(),
+                 nodeMetaData.data(),
                  GL_STATIC_DRAW);
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMetaTex);
@@ -736,7 +738,7 @@ void RayTracingRenderer::uploadAtomData() {
     glBindBuffer(GL_TEXTURE_BUFFER, m_bvhPrimBuf);
     glBufferData(GL_TEXTURE_BUFFER,
                  static_cast<GLsizeiptr>(bvh.primitiveIndices.size() * sizeof(uint32_t)),
-                 bvh.primitiveIndices.empty() ? nullptr : bvh.primitiveIndices.data(),
+                 bvh.primitiveIndices.data(),
                  GL_STATIC_DRAW);
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhPrimTex);
