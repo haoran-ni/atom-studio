@@ -4,6 +4,95 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: *IMPORTANT* BVH Ray-Tracing Migration (Replace Brute-Force Atom Traversal)
+
+### Summary
+Implemented a full BVH-based ray traversal pipeline for both OpenGL and Metal ray-tracing renderers, replacing the previous brute-force per-ray atom scan.
+
+This change is *IMPORTANT* because it fundamentally changes RT intersection complexity from testing every atom for every ray to testing only BVH-candidate atoms, which is the core scalability upgrade for large structures.
+
+### Scope
+This entry documents only the BVH method implementation.
+
+### Files Modified (9 files)
+| File | Change |
+|------|--------|
+| `src/render/common/BVH.h` | Added shared GPU-friendly BVH node layout and builder API |
+| `src/render/common/BVH.cpp` | Implemented CPU BVH construction for atom spheres |
+| `src/render/CMakeLists.txt` | Added BVH sources to `atom-render` common sources |
+| `src/render/opengl/RayTracingRenderer.h` | Added BVH TBO resource handles and node count state |
+| `src/render/opengl/RayTracingRenderer.cpp` | Built/uploaded BVH buffers; replaced GLSL brute-force traversal with stack-based BVH traversal |
+| `src/render/metal/MetalTypes.h` | Extended RT uniform struct with BVH node count |
+| `src/render/metal/MetalRayTracingRenderer.h` | Added BVH node count state |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Built/uploaded BVH `MTLBuffer`s; bound BVH buffers to RT fragment stage |
+| `src/render/metal/MetalShaderLibrary.mm` | Replaced MSL brute-force traversal with stack-based BVH traversal in RT fragment shader |
+
+### Implementation Details
+
+#### 1. Shared BVH Builder (CPU-side)
+- Added a backend-agnostic BVH builder in `src/render/common/`.
+- Implemented a flat node array suitable for GPU traversal:
+  - `minAndMaxRadius = vec4(min.xyz, maxBaseRadiusInNode)`
+  - `maxAndPad = vec4(max.xyz, pad)`
+  - `meta = uvec4(leftChild, rightChild, firstPrim, primCount)`
+- Build strategy:
+  - top-down recursive build
+  - split axis chosen by largest centroid extent
+  - median partition via `std::nth_element`
+  - leaf threshold set by `leafSize` (default `8`)
+- Output:
+  - `nodes[]` (flat BVH node list)
+  - `primitiveIndices[]` (leaf primitive index table)
+
+#### 2. OpenGL RT Integration
+- Added BVH texture-buffer resources:
+  - node min data (`RGBA32F`)
+  - node max data (`RGBA32F`)
+  - node metadata (`RGBA32UI`)
+  - primitive indices (`R32UI`)
+- In `uploadAtomData()`:
+  - build BVH from structure SoA (`positionsX/Y/Z`, `radii`)
+  - flatten/upload all BVH arrays to TBOs
+- In RT shader:
+  - removed linear `for (i=0; i<uAtomCount; ++i)` traversal
+  - added iterative stack traversal (`BVH_STACK_SIZE = 64`)
+  - implemented BVH-based:
+    - `traceClosest(...)`
+    - `traceAnyHit(...)`
+  - preserved existing shading/AO/shadow behavior
+  - added primitive index bounds guard (`primIndex < uAtomCount`)
+
+#### 3. Metal RT Integration
+- Added BVH buffers in renderer implementation:
+  - `bvhNodeMinBuffer`, `bvhNodeMaxBuffer`, `bvhNodeMetaBuffer`, `bvhPrimIndexBuffer`
+- Extended RT uniform payload with `bvhNodeCount`.
+- In `uploadAtomData()`:
+  - build BVH using shared builder
+  - pack node/min/max/meta arrays to `MTLBuffer`s
+  - upload primitive index array
+- In RT pass:
+  - bound BVH buffers to fragment slots `[3..6]`
+- In embedded MSL RT shader:
+  - replaced brute-force traversal with iterative BVH traversal
+  - implemented BVH-based closest-hit and any-hit functions
+  - preserved AO/shadow/lighting logic
+  - added primitive index bounds guard (`primIndex < atomCount`)
+
+#### 4. Correctness Safeguard for Runtime Atom Scaling
+- BVH is built from base radii in structure data.
+- During traversal, node AABBs are conservatively expanded when `atomScale > 1` using node `maxBaseRadius`, preventing missed intersections without forcing BVH rebuilds on atom-scale UI changes.
+
+### Behavioral Impact
+- Primary RT intersection path now uses BVH traversal in both backends.
+- Visual shading model is unchanged (same Blinn-Phong + optional AO + optional shadows).
+- Expected effect: significant RT speedup for large atom counts due to reduced intersection candidates per ray.
+
+### Verification
+- Build command: `cmake --build build -j4`
+- Result: success (no new build errors introduced by BVH migration).
+
+---
+
 ## 2026-02-11: Background UX Refactor + Immediate RT Background Updates
 
 ### Summary

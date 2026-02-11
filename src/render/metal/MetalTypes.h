@@ -67,7 +67,8 @@ struct RTUniforms {
     int32_t       aoSamples;
     float         aoRadius;
     int32_t       maxSamples;
-    float         _pad[3];
+    int32_t       bvhNodeCount;
+    float         _pad[2];
 };
 
 // Unit-cell object overlay uniforms for RT output compositing

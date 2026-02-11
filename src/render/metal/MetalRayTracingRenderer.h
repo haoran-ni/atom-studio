@@ -54,6 +54,7 @@ private:
     int m_width = 0;
     int m_height = 0;
     int m_atomCount = 0;
+    int m_bvhNodeCount = 0;
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;

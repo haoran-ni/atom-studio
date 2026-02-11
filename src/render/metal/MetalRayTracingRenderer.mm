@@ -2,6 +2,7 @@
 #include "MetalRayTracingRenderer.h"
 #include "MetalTypes.h"
 #include "../common/Camera.h"
+#include "../common/BVH.h"
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <QMatrix4x4>
@@ -139,6 +140,10 @@ struct MetalRayTracingRenderer::Impl {
     // Atom data buffers
     id<MTLBuffer> atomPositionBuffer = nil;  // float4(x,y,z,radius) per atom
     id<MTLBuffer> atomColorBuffer = nil;     // float4(r,g,b,a) per atom
+    id<MTLBuffer> bvhNodeMinBuffer = nil;    // float4(min.xyz, maxRadius) per node
+    id<MTLBuffer> bvhNodeMaxBuffer = nil;    // float4(max.xyz, pad) per node
+    id<MTLBuffer> bvhNodeMetaBuffer = nil;   // uint4(left,right,first,count) per node
+    id<MTLBuffer> bvhPrimIndexBuffer = nil;  // uint primitive indices
 
     // Unit-cell overlay geometry + instance buffers
     id<MTLBuffer> unitCellCylinderVertexBuffer = nil;   // unit cylinder mesh (packed_float3)
@@ -241,6 +246,10 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->outputTexture = nil;
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
+    m_impl->bvhNodeMinBuffer = nil;
+    m_impl->bvhNodeMaxBuffer = nil;
+    m_impl->bvhNodeMetaBuffer = nil;
+    m_impl->bvhPrimIndexBuffer = nil;
     m_impl->unitCellCylinderVertexBuffer = nil;
     m_impl->unitCellCylinderIndexBuffer = nil;
     m_impl->unitCellEdgeInstanceBuffer = nil;
@@ -252,6 +261,7 @@ void MetalRayTracingRenderer::cleanup() {
 
     m_structure = nullptr;
     m_atomCount = 0;
+    m_bvhNodeCount = 0;
     m_unitCellEdgeCount = 0;
     m_unitCellJointCount = 0;
     m_unitCellCylinderIndexCount = 0;
@@ -410,8 +420,13 @@ void MetalRayTracingRenderer::createRenderTargets() {
 void MetalRayTracingRenderer::uploadAtomData() {
     if (!m_structure || m_structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_bvhNodeCount = 0;
         m_impl->atomPositionBuffer = nil;
         m_impl->atomColorBuffer = nil;
+        m_impl->bvhNodeMinBuffer = nil;
+        m_impl->bvhNodeMaxBuffer = nil;
+        m_impl->bvhNodeMetaBuffer = nil;
+        m_impl->bvhPrimIndexBuffer = nil;
         m_atomDataDirty = false;
         return;
     }
@@ -428,6 +443,49 @@ void MetalRayTracingRenderer::uploadAtomData() {
     m_impl->atomColorBuffer = [m_impl->device
         newBufferWithBytes:colorData.data()
                     length:colorData.size() * sizeof(float)
+                   options:MTLResourceStorageModeShared];
+
+    BVHData bvh = buildSphereBVH(m_structure->positionsX(),
+                                 m_structure->positionsY(),
+                                 m_structure->positionsZ(),
+                                 m_structure->radii(),
+                                 m_structure->atomCount());
+    m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
+
+    std::vector<simd_float4> nodeMins(static_cast<size_t>(m_bvhNodeCount));
+    std::vector<simd_float4> nodeMaxs(static_cast<size_t>(m_bvhNodeCount));
+    std::vector<simd_uint4> nodeMeta(static_cast<size_t>(m_bvhNodeCount));
+    for (int i = 0; i < m_bvhNodeCount; ++i) {
+        const BVHNodeGPU& node = bvh.nodes[static_cast<size_t>(i)];
+        nodeMins[static_cast<size_t>(i)] = simd_make_float4(
+            node.minAndMaxRadius[0],
+            node.minAndMaxRadius[1],
+            node.minAndMaxRadius[2],
+            node.minAndMaxRadius[3]);
+        nodeMaxs[static_cast<size_t>(i)] = simd_make_float4(
+            node.maxAndPad[0],
+            node.maxAndPad[1],
+            node.maxAndPad[2],
+            node.maxAndPad[3]);
+        nodeMeta[static_cast<size_t>(i)] = simd_make_uint4(
+            node.meta[0], node.meta[1], node.meta[2], node.meta[3]);
+    }
+
+    m_impl->bvhNodeMinBuffer = [m_impl->device
+        newBufferWithBytes:nodeMins.empty() ? nullptr : nodeMins.data()
+                    length:nodeMins.size() * sizeof(simd_float4)
+                   options:MTLResourceStorageModeShared];
+    m_impl->bvhNodeMaxBuffer = [m_impl->device
+        newBufferWithBytes:nodeMaxs.empty() ? nullptr : nodeMaxs.data()
+                    length:nodeMaxs.size() * sizeof(simd_float4)
+                   options:MTLResourceStorageModeShared];
+    m_impl->bvhNodeMetaBuffer = [m_impl->device
+        newBufferWithBytes:nodeMeta.empty() ? nullptr : nodeMeta.data()
+                    length:nodeMeta.size() * sizeof(simd_uint4)
+                   options:MTLResourceStorageModeShared];
+    m_impl->bvhPrimIndexBuffer = [m_impl->device
+        newBufferWithBytes:bvh.primitiveIndices.empty() ? nullptr : bvh.primitiveIndices.data()
+                    length:bvh.primitiveIndices.size() * sizeof(uint32_t)
                    options:MTLResourceStorageModeShared];
 
     m_atomDataDirty = false;
@@ -533,6 +591,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
     rt.aoSamples = m_settings.aoSamples;
     rt.aoRadius = m_settings.aoRadius;
     rt.maxSamples = m_settings.maxRTSamples;
+    rt.bvhNodeCount = m_bvhNodeCount;
 
     // Render
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
@@ -563,6 +622,10 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera) {
     // buffer(1),(2): atom data (fragment stage)
     [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
     [encoder setFragmentBuffer:m_impl->atomColorBuffer offset:0 atIndex:2];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMinBuffer offset:0 atIndex:3];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
+    [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
     [encoder endEncoding];

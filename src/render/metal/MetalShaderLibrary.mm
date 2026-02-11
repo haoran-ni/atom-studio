@@ -69,7 +69,8 @@ struct RTUniforms {
     int      aoSamples;
     float    aoRadius;
     int      maxSamples;
-    float    _pad[3];
+    int      bvhNodeCount;
+    float    _pad[2];
 };
 
 struct DisplayUniforms {
@@ -425,41 +426,175 @@ float intersectSphere(float3 ro, float3 rd, float3 center, float radius) {
     return -1.0;
 }
 
+constant uint BVH_INVALID_INDEX = 0xffffffffu;
+constant int BVH_STACK_SIZE = 64;
+
+bool intersectAABB(float3 ro, float3 invRd, float3 bmin, float3 bmax, float tMax,
+                   thread float& tNearOut) {
+    float3 t0 = (bmin - ro) * invRd;
+    float3 t1 = (bmax - ro) * invRd;
+    float3 tMin = min(t0, t1);
+    float3 tMax3 = max(t0, t1);
+
+    float tNear = max(max(tMin.x, tMin.y), max(tMin.z, 0.0));
+    float tFar = min(min(tMax3.x, tMax3.y), tMax3.z);
+    tNearOut = tNear;
+    return (tFar >= tNear) && (tNear <= tMax);
+}
+
+bool fetchNodeIntersection(int nodeIndex,
+                           float3 ro,
+                           float3 invRd,
+                           float tMax,
+                           float atomScale,
+                           device const float4* bvhNodeMinData,
+                           device const float4* bvhNodeMaxData,
+                           device const uint4* bvhNodeMeta,
+                           thread float& tNearOut,
+                           thread uint4& metaOut) {
+    float4 minData = bvhNodeMinData[nodeIndex];
+    float4 maxData = bvhNodeMaxData[nodeIndex];
+    metaOut = bvhNodeMeta[nodeIndex];
+
+    // BVH is built with base radii. Expand node AABBs conservatively when
+    // runtime atom scale is larger than 1 to avoid misses.
+    float expansion = max(atomScale - 1.0, 0.0) * minData.w;
+    float3 bmin = minData.xyz - float3(expansion);
+    float3 bmax = maxData.xyz + float3(expansion);
+    return intersectAABB(ro, invRd, bmin, bmax, tMax, tNearOut);
+}
+
 void traceClosest(float3 ro, float3 rd,
                   device const float4* atomPositions,
                   int atomCount, float atomScale,
+                  device const float4* bvhNodeMinData,
+                  device const float4* bvhNodeMaxData,
+                  device const uint4* bvhNodeMeta,
+                  device const uint* bvhPrimIndices,
+                  int bvhNodeCount,
                   thread float& hitT, thread int& hitIndex) {
     hitT = 1e30;
     hitIndex = -1;
-    for (int i = 0; i < atomCount; i++) {
-        float4 atom = atomPositions[i];
-        float r = atom.w * atomScale;
-        float t = intersectSphere(ro, rd, atom.xyz, r);
-        if (t > 0.0 && t < hitT) {
-            hitT = t;
-            hitIndex = i;
+    if (bvhNodeCount <= 0) return;
+
+    float3 invRd = 1.0 / rd;
+    int stack[BVH_STACK_SIZE];
+    int sp = 0;
+    stack[sp++] = 0;
+
+    while (sp > 0) {
+        int nodeIndex = stack[--sp];
+        float nodeTNear;
+        uint4 meta;
+        if (!fetchNodeIntersection(nodeIndex, ro, invRd, hitT, atomScale,
+                                   bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
+                                   nodeTNear, meta)) {
+            continue;
+        }
+
+        uint primCount = meta.w;
+        if (primCount > 0) {
+            uint first = meta.z;
+            for (uint i = 0; i < primCount; ++i) {
+                uint primIndex = bvhPrimIndices[first + i];
+                if (primIndex >= uint(atomCount)) continue;
+                float4 atom = atomPositions[primIndex];
+                float r = atom.w * atomScale;
+                float t = intersectSphere(ro, rd, atom.xyz, r);
+                if (t > 0.0 && t < hitT) {
+                    hitT = t;
+                    hitIndex = int(primIndex);
+                }
+            }
+            continue;
+        }
+
+        uint left = meta.x;
+        uint right = meta.y;
+        bool hitLeft = false;
+        bool hitRight = false;
+        float leftNear = 0.0;
+        float rightNear = 0.0;
+        uint4 childMeta;
+
+        if (left != BVH_INVALID_INDEX) {
+            hitLeft = fetchNodeIntersection(int(left), ro, invRd, hitT, atomScale,
+                                            bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
+                                            leftNear, childMeta);
+        }
+        if (right != BVH_INVALID_INDEX) {
+            hitRight = fetchNodeIntersection(int(right), ro, invRd, hitT, atomScale,
+                                             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
+                                             rightNear, childMeta);
+        }
+
+        if (hitLeft && hitRight) {
+            uint nearChild = (leftNear < rightNear) ? left : right;
+            uint farChild = (leftNear < rightNear) ? right : left;
+            if (sp < BVH_STACK_SIZE) stack[sp++] = int(farChild);
+            if (sp < BVH_STACK_SIZE) stack[sp++] = int(nearChild);
+        } else if (hitLeft) {
+            if (sp < BVH_STACK_SIZE) stack[sp++] = int(left);
+        } else if (hitRight) {
+            if (sp < BVH_STACK_SIZE) stack[sp++] = int(right);
         }
     }
 }
 
 bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                  device const float4* atomPositions,
-                 int atomCount, float atomScale) {
-    for (int i = 0; i < atomCount; i++) {
-        float4 atom = atomPositions[i];
-        float r = atom.w * atomScale;
-        float3 oc = ro - atom.xyz;
-        float b = dot(oc, rd);
-        float c = dot(oc, oc) - r * r;
-        float disc = b * b - c;
-        if (disc >= 0.0) {
-            float sqrtDisc = sqrt(disc);
-            float t = -b - sqrtDisc;
-            if (t > 0.001 && t < maxDist) return true;
-            t = -b + sqrtDisc;
-            if (t > 0.001 && t < maxDist) return true;
+                 int atomCount, float atomScale,
+                 device const float4* bvhNodeMinData,
+                 device const float4* bvhNodeMaxData,
+                 device const uint4* bvhNodeMeta,
+                 device const uint* bvhPrimIndices,
+                 int bvhNodeCount) {
+    if (bvhNodeCount <= 0) return false;
+
+    float3 invRd = 1.0 / rd;
+    int stack[BVH_STACK_SIZE];
+    int sp = 0;
+    stack[sp++] = 0;
+
+    while (sp > 0) {
+        int nodeIndex = stack[--sp];
+        float nodeTNear;
+        uint4 meta;
+        if (!fetchNodeIntersection(nodeIndex, ro, invRd, maxDist, atomScale,
+                                   bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
+                                   nodeTNear, meta)) {
+            continue;
         }
+
+        uint primCount = meta.w;
+        if (primCount > 0) {
+            uint first = meta.z;
+            for (uint i = 0; i < primCount; ++i) {
+                uint primIndex = bvhPrimIndices[first + i];
+                if (primIndex >= uint(atomCount)) continue;
+                float4 atom = atomPositions[primIndex];
+                float r = atom.w * atomScale;
+                float3 oc = ro - atom.xyz;
+                float b = dot(oc, rd);
+                float c = dot(oc, oc) - r * r;
+                float disc = b * b - c;
+                if (disc >= 0.0) {
+                    float sqrtDisc = sqrt(disc);
+                    float t = -b - sqrtDisc;
+                    if (t > 0.001 && t < maxDist) return true;
+                    t = -b + sqrtDisc;
+                    if (t > 0.001 && t < maxDist) return true;
+                }
+            }
+            continue;
+        }
+
+        uint left = meta.x;
+        uint right = meta.y;
+        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(left);
+        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(right);
     }
+
     return false;
 }
 
@@ -488,7 +623,11 @@ fragment float4 rt_fragment(
     FullscreenVertexOut in [[stage_in]],
     constant RTUniforms& rt [[buffer(0)]],
     device const float4* atomPositions [[buffer(1)]],
-    device const float4* atomColors [[buffer(2)]])
+    device const float4* atomColors [[buffer(2)]],
+    device const float4* bvhNodeMinData [[buffer(3)]],
+    device const float4* bvhNodeMaxData [[buffer(4)]],
+    device const uint4* bvhNodeMeta [[buffer(5)]],
+    device const uint* bvhPrimIndices [[buffer(6)]])
 {
     // Initialize RNG
     uint rng_state = pcg(
@@ -512,7 +651,9 @@ fragment float4 rt_fragment(
     float hitT;
     int hitIndex;
     traceClosest(rayOrigin, rayDir, atomPositions,
-                 rt.atomCount, rt.atomScale, hitT, hitIndex);
+                 rt.atomCount, rt.atomScale,
+                 bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
+                 rt.bvhNodeCount, hitT, hitIndex);
 
     if (hitIndex < 0) {
         return float4(rt.backgroundColor, 1.0);
@@ -544,7 +685,9 @@ fragment float4 rt_fragment(
     float shadow = 1.0;
     if (rt.enableShadows) {
         if (traceAnyHit(biasedOrigin, lightDir, 10000.0,
-                        atomPositions, rt.atomCount, rt.atomScale)) {
+                        atomPositions, rt.atomCount, rt.atomScale,
+                        bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
+                        rt.bvhNodeCount)) {
             shadow = 0.0;
         }
     }
@@ -556,7 +699,9 @@ fragment float4 rt_fragment(
         for (int i = 0; i < rt.aoSamples; i++) {
             float3 aoDir = cosineWeightedHemisphere(normal, rng_state);
             if (traceAnyHit(biasedOrigin, aoDir, rt.aoRadius,
-                            atomPositions, rt.atomCount, rt.atomScale)) {
+                            atomPositions, rt.atomCount, rt.atomScale,
+                            bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
+                            rt.bvhNodeCount)) {
                 occluded += 1.0;
             }
         }

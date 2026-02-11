@@ -67,12 +67,23 @@ private:
     GLuint m_atomColorBuf = 0;    // Buffer: vec4(r, g, b, a) per atom
     GLuint m_atomColorTex = 0;    // Texture view (RGBA32F)
 
+    // BVH data via Texture Buffer Objects
+    GLuint m_bvhNodeMinBuf = 0;   // Buffer: vec4(min.xyz, maxRadius) per node
+    GLuint m_bvhNodeMinTex = 0;   // Texture view (RGBA32F)
+    GLuint m_bvhNodeMaxBuf = 0;   // Buffer: vec4(max.xyz, pad) per node
+    GLuint m_bvhNodeMaxTex = 0;   // Texture view (RGBA32F)
+    GLuint m_bvhNodeMetaBuf = 0;  // Buffer: uvec4(left, right, first, count) per node
+    GLuint m_bvhNodeMetaTex = 0;  // Texture view (RGBA32UI)
+    GLuint m_bvhPrimBuf = 0;      // Buffer: uint primitive indices
+    GLuint m_bvhPrimTex = 0;      // Texture view (R32UI)
+
     // --- State ---
     RenderSettings m_settings;  // Local copy for isConverged() / computeStateHash()
     const data::Structure* m_structure = nullptr;
     int m_width = 0;
     int m_height = 0;
     int m_atomCount = 0;
+    int m_bvhNodeCount = 0;
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
