@@ -20,21 +20,9 @@ Additional lifecycle fixes:
 - `QSGSimpleTextureNode` is configured with `setOwnsTexture(false)` so wrapper lifetime is not tied to per-frame node churn.
 - `releaseResources()` now schedules render-thread cleanup for cached wrappers, preventing leaks when the scene graph tears down.
 
-## 4) Unit-cell overlay occlusion still uses brute-force atom loop
+## ~~4) Unit-cell overlay occlusion still uses brute-force atom loop~~ (FIXED)
 
-- Potential problem:
-  - The unit-cell overlay fragment shader still checks against all atoms linearly, which can be expensive for large structures.
-- Problematic code location:
-  - `src/render/metal/MetalShaderLibrary.mm:343-377`
-  - Inner loop: `src/render/metal/MetalShaderLibrary.mm:359-373`
-- How this leads to the problem:
-  - For each overlay fragment, it loops through `unitCell.atomCount` and does sphere intersection tests.
-  - Main RT pass uses BVH now, but this overlay path does not.
-- What happens without these lines:
-  - If removed without replacement, overlay no longer self-occludes against atoms and will render through geometry (visual correctness regression).
-- Corresponding fix:
-  - Feed BVH buffers into `rt_unit_cell_fragment` and use the same BVH any-hit traversal used by RT shadow/AO paths.
-  - Preserve current discard rule (`discard_fragment` if blocked before `maxT`).
+**Resolved**: `rt_unit_cell_fragment` now uses BVH `traceAnyHit(...)` instead of a linear atom loop. Overlay passes bind BVH buffers (`nodeMin`, `nodeMax`, `nodeMeta`, `primIndices`) and pass `bvhNodeCount` through `RTUnitCellUniforms`, preserving the same discard rule (hide unit-cell fragment only if an atom is hit before `maxT`).
 
 ## 5) Duplicated `computeStateHash` across OpenGL and Metal RT renderers
 
@@ -80,7 +68,7 @@ Additional lifecycle fixes:
 1. ~~Non-blocking command submission + completed-texture handoff.~~ (DONE)
 2. ~~Deferred accumulation clear (`clear-on-next-RT-pass`).~~ (DONE)
 3. ~~`QSGTexture` wrapper cache/reuse in `MetalViewport`.~~ (DONE)
-4. BVH traversal for unit-cell overlay occlusion path.
+4. ~~BVH traversal for unit-cell overlay occlusion path.~~ (DONE)
 5. Extract shared `computeStateHash` to common code.
 6. Extract shared unit-cell overlay code.
 7. Remove dead empty-buffer guards (trivial).

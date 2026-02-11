@@ -677,6 +677,7 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
         unitCell.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
         unitCell.atomScale = m_settings.atomScale;
         unitCell.atomCount = m_atomCount;
+        unitCell.bvhNodeCount = m_bvhNodeCount;
         unitCell.occlusionBias = 0.001f;
         unitCell.unitCellRadius = std::max(m_settings.unitCellThickness, 0.001f);
         const QColor color = m_settings.unitCellColor;
@@ -685,6 +686,10 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
         [encoder setDepthStencilState:depthState];
         [encoder setCullMode:MTLCullModeNone];
         [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
+        [encoder setFragmentBuffer:m_impl->bvhNodeMinBuffer offset:0 atIndex:3];
+        [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
+        [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
+        [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
 
         // Edge cylinders
         {
@@ -742,6 +747,7 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* 
     unitCell.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
     unitCell.atomScale = m_settings.atomScale;
     unitCell.atomCount = m_atomCount;
+    unitCell.bvhNodeCount = m_bvhNodeCount;
     unitCell.occlusionBias = 0.001f;
     unitCell.unitCellRadius = std::max(m_settings.unitCellThickness, 0.001f);
     const QColor color = m_settings.unitCellColor;
@@ -780,6 +786,10 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* 
     [encoder setCullMode:MTLCullModeNone];
 
     [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMinBuffer offset:0 atIndex:3];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
+    [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
+    [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
 
     // Edge cylinders
     {

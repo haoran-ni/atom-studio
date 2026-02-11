@@ -77,9 +77,9 @@ struct RTUnitCellUniforms {
     simd_float3   cameraPosition;
     float         atomScale;
     int32_t       atomCount;
+    int32_t       bvhNodeCount;
     float         occlusionBias;
     float         unitCellRadius;
-    float         _pad0;
     simd_float4   unitCellColor;
 };
 

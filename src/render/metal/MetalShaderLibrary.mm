@@ -83,9 +83,9 @@ struct RTUnitCellUniforms {
     float3   cameraPosition;
     float    atomScale;
     int      atomCount;
+    int      bvhNodeCount;
     float    occlusionBias;
     float    unitCellRadius;
-    float    _pad0;
     float4   unitCellColor;
 };
 
@@ -293,6 +293,15 @@ struct RTUnitCellVertexOut {
     float3 worldPos;
 };
 
+bool traceAnyHit(float3 ro, float3 rd, float maxDist,
+                 device const float4* atomPositions,
+                 int atomCount, float atomScale,
+                 device const float4* bvhNodeMinData,
+                 device const float4* bvhNodeMaxData,
+                 device const uint4* bvhNodeMeta,
+                 device const uint* bvhPrimIndices,
+                 int bvhNodeCount);
+
 vertex RTUnitCellVertexOut rt_unit_cell_cylinder_vertex(
     uint vid [[vertex_id]],
     uint iid [[instance_id]],
@@ -343,7 +352,11 @@ vertex RTUnitCellVertexOut rt_unit_cell_sphere_vertex(
 fragment float4 rt_unit_cell_fragment(
     RTUnitCellVertexOut in [[stage_in]],
     constant RTUnitCellUniforms& unitCell [[buffer(0)]],
-    device const float4* atomPositions [[buffer(1)]])
+    device const float4* atomPositions [[buffer(1)]],
+    device const float4* bvhNodeMinData [[buffer(3)]],
+    device const float4* bvhNodeMaxData [[buffer(4)]],
+    device const uint4* bvhNodeMeta [[buffer(5)]],
+    device const uint* bvhPrimIndices [[buffer(6)]])
 {
     // Cast a ray from camera to the unit-cell fragment and hide it if an atom
     // is intersected first. This keeps atom-only occlusion while unit cell
@@ -352,24 +365,18 @@ fragment float4 rt_unit_cell_fragment(
     float3 toPoint = in.worldPos - ro;
     float pointDist = length(toPoint);
 
-    if (unitCell.atomCount > 0 && pointDist > 1e-6) {
+    if (unitCell.atomCount > 0 &&
+        unitCell.bvhNodeCount > 0 &&
+        pointDist > 1e-6) {
         float3 rd = toPoint / pointDist;
         float maxT = max(pointDist - unitCell.occlusionBias, 0.0);
 
-        for (int i = 0; i < unitCell.atomCount; ++i) {
-            float4 atom = atomPositions[i];
-            float r = atom.w * unitCell.atomScale;
-
-            float3 oc = ro - atom.xyz;
-            float b = dot(oc, rd);
-            float c = dot(oc, oc) - r * r;
-            float disc = b * b - c;
-            if (disc < 0.0) continue;
-
-            float sqrtDisc = sqrt(disc);
-            float t = -b - sqrtDisc;
-            if (t <= 0.001) t = -b + sqrtDisc;
-            if (t > 0.001 && t < maxT) discard_fragment();
+        if (maxT > 0.0 &&
+            traceAnyHit(ro, rd, maxT,
+                        atomPositions, unitCell.atomCount, unitCell.atomScale,
+                        bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
+                        unitCell.bvhNodeCount)) {
+            discard_fragment();
         }
     }
 

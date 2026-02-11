@@ -4,6 +4,42 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: Metal RT Unit-Cell Overlay Occlusion Migrated to BVH
+
+### Summary
+Replaced brute-force per-fragment atom scanning in the Metal RT unit-cell overlay shader with BVH any-hit traversal. This aligns overlay occlusion with the main RT path and removes linear `O(atomCount)` cost from each overlay fragment.
+
+### Files Modified (3 files)
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalTypes.h` | Extended `RTUnitCellUniforms` with `bvhNodeCount` |
+| `src/render/metal/MetalShaderLibrary.mm` | Updated `RTUnitCellUniforms` mirror; changed `rt_unit_cell_fragment` to use `traceAnyHit(...)` with BVH buffers; removed linear atom loop |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Populated `unitCell.bvhNodeCount`; bound BVH fragment buffers (slots `3..6`) for both overlay render paths |
+
+### Implementation Details
+
+#### 1. Shader-side occlusion now uses BVH any-hit
+- `rt_unit_cell_fragment` now receives BVH node and primitive-index buffers.
+- Occlusion test computes the same camera-to-fragment ray and `maxT` distance bound as before, then calls `traceAnyHit(...)`.
+- If any atom is hit before `maxT`, the fragment is discarded (same visual rule as previous implementation).
+
+#### 2. Overlay uniform includes BVH node count
+- Added `bvhNodeCount` to `RTUnitCellUniforms` in both CPU and MSL definitions to gate traversal validity in the overlay shader.
+
+#### 3. Both overlay execution paths now provide BVH data
+- Updated `renderDisplayPass()` overlay draw path and `renderUnitCellOverlay()` draw path to bind:
+  - atom positions (`buffer(1)`)
+  - BVH node min/max/meta + primitive indices (`buffers 3..6`)
+
+### Behavioral Impact
+- Unit-cell overlay atom-occlusion behavior is preserved.
+- Overlay occlusion traversal now scales with BVH-candidate intersections instead of scanning all atoms per fragment.
+
+### Verification
+- Build: `cmake --build build -j4` — success.
+
+---
+
 ## 2026-02-11: MetalViewport QSGTexture Cache (Eliminate Per-Frame Wrapper Churn)
 
 ### Summary
