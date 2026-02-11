@@ -81,10 +81,11 @@ uint32_t buildNode(BuildContext& ctx, size_t begin, size_t end) {
 
     const uint32_t nodeIndex = static_cast<uint32_t>(ctx.result.nodes.size());
     ctx.result.nodes.emplace_back();
-    BVHNodeGPU& node = ctx.result.nodes.back();
 
-    node.minAndMaxRadius = {stats.minX, stats.minY, stats.minZ, stats.maxRadius};
-    node.maxAndPad = {stats.maxX, stats.maxY, stats.maxZ, 0.0f};
+    // Use index-based access (not a reference) because recursive buildNode()
+    // calls below may push new nodes, invalidating any reference into the vector.
+    ctx.result.nodes[nodeIndex].minAndMaxRadius = {stats.minX, stats.minY, stats.minZ, stats.maxRadius};
+    ctx.result.nodes[nodeIndex].maxAndPad = {stats.maxX, stats.maxY, stats.maxZ, 0.0f};
 
     const float extentX = stats.centroidMaxX - stats.centroidMinX;
     const float extentY = stats.centroidMaxY - stats.centroidMinY;
@@ -110,7 +111,7 @@ uint32_t buildNode(BuildContext& ctx, size_t begin, size_t end) {
         for (size_t i = begin; i < end; ++i) {
             ctx.result.primitiveIndices.push_back(ctx.workingIndices[i]);
         }
-        node.meta = {kInvalidIndex, kInvalidIndex, first, static_cast<uint32_t>(primitiveCount)};
+        ctx.result.nodes[nodeIndex].meta = {kInvalidIndex, kInvalidIndex, first, static_cast<uint32_t>(primitiveCount)};
         return nodeIndex;
     }
 
@@ -129,7 +130,7 @@ uint32_t buildNode(BuildContext& ctx, size_t begin, size_t end) {
 
     const uint32_t leftChild = buildNode(ctx, begin, mid);
     const uint32_t rightChild = buildNode(ctx, mid, end);
-    node.meta = {leftChild, rightChild, 0u, 0u};
+    ctx.result.nodes[nodeIndex].meta = {leftChild, rightChild, 0u, 0u};
 
     return nodeIndex;
 }

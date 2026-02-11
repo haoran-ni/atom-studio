@@ -4,6 +4,42 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-11: BVH Traversal Optimization + Builder Safety Fix
+
+### Summary
+Two fixes identified during code review of the BVH implementation:
+
+1. **Eliminated double-fetch in GPU BVH traversal** (both OpenGL GLSL and Metal MSL): every interior node's children were fetched and AABB-tested twice — once to determine near/far traversal order, and again when popped from the stack. Restructured `traceClosest` and `traceAnyHit` so popped nodes only fetch their metadata (1 buffer read), while children are AABB-tested (2 reads each) before pushing. Cuts per-node buffer reads roughly in half.
+
+2. **Fixed fragile dangling reference in CPU BVH builder**: `buildNode()` took a `std::vector` reference via `back()` then called itself recursively, which pushes more nodes into the same vector. The reference survived only because of a pre-allocated `reserve()`. Replaced with index-based access that is unconditionally safe regardless of reallocation.
+
+### Files Modified (3 files)
+| File | Change |
+|------|--------|
+| `src/render/common/BVH.cpp` | Replaced `BVHNodeGPU& node = ctx.result.nodes.back()` with `ctx.result.nodes[nodeIndex]` at all usage sites |
+| `src/render/opengl/RayTracingRenderer.cpp` | Replaced `fetchNodeIntersection` with `testNodeAABB` (AABB-only, no meta fetch); restructured `traceClosest` and `traceAnyHit` to fetch meta at pop time and test children before pushing |
+| `src/render/metal/MetalShaderLibrary.mm` | Same traversal restructuring in MSL: replaced `fetchNodeIntersection` with `testNodeAABB`; restructured `traceClosest` and `traceAnyHit` |
+
+### Implementation Details
+
+#### 1. Traversal Restructuring (GLSL + MSL)
+- Removed `fetchNodeIntersection` (fetched min + max + meta = 3 reads + AABB test per call).
+- Added `testNodeAABB` (fetches min + max = 2 reads + AABB test, no meta).
+- **Old flow**: pop node → 3 reads + AABB test → if interior, pre-fetch each child (3 reads + AABB test each) → push → children re-tested when popped.
+- **New flow**: pop node → 1 read (meta only) → if leaf, test primitives → if interior, `testNodeAABB` each child (2 reads + AABB test) → push hits only.
+- Each node is now fetched 3 times total (2 for AABB when tested as a child + 1 for meta when popped), down from 6 (3 when pre-tested + 3 when popped).
+- `traceAnyHit` additionally benefits from pre-testing children before pushing, so non-intersecting nodes are never pushed to the stack.
+
+#### 2. BVH Builder Safety (CPU)
+- `buildNode()` used `BVHNodeGPU& node = ctx.result.nodes.back()` then recursed into `buildNode()` which pushes more nodes.
+- The reference was only safe due to `reserve(atomCount * 2)` preventing reallocation.
+- Replaced all 4 usages (`minAndMaxRadius`, `maxAndPad`, leaf `meta`, interior `meta`) with `ctx.result.nodes[nodeIndex].field` which is safe regardless of vector capacity.
+
+### Verification
+- Build: `cmake --build build -j4` — success (only existing macOS OpenGL deprecation warnings).
+
+---
+
 ## 2026-02-11: *IMPORTANT* BVH Ray-Tracing Migration (Replace Brute-Force Atom Traversal)
 
 ### Summary

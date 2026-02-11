@@ -442,19 +442,17 @@ bool intersectAABB(float3 ro, float3 invRd, float3 bmin, float3 bmax, float tMax
     return (tFar >= tNear) && (tNear <= tMax);
 }
 
-bool fetchNodeIntersection(int nodeIndex,
-                           float3 ro,
-                           float3 invRd,
-                           float tMax,
-                           float atomScale,
-                           device const float4* bvhNodeMinData,
-                           device const float4* bvhNodeMaxData,
-                           device const uint4* bvhNodeMeta,
-                           thread float& tNearOut,
-                           thread uint4& metaOut) {
+// Test a BVH node's AABB only (fetches min/max, not meta).
+bool testNodeAABB(int nodeIndex,
+                  float3 ro,
+                  float3 invRd,
+                  float tMax,
+                  float atomScale,
+                  device const float4* bvhNodeMinData,
+                  device const float4* bvhNodeMaxData,
+                  thread float& tNearOut) {
     float4 minData = bvhNodeMinData[nodeIndex];
     float4 maxData = bvhNodeMaxData[nodeIndex];
-    metaOut = bvhNodeMeta[nodeIndex];
 
     // BVH is built with base radii. Expand node AABBs conservatively when
     // runtime atom scale is larger than 1 to avoid misses.
@@ -484,13 +482,7 @@ void traceClosest(float3 ro, float3 rd,
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
-        float nodeTNear;
-        uint4 meta;
-        if (!fetchNodeIntersection(nodeIndex, ro, invRd, hitT, atomScale,
-                                   bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
-                                   nodeTNear, meta)) {
-            continue;
-        }
+        uint4 meta = bvhNodeMeta[nodeIndex];
 
         uint primCount = meta.w;
         if (primCount > 0) {
@@ -515,17 +507,14 @@ void traceClosest(float3 ro, float3 rd,
         bool hitRight = false;
         float leftNear = 0.0;
         float rightNear = 0.0;
-        uint4 childMeta;
 
         if (left != BVH_INVALID_INDEX) {
-            hitLeft = fetchNodeIntersection(int(left), ro, invRd, hitT, atomScale,
-                                            bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
-                                            leftNear, childMeta);
+            hitLeft = testNodeAABB(int(left), ro, invRd, hitT, atomScale,
+                                   bvhNodeMinData, bvhNodeMaxData, leftNear);
         }
         if (right != BVH_INVALID_INDEX) {
-            hitRight = fetchNodeIntersection(int(right), ro, invRd, hitT, atomScale,
-                                             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
-                                             rightNear, childMeta);
+            hitRight = testNodeAABB(int(right), ro, invRd, hitT, atomScale,
+                                    bvhNodeMinData, bvhNodeMaxData, rightNear);
         }
 
         if (hitLeft && hitRight) {
@@ -558,13 +547,7 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
-        float nodeTNear;
-        uint4 meta;
-        if (!fetchNodeIntersection(nodeIndex, ro, invRd, maxDist, atomScale,
-                                   bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta,
-                                   nodeTNear, meta)) {
-            continue;
-        }
+        uint4 meta = bvhNodeMeta[nodeIndex];
 
         uint primCount = meta.w;
         if (primCount > 0) {
@@ -591,8 +574,17 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
 
         uint left = meta.x;
         uint right = meta.y;
-        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(left);
-        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(right);
+        float tNear;
+        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale,
+                             bvhNodeMinData, bvhNodeMaxData, tNear))
+                stack[sp++] = int(left);
+        }
+        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale,
+                             bvhNodeMinData, bvhNodeMaxData, tNear))
+                stack[sp++] = int(right);
+        }
     }
 
     return false;

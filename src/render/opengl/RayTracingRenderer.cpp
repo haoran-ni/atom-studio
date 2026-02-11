@@ -118,15 +118,10 @@ bool intersectAABB(vec3 ro, vec3 invRd, vec3 bmin, vec3 bmax, float tMax, out fl
     return (tFar >= tNear) && (tNear <= tMax);
 }
 
-bool fetchNodeIntersection(int nodeIndex,
-                           vec3 ro,
-                           vec3 invRd,
-                           float tMax,
-                           out float tNear,
-                           out uvec4 meta) {
+// Test a BVH node's AABB only (fetches min/max, not meta).
+bool testNodeAABB(int nodeIndex, vec3 ro, vec3 invRd, float tMax, out float tNear) {
     vec4 minData = texelFetch(uBVHNodeMinData, nodeIndex);
     vec4 maxData = texelFetch(uBVHNodeMaxData, nodeIndex);
-    meta = texelFetch(uBVHNodeMeta, nodeIndex);
 
     // BVH is built with base radii. Expand node AABBs conservatively when
     // runtime atom scale is larger than 1 to avoid misses.
@@ -148,11 +143,7 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
-        float nodeTNear;
-        uvec4 meta;
-        if (!fetchNodeIntersection(nodeIndex, ro, invRd, hitT, nodeTNear, meta)) {
-            continue;
-        }
+        uvec4 meta = texelFetch(uBVHNodeMeta, nodeIndex);
 
         uint primCount = meta.w;
         if (primCount > 0u) {
@@ -178,13 +169,12 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
         bool hitRight = false;
         float leftNear = 0.0;
         float rightNear = 0.0;
-        uvec4 childMeta;
 
         if (left != BVH_INVALID_INDEX) {
-            hitLeft = fetchNodeIntersection(int(left), ro, invRd, hitT, leftNear, childMeta);
+            hitLeft = testNodeAABB(int(left), ro, invRd, hitT, leftNear);
         }
         if (right != BVH_INVALID_INDEX) {
-            hitRight = fetchNodeIntersection(int(right), ro, invRd, hitT, rightNear, childMeta);
+            hitRight = testNodeAABB(int(right), ro, invRd, hitT, rightNear);
         }
 
         if (hitLeft && hitRight) {
@@ -211,11 +201,7 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
-        float nodeTNear;
-        uvec4 meta;
-        if (!fetchNodeIntersection(nodeIndex, ro, invRd, maxDist, nodeTNear, meta)) {
-            continue;
-        }
+        uvec4 meta = texelFetch(uBVHNodeMeta, nodeIndex);
 
         uint primCount = meta.w;
         if (primCount > 0u) {
@@ -242,8 +228,15 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
 
         uint left = meta.x;
         uint right = meta.y;
-        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(left);
-        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) stack[sp++] = int(right);
+        float tNear;
+        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(left), ro, invRd, maxDist, tNear))
+                stack[sp++] = int(left);
+        }
+        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(right), ro, invRd, maxDist, tNear))
+                stack[sp++] = int(right);
+        }
     }
 
     return false;
