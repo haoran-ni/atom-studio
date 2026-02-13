@@ -210,7 +210,7 @@ Rectangle {
                             Layout.fillWidth: true
                             from: 0.01
                             to: 2.0
-                            value: sidebar.viewport ? sidebar.viewport.unitCellThickness : 0.12
+                            value: sidebar.viewport ? sidebar.viewport.unitCellThickness : 0.06
                             onMoved: {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.unitCellThickness = value
@@ -250,7 +250,7 @@ Rectangle {
                             from: 0
                             to: 255
                             stepSize: 1
-                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.r * 255) : 255
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.r * 255) : 0
                             onMoved: {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.unitCellColor = Qt.rgba(
@@ -275,7 +275,7 @@ Rectangle {
                             from: 0
                             to: 255
                             stepSize: 1
-                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.g * 255) : 255
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.g * 255) : 0
                             onMoved: {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.unitCellColor = Qt.rgba(
@@ -300,7 +300,7 @@ Rectangle {
                             from: 0
                             to: 255
                             stepSize: 1
-                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.b * 255) : 255
+                            value: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.b * 255) : 0
                             onMoved: {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.unitCellColor = Qt.rgba(

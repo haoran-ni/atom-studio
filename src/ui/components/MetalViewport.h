@@ -149,8 +149,8 @@ private:
     bool m_showBonds = true;
     QColor m_backgroundColor = QColor(230, 230, 230);
     bool m_showUnitCell = true;
-    float m_unitCellThickness = 0.12f;
-    QColor m_unitCellColor = QColor(255, 255, 255);
+    float m_unitCellThickness = 0.06f;
+    QColor m_unitCellColor = QColor(0, 0, 0);
     float m_atomScale = 1.0f;
     int m_rendererMode = 0;
     int m_sampleCount = 0;
