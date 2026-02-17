@@ -92,7 +92,6 @@ private:
     QThread* m_workerThread = nullptr;
     LoadWorker* m_worker = nullptr;
     bool m_loading = false;
-    bool m_cancelRequested = false;
     float m_progress = 0.0f;
     QString m_statusMessage;
 };

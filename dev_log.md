@@ -1106,3 +1106,25 @@ Run the app and open various file formats:
 Supported formats include: XYZ, CIF, LAMMPS dump/data, VASP POSCAR/CONTCAR, PDB, Gaussian, Quantum ESPRESSO, ASE traj/json/db, and 60+ more.
 
 ---
+
+## 2026-02-17: Simplify Input Pipeline to ASE-Only
+
+### Summary
+Removed the legacy `FileReader`/`FileReaderRegistry` abstraction layer and routed structure loading directly through `ASEReader`.
+
+### Files Modified
+- `src/io/AsyncFileLoader.cpp` - Calls `ASEReader::read()` directly with `PythonRuntime::GILGuard`
+- `src/io/AsyncFileLoader.h` - Removed unused cancel state field
+- `src/io/CMakeLists.txt` - Keeps only `AsyncFileLoader` sources
+- `src/ui/components/FileController.cpp` - Uses `ASEReader::fileDialogFilter()` directly
+
+### Files Deleted
+- `src/io/FileReader.h`
+- `src/io/FileReader.cpp`
+- `src/io/FileReaderRegistry.h`
+- `src/io/FileReaderRegistry.cpp`
+
+### Note
+Input parsing now has a single path: `FileController` -> `AsyncFileLoader` -> `ASEReader`.
+
+---

@@ -1,11 +1,7 @@
 # src/io/CMakeLists.txt
-# File I/O library - file readers and async loading
+# File I/O library - async loading around ASE parser
 
 add_library(atom-io STATIC
-    FileReader.cpp
-    FileReader.h
-    FileReaderRegistry.cpp
-    FileReaderRegistry.h
     AsyncFileLoader.cpp
     AsyncFileLoader.h
 )

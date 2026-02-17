@@ -1,6 +1,7 @@
 #include "AsyncFileLoader.h"
-#include "FileReaderRegistry.h"
 #include "../data/Structure.h"
+#include "../python/ASEReader.h"
+#include "../python/PythonRuntime.h"
 
 #include <QDebug>
 #include <atomic>
@@ -22,6 +23,7 @@ public slots:
     void doLoad(const QString& filePath) {
         cancelFlag = false;
 
+        python::ASEReader reader;
         auto progressCallback = [this](float progress, std::string_view message) -> bool {
             if (cancelFlag.load()) {
                 return false; // Cancel
@@ -30,8 +32,12 @@ public slots:
             return true;
         };
 
-        auto result = FileReaderRegistry::instance().readFile(
-            filePath.toStdString(), progressCallback);
+        python::ReadResult result;
+        {
+            // ASEReader requires Python GIL to be held.
+            python::PythonRuntime::GILGuard gil;
+            result = reader.read(filePath.toStdString(), progressCallback);
+        }
 
         if (cancelFlag.load()) {
             emit cancelled();
@@ -70,7 +76,6 @@ void AsyncFileLoader::loadFile(const QString& filePath) {
     }
 
     m_loading = true;
-    m_cancelRequested = false;
     m_progress = 0.0f;
     m_statusMessage = "Starting...";
 
@@ -101,7 +106,6 @@ void AsyncFileLoader::loadFile(const QString& filePath) {
 void AsyncFileLoader::cancel() {
     if (!m_loading) return;
 
-    m_cancelRequested = true;
     if (m_worker) {
         m_worker->cancelFlag = true;
     }

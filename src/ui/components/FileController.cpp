@@ -1,8 +1,8 @@
 #include "FileController.h"
 #include "StructureModel.h"
 #include "../../io/AsyncFileLoader.h"
-#include "../../io/FileReaderRegistry.h"
 #include "../../data/Structure.h"
+#include "../../python/ASEReader.h"
 
 #include <QFileDialog>
 #include <QStandardPaths>
@@ -65,8 +65,8 @@ QString FileController::currentFilePath() const {
 }
 
 QString FileController::fileFilter() const {
-    return QString::fromStdString(
-        io::FileReaderRegistry::instance().fileDialogFilter());
+    atom::python::ASEReader reader;
+    return QString::fromStdString(reader.fileDialogFilter());
 }
 
 void FileController::openFileDialog() {
