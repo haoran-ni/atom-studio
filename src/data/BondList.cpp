@@ -35,20 +35,30 @@ void BondList::removeBond(size_t bondIndex) {
     }
 }
 
-int BondList::findBond(uint32_t atomIndex1, uint32_t atomIndex2) const {
-    if (atomIndex1 > atomIndex2) std::swap(atomIndex1, atomIndex2);
+int BondList::findBond(uint32_t atomIndex1, uint32_t atomIndex2,
+                       int8_t imageX, int8_t imageY, int8_t imageZ) const {
+    if (atomIndex1 > atomIndex2) {
+        std::swap(atomIndex1, atomIndex2);
+        imageX = static_cast<int8_t>(-imageX);
+        imageY = static_cast<int8_t>(-imageY);
+        imageZ = static_cast<int8_t>(-imageZ);
+    }
 
     for (size_t i = 0; i < m_bonds.size(); ++i) {
         if (m_bonds[i].atomIndex1 == atomIndex1 &&
-            m_bonds[i].atomIndex2 == atomIndex2) {
+            m_bonds[i].atomIndex2 == atomIndex2 &&
+            m_bonds[i].imageX     == imageX &&
+            m_bonds[i].imageY     == imageY &&
+            m_bonds[i].imageZ     == imageZ) {
             return static_cast<int>(i);
         }
     }
     return -1;
 }
 
-bool BondList::areBonded(uint32_t atomIndex1, uint32_t atomIndex2) const {
-    return findBond(atomIndex1, atomIndex2) >= 0;
+bool BondList::areBonded(uint32_t atomIndex1, uint32_t atomIndex2,
+                          int8_t imageX, int8_t imageY, int8_t imageZ) const {
+    return findBond(atomIndex1, atomIndex2, imageX, imageY, imageZ) >= 0;
 }
 
 std::vector<size_t> BondList::bondsForAtom(uint32_t atomIndex) const {

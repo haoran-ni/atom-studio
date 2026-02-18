@@ -15,7 +15,8 @@ namespace atom::data {
 
 void NeighborList::applyMIC(float& dx, float& dy, float& dz,
                              int8_t& imgX, int8_t& imgY, int8_t& imgZ,
-                             const Lattice& lattice)
+                             const Lattice& lattice,
+                             const std::array<bool, 3>& pbc)
 {
     // Project displacement into fractional coordinates
     auto frac = lattice.cartesianToFractional(
@@ -23,10 +24,10 @@ void NeighborList::applyMIC(float& dx, float& dy, float& dz,
         static_cast<double>(dy),
         static_cast<double>(dz));
 
-    // Round each component to the nearest integer image
-    double ridx = std::round(frac[0]);
-    double ridy = std::round(frac[1]);
-    double ridz = std::round(frac[2]);
+    // Round only periodic axes; non-periodic axes keep their displacement
+    double ridx = pbc[0] ? std::round(frac[0]) : 0.0;
+    double ridy = pbc[1] ? std::round(frac[1]) : 0.0;
+    double ridz = pbc[2] ? std::round(frac[2]) : 0.0;
 
     if (ridx != 0.0 || ridy != 0.0 || ridz != 0.0) {
         // Shift the image accumulators
@@ -53,6 +54,7 @@ void NeighborList::build(const Structure& structure, float scale)
     m_offsets.assign(n + 1, 0u);
     m_neighbors.clear();
 
+    if (!std::isfinite(scale) || scale <= 0.0f) return;
     if (n == 0) return;
 
     const float* posX = structure.positionsX();
@@ -241,20 +243,42 @@ void NeighborList::buildCellList(
 
                         // Apply MIC for PBC to ensure nearest image
                         if (hasPBC) {
-                            applyMIC(fdx, fdy, fdz, imgX, imgY, imgZ, lattice);
+                            applyMIC(fdx, fdy, fdz, imgX, imgY, imgZ, lattice, lattice.pbc);
                         }
 
                         float d2 = fdx * fdx + fdy * fdy + fdz * fdz;
                         if (d2 < cutoff2 && d2 > 0.0f) {
-                            // Only add if j is an active atom (has covalent radius)
-                            if (covRadii[j] >= 0.0f) {
-                                perAtom[i].push_back({j, imgX, imgY, imgZ});
-                            }
+                            // j is from cellAtoms which contains only active atoms (defined covalent radius).
+                            perAtom[i].push_back({j, imgX, imgY, imgZ});
                         }
                     }
                 }
             }
         }
+    }
+
+    // ── Deduplicate per-atom neighbor lists ──────────────────────────────────
+    // When any cell dimension is 1, multiple (dx,dy,dz) offsets wrap to the same
+    // physical cell, causing the same NeighborEntry to be pushed multiple times.
+    // Sort and unique each list to collapse identical {index, imgX, imgY, imgZ}
+    // tuples before CSR packing.
+    for (auto& neighbors : perAtom) {
+        std::sort(neighbors.begin(), neighbors.end(),
+            [](const NeighborEntry& a, const NeighborEntry& b) {
+                if (a.index  != b.index)  return a.index  < b.index;
+                if (a.imageX != b.imageX) return a.imageX < b.imageX;
+                if (a.imageY != b.imageY) return a.imageY < b.imageY;
+                return a.imageZ < b.imageZ;
+            });
+        neighbors.erase(
+            std::unique(neighbors.begin(), neighbors.end(),
+                [](const NeighborEntry& a, const NeighborEntry& b) {
+                    return a.index  == b.index  &&
+                           a.imageX == b.imageX &&
+                           a.imageY == b.imageY &&
+                           a.imageZ == b.imageZ;
+                }),
+            neighbors.end());
     }
 
     // ── Pack into CSR ────────────────────────────────────────────────────────
@@ -285,8 +309,6 @@ std::shared_ptr<BondList> NeighborList::buildBondList(
     const float* posZ = structure.positionsZ();
     const int*   atomicNums = structure.atomicNumbers();
     const Lattice& lattice  = structure.lattice();
-    const bool hasPBC = lattice.defined &&
-                        (lattice.pbc[0] || lattice.pbc[1] || lattice.pbc[2]);
 
     for (size_t i = 0; i < m_atomCount; ++i) {
         auto ri_opt = ElementData::covalentRadius(atomicNums[i]);
@@ -314,11 +336,6 @@ std::shared_ptr<BondList> NeighborList::buildBondList(
                 fdx += static_cast<float>(e->imageX * m[0][0] + e->imageY * m[1][0] + e->imageZ * m[2][0]);
                 fdy += static_cast<float>(e->imageX * m[0][1] + e->imageY * m[1][1] + e->imageZ * m[2][1]);
                 fdz += static_cast<float>(e->imageX * m[0][2] + e->imageY * m[1][2] + e->imageZ * m[2][2]);
-            }
-
-            if (hasPBC) {
-                int8_t dummy0 = 0, dummy1 = 0, dummy2 = 0;
-                applyMIC(fdx, fdy, fdz, dummy0, dummy1, dummy2, lattice);
             }
 
             float dist = std::sqrt(fdx * fdx + fdy * fdy + fdz * fdz);

@@ -102,10 +102,12 @@ private:
 
     // Apply minimum image convention for PBC displacement.
     // Returns the corrected displacement and updates imageX/Y/Z.
+    // Only axes where pbc[k] is true are wrapped.
     static void applyMIC(
         float& dx, float& dy, float& dz,
         int8_t& imgX, int8_t& imgY, int8_t& imgZ,
-        const Lattice& lattice);
+        const Lattice& lattice,
+        const std::array<bool, 3>& pbc);
 
     // ── CSR storage ─────────────────────────────────────────────────────────
     std::vector<NeighborEntry> m_neighbors; // flat neighbor array

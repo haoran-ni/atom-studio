@@ -16,7 +16,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {0, "X", "Unknown", 0.0f, -1.0f, 1.5f, Color::fromRgb(255, 20, 147)},
     // Period 1 — covalent radii from covalent_radii.md
     {1, "H", "Hydrogen", 1.008f, 0.31f, 1.20f, Color::fromRgb(255, 255, 255)},
-    {2, "He", "Helium", 4.003f, 0.28f, 1.40f, Color::fromRgb(217, 255, 255)},
+    {2, "He", "Helium", 4.003f, -1.0f, 1.40f, Color::fromRgb(217, 255, 255)},
     // Period 2
     {3, "Li", "Lithium", 6.941f, 1.28f, 1.82f, Color::fromRgb(204, 128, 255)},
     {4, "Be", "Beryllium", 9.012f, 0.96f, 1.53f, Color::fromRgb(194, 255, 0)},
@@ -25,7 +25,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {7, "N", "Nitrogen", 14.01f, 0.71f, 1.55f, Color::fromRgb(48, 80, 248)},
     {8, "O", "Oxygen", 16.00f, 0.66f, 1.52f, Color::fromRgb(255, 13, 13)},
     {9, "F", "Fluorine", 19.00f, 0.57f, 1.47f, Color::fromRgb(144, 224, 80)},
-    {10, "Ne", "Neon", 20.18f, 0.58f, 1.54f, Color::fromRgb(179, 227, 245)},
+    {10, "Ne", "Neon", 20.18f, -1.0f, 1.54f, Color::fromRgb(179, 227, 245)},
     // Period 3
     {11, "Na", "Sodium", 22.99f, 1.66f, 2.27f, Color::fromRgb(171, 92, 242)},
     {12, "Mg", "Magnesium", 24.31f, 1.41f, 1.73f, Color::fromRgb(138, 255, 0)},
@@ -34,7 +34,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {15, "P", "Phosphorus", 30.97f, 1.07f, 1.80f, Color::fromRgb(255, 128, 0)},
     {16, "S", "Sulfur", 32.07f, 1.05f, 1.80f, Color::fromRgb(255, 255, 48)},
     {17, "Cl", "Chlorine", 35.45f, 1.02f, 1.75f, Color::fromRgb(31, 240, 31)},
-    {18, "Ar", "Argon", 39.95f, 1.06f, 1.88f, Color::fromRgb(128, 209, 227)},
+    {18, "Ar", "Argon", 39.95f, -1.0f, 1.88f, Color::fromRgb(128, 209, 227)},
     // Period 4
     {19, "K", "Potassium", 39.10f, 2.03f, 2.75f, Color::fromRgb(143, 64, 212)},
     {20, "Ca", "Calcium", 40.08f, 1.76f, 2.31f, Color::fromRgb(61, 255, 0)},
@@ -53,7 +53,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {33, "As", "Arsenic", 74.92f, 1.19f, 1.85f, Color::fromRgb(189, 128, 227)},
     {34, "Se", "Selenium", 78.97f, 1.20f, 1.90f, Color::fromRgb(255, 161, 0)},
     {35, "Br", "Bromine", 79.90f, 1.20f, 1.85f, Color::fromRgb(166, 41, 41)},
-    {36, "Kr", "Krypton", 83.80f, 1.16f, 2.02f, Color::fromRgb(92, 184, 209)},
+    {36, "Kr", "Krypton", 83.80f, -1.0f, 2.02f, Color::fromRgb(92, 184, 209)},
     // Period 5
     {37, "Rb", "Rubidium", 85.47f, 2.20f, 3.03f, Color::fromRgb(112, 46, 176)},
     {38, "Sr", "Strontium", 87.62f, 1.95f, 2.49f, Color::fromRgb(0, 255, 0)},
@@ -72,7 +72,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {51, "Sb", "Antimony", 121.8f, 1.39f, 2.06f, Color::fromRgb(158, 99, 181)},
     {52, "Te", "Tellurium", 127.6f, 1.38f, 2.06f, Color::fromRgb(212, 122, 0)},
     {53, "I", "Iodine", 126.9f, 1.39f, 1.98f, Color::fromRgb(148, 0, 148)},
-    {54, "Xe", "Xenon", 131.3f, 1.40f, 2.16f, Color::fromRgb(66, 158, 176)},
+    {54, "Xe", "Xenon", 131.3f, -1.0f, 2.16f, Color::fromRgb(66, 158, 176)},
     // Period 6
     {55, "Cs", "Cesium", 132.9f, 2.44f, 3.43f, Color::fromRgb(87, 23, 143)},
     {56, "Ba", "Barium", 137.3f, 2.15f, 2.68f, Color::fromRgb(0, 201, 0)},
@@ -105,7 +105,7 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {83, "Bi", "Bismuth", 209.0f, 1.48f, 2.07f, Color::fromRgb(158, 79, 181)},
     {84, "Po", "Polonium", 209.0f, 1.40f, 1.97f, Color::fromRgb(171, 92, 0)},
     {85, "At", "Astatine", 210.0f, 1.50f, 2.02f, Color::fromRgb(117, 79, 69)},
-    {86, "Rn", "Radon", 222.0f, 1.50f, 2.20f, Color::fromRgb(66, 130, 150)},
+    {86, "Rn", "Radon", 222.0f, -1.0f, 2.20f, Color::fromRgb(66, 130, 150)},
     // Period 7
     {87, "Fr", "Francium", 223.0f, 2.60f, 3.48f, Color::fromRgb(66, 0, 102)},
     {88, "Ra", "Radium", 226.0f, 2.21f, 2.83f, Color::fromRgb(0, 125, 0)},

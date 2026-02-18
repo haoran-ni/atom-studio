@@ -4,6 +4,88 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-18: Neighbor List / Bond Detection — Code Review Fixes (All 9 Steps)
+
+### Summary
+Applied all correctness and robustness fixes identified in `neighborlist_dev_code_review.md`. The review covered 10 findings; these fixes address 9 of them (Finding 7 is subsumed by the combined Finding 5+7 fix). All findings are now resolved and the progress table is complete.
+
+### Files Modified (9 files)
+| File | Findings addressed |
+|------|-------------------|
+| `src/data/NeighborList.h` | 1 — `applyMIC` per-axis PBC signature |
+| `src/data/NeighborList.cpp` | 1 — `applyMIC` body + call sites; 3 — `perAtom` dedup; 4 — remove redundant MIC; 9 — `setBondScale`/`build()` guard; 10 — remove dead `covRadii[j]` guard |
+| `src/data/ElementData.cpp` | 2 — noble gas covalent radii → −1 |
+| `src/data/BondList.h` | 8 — `findBond`/`areBonded` image-shift params |
+| `src/data/BondList.cpp` | 8 — `findBond`/`areBonded` image-shift comparison |
+| `src/data/Structure.cpp` | 6 — `addAtom`, `updateRadiiFromElements` use `radiusForElement` |
+| `src/ui/components/OpenGLViewport.h` | 5+7 — `BondResult` type + coalescing members |
+| `src/ui/components/OpenGLViewport.cpp` | 5+7 — `launchBondTask`, `onBondsReady` structure-identity check; 9 — `setBondScale` clamping |
+| `src/ui/components/MetalViewport.h` | 5+7 — `BondResult` type + coalescing members |
+| `src/ui/components/MetalViewport.mm` | 5+7 — `launchBondTask`, `onBondsReady` structure-identity check; 9 — `setBondScale` clamping |
+
+### Fix Details
+
+#### Finding 1 — `applyMIC` wraps all axes regardless of `pbc[]` flags
+`applyMIC` previously rounded all three fractional components unconditionally. Added `const std::array<bool, 3>& pbc` parameter; each axis is now gated by `pbc[k]`. Updated both call sites in `buildCellList`.
+
+```cpp
+double ridx = pbc[0] ? std::round(frac[0]) : 0.0;
+double ridy = pbc[1] ? std::round(frac[1]) : 0.0;
+double ridz = pbc[2] ? std::round(frac[2]) : 0.0;
+```
+
+**Impact**: Partial-PBC systems (slabs, wires) no longer receive spurious lattice translations along their non-periodic axes.
+
+#### Finding 2 — Noble gases have positive covalent radii
+Six noble gases (He, Ne, Ar, Kr, Xe, Rn) had positive covalent radii in `ElementData.cpp`, causing them to enter `activeAtoms` and form spurious bonds. Set covalent radius to `−1.0f` for all six; `vdwRadius` unchanged (used for display).
+
+#### Finding 3 — Duplicate neighbor entries when cell dimension = 1
+When `nx`, `ny`, or `nz` equals 1, all three `{−1, 0, +1}` offsets wrap to the same physical cell, producing identical `NeighborEntry` tuples three times. Added sort+unique deduplication of `perAtom[i]` before CSR packing:
+
+```cpp
+for (auto& neighbors : perAtom) {
+    std::sort(neighbors.begin(), neighbors.end(), ...);
+    neighbors.erase(std::unique(neighbors.begin(), neighbors.end(), ...), neighbors.end());
+}
+```
+
+**Impact**: Eliminates triple bonds and inflated bond counts for small periodic cells.
+
+#### Finding 4 — `buildBondList` discards MIC correction into dummy variables
+`buildBondList` applied a second `applyMIC` call using throwaway accumulators — dead work that also carried the P1 bug. Removed the entire `hasPBC`/`applyMIC` block; the stored image shifts from `buildCellList` are already MIC-correct.
+
+#### Findings 5 + 7 — Stale bond list + unbounded concurrent tasks
+Replaced the monolithic `startBondDetection` with:
+- **At-most-one coalescing**: if a task is running, the new request is recorded as pending and launched when the running task completes.
+- **Structure-pointer identity check**: `BondResult` bundles `bonds` + the originating `structure` shared_ptr. `onBondsReady` checks `result.structure == m_structure` (pointer equality) before applying the result, discarding stale results from superseded structures.
+
+Applied identically to both `OpenGLViewport` and `MetalViewport`.
+
+#### Finding 6 — Sentinel −1 radius leaks into rendered atom radii
+Two sites in `Structure.cpp` wrote `elem.covalentRadius` directly into `m_radii` without guarding against the `−1.0f` sentinel (which is set for elements Z ≥ 97 and for noble gases). Replaced both with `ElementData::radiusForElement()`, which already falls back to `vdwRadius` when `covalentRadius < 0`:
+
+```cpp
+// addAtom
+m_radii.push_back(ElementData::radiusForElement(atomicNumber, false));
+
+// updateRadiiFromElements
+m_radii[i] = ElementData::radiusForElement(m_atomicNumbers[i], useVdW) * scale;
+```
+
+**Impact**: Eliminates negative atom display radii for noble gases and transuranium elements.
+
+#### Finding 8 — `findBond`/`areBonded` ignore periodic image shifts
+`findBond` compared only `atomIndex1` and `atomIndex2`, so for small PBC cells where the same atom pair can be bonded in two distinct images, the first match was always returned. Added `imageX/Y/Z = 0` default parameters and full image-shift comparison (with swap-and-negate normalization for `a1 > a2`). All existing callers using zero defaults remain unaffected.
+
+#### Finding 9 — `setBondScale` unclamped; `build()` lacks input guard
+- `OpenGLViewport::setBondScale` and `MetalViewport::setBondScale`: added `std::isfinite` rejection and `std::clamp(scale, 0.1f, 5.0f)` before the fuzzy-compare early-out.
+- `NeighborList::build()`: added mandatory guard at the top — returns immediately (with empty list) if scale is non-finite or ≤ 0, preventing division-by-zero in grid dimension calculation regardless of call site.
+
+#### Finding 10 — Dead `covRadii[j] >= 0.0f` guard in `buildCellList`
+`cellAtoms` is populated exclusively from `activeAtoms`, which already enforces `covRadii[i] >= 0`. The inner guard was always true. Removed the `if` and replaced with a clarifying comment.
+
+---
+
 ## 2026-02-18: *IMPORTANT* Neighbor List and PBC-Aware Bond Detection
 
 ### Summary

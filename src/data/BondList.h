@@ -66,8 +66,10 @@ public:
     void removeBond(size_t bondIndex);
 
     /** @return Bond index, or -1 if not found. */
-    int  findBond(uint32_t atomIndex1, uint32_t atomIndex2) const;
-    bool areBonded(uint32_t atomIndex1, uint32_t atomIndex2) const;
+    int  findBond(uint32_t atomIndex1, uint32_t atomIndex2,
+                  int8_t imageX = 0, int8_t imageY = 0, int8_t imageZ = 0) const;
+    bool areBonded(uint32_t atomIndex1, uint32_t atomIndex2,
+                   int8_t imageX = 0, int8_t imageY = 0, int8_t imageZ = 0) const;
 
     // Accessors
     size_t bondCount() const { return m_bonds.size(); }

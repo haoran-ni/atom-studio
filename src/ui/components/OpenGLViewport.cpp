@@ -330,6 +330,8 @@ float OpenGLViewport::bondScale() const {
 }
 
 void OpenGLViewport::setBondScale(float scale) {
+    if (!std::isfinite(scale)) return;
+    scale = std::clamp(scale, 0.1f, 5.0f);
     if (qFuzzyCompare(m_bondScale, scale)) return;
     m_bondScale = scale;
     emit bondScaleChanged();
@@ -341,44 +343,56 @@ void OpenGLViewport::setBondScale(float scale) {
 void OpenGLViewport::startBondDetection() {
     if (!m_structure) return;
 
-    // Create watcher on first use
+    if (m_bondTaskRunning) {
+        // Coalesce: remember the latest request; launchBondTask will pick it up.
+        m_bondTaskPending  = true;
+        m_pendingStructure = m_structure;
+        m_pendingScale     = m_bondScale;
+        return;
+    }
+    launchBondTask(m_structure, m_bondScale);
+}
+
+void OpenGLViewport::launchBondTask(
+    std::shared_ptr<data::Structure> structure, float scale)
+{
     if (!m_bondWatcher) {
-        m_bondWatcher = new QFutureWatcher<std::shared_ptr<data::BondList>>(this);
-        connect(m_bondWatcher,
-                &QFutureWatcher<std::shared_ptr<data::BondList>>::finished,
+        m_bondWatcher = new QFutureWatcher<BondResult>(this);
+        connect(m_bondWatcher, &QFutureWatcher<BondResult>::finished,
                 this, &OpenGLViewport::onBondsReady);
     }
+    m_bondTaskRunning = true;
+    m_bondTaskPending = false;
 
-    // Capture by value so the task holds the structure alive even if the
-    // viewport's m_structure is replaced before the task completes.
-    auto structure = m_structure;
-    float scale    = m_bondScale;
-
-    auto future = QtConcurrent::run([structure, scale]() -> std::shared_ptr<data::BondList> {
-        data::NeighborList nl;
-        nl.build(*structure, scale);
-        return nl.buildBondList(*structure, scale);
-    });
-
-    m_bondWatcher->setFuture(future);
+    m_bondWatcher->setFuture(
+        QtConcurrent::run([structure, scale]() -> BondResult {
+            data::NeighborList nl;
+            nl.build(*structure, scale);
+            return {nl.buildBondList(*structure, scale), structure};
+        }));
 }
 
 void OpenGLViewport::onBondsReady() {
-    if (!m_bondWatcher || !m_structure) return;
+    m_bondTaskRunning = false;
 
-    auto newBonds = m_bondWatcher->result();
-    if (newBonds) {
-        m_structure->setBondList(std::move(newBonds));
+    if (m_bondWatcher && m_structure) {
+        BondResult result = m_bondWatcher->result();
+        // Discard if the structure has changed since the task was launched.
+        if (result.structure == m_structure && result.bonds) {
+            m_structure->setBondList(std::move(result.bonds));
+            m_needsStructureUpdate = true;
+            emit bondCountChanged();
+            if (auto* model = StructureModel::instance())
+                model->notifyBondsUpdated();
+            update();
+        }
     }
 
-    m_needsStructureUpdate = true;
-    emit bondCountChanged();
-
-    if (auto* model = StructureModel::instance()) {
-        model->notifyBondsUpdated();
+    if (m_bondTaskPending && m_pendingStructure) {
+        auto s   = std::move(m_pendingStructure);
+        float sc = m_pendingScale;
+        launchBondTask(std::move(s), sc);
     }
-
-    update();
 }
 
 void OpenGLViewport::fitToView() {

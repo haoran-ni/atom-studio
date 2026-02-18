@@ -250,7 +250,7 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
 
     // Default rendering properties from element data
     const auto& elem = ElementData::byAtomicNumber(atomicNumber);
-    m_radii.push_back(elem.covalentRadius);
+    m_radii.push_back(ElementData::radiusForElement(atomicNumber, false));
     m_colorR.push_back(elem.cpkColor.r);
     m_colorG.push_back(elem.cpkColor.g);
     m_colorB.push_back(elem.cpkColor.b);
@@ -323,9 +323,7 @@ void Structure::updateColorsFromElements() {
 
 void Structure::updateRadiiFromElements(float scale, bool useVdW) {
     for (size_t i = 0; i < m_atomCount; ++i) {
-        const auto& elem = ElementData::byAtomicNumber(m_atomicNumbers[i]);
-        float r = useVdW ? elem.vdwRadius : elem.covalentRadius;
-        m_radii[i] = r * scale;
+        m_radii[i] = ElementData::radiusForElement(m_atomicNumbers[i], useVdW) * scale;
     }
 }
 

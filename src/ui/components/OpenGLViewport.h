@@ -194,8 +194,18 @@ private:
     bool m_rendererModeChanged = false;
 
     // Async bond detection
-    QFutureWatcher<std::shared_ptr<atom::data::BondList>>* m_bondWatcher = nullptr;
+    struct BondResult {
+        std::shared_ptr<data::BondList>  bonds;
+        std::shared_ptr<data::Structure> structure; // originating structure
+    };
+    QFutureWatcher<BondResult>* m_bondWatcher = nullptr;
+    bool m_bondTaskRunning = false;
+    bool m_bondTaskPending = false;
+    std::shared_ptr<data::Structure> m_pendingStructure;
+    float m_pendingScale = 1.0f;
+
     void startBondDetection();
+    void launchBondTask(std::shared_ptr<data::Structure> structure, float scale);
 
 private slots:
     void onBondsReady();
