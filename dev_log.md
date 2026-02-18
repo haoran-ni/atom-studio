@@ -4,6 +4,62 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-18: Sidebar Slider Controls — Numeric Input + Per-Field Reset
+
+### Summary
+Updated all sidebar slider controls to a unified UI pattern that adds:
+1. A numeric text input synchronized with each slider.
+2. A per-control `Reset` button.
+3. Validation with error prompting and invalid-input revert behavior.
+
+The new control layout is:
+- top row: property label (left), numeric input (right), reset button (rightmost)
+- second row: slider
+
+This now applies to all current adjustable sliders and establishes the pattern for future slider controls.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/ui/qml/Sidebar.qml` | Added reusable `NumericSliderControl` component; migrated all 19 sliders; added slider input error dialog; wired per-slider reset and validation |
+| `dev_log.md` | Added this session entry |
+
+### Behavior Details
+
+#### 1. Two-way Slider/Text Sync
+- Moving a slider updates the numeric text field immediately.
+- Entering a value in the text field and pressing `Enter` updates the slider and bound viewport property.
+
+#### 2. Enter-Only Text Commit
+- Numeric text fields commit values only on `Enter` (`onAccepted`).
+- No auto-commit on focus loss.
+
+#### 3. Type-Aware Validation
+- Integer sliders accept integers only.
+- Float sliders accept finite numeric values.
+- Range checks enforce each slider's `from`/`to` bounds.
+
+#### 4. Invalid Input Handling
+- On invalid input, a modal error dialog is shown with a type/range-specific message.
+- The text field reverts to the previous valid value (current slider value).
+
+#### 5. Per-Control Reset
+- Every slider row now includes a `Reset` button.
+- Clicking `Reset` restores that control to its configured default and applies it through the same update path.
+
+### Scope of Migrated Sliders (19 total)
+- Visualization: `Atom Scale`, `Bond Scale`
+- Unit Cell: `Thickness`, `R`, `G`, `B`
+- Camera: `Field of View`
+- Render Settings: `Ambient occlusion samples`, `Ambient occlusion radius`, `Ambient`, `Diffuse`, `Specular`, `Shininess`, `Light direction (X/Y/Z)`
+- Background: `R`, `G`, `B`
+
+### Verification
+- `qmllint src/ui/qml/Sidebar.qml` completed successfully (no parse errors).
+- Existing lint warnings unrelated to this feature (module import path/unqualified access/layout warnings) remain.
+
+---
+
 ## 2026-02-18: Neighbor List / Bond Detection — Code Review Fixes (All 9 Steps)
 
 ### Summary
