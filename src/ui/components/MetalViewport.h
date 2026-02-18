@@ -2,12 +2,13 @@
 
 #include <QQuickItem>
 #include <QColor>
+#include <QFutureWatcher>
 #include <QtQml/qqmlregistration.h>
 #include <memory>
 
 #include "../../render/common/RenderSettings.h"
 
-namespace atom::data { class Structure; }
+namespace atom::data { class Structure; class BondList; }
 namespace atom::render { class Camera; }
 
 namespace atom::ui {
@@ -28,6 +29,7 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(float unitCellThickness READ unitCellThickness WRITE setUnitCellThickness NOTIFY unitCellThicknessChanged)
     Q_PROPERTY(QColor unitCellColor READ unitCellColor WRITE setUnitCellColor NOTIFY unitCellColorChanged)
     Q_PROPERTY(float atomScale READ atomScale WRITE setAtomScale NOTIFY atomScaleChanged)
+    Q_PROPERTY(float bondScale READ bondScale WRITE setBondScale NOTIFY bondScaleChanged)
     Q_PROPERTY(int rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(int sampleCount READ sampleCount NOTIFY sampleCountChanged)
     Q_PROPERTY(int maxRTSamples READ maxRTSamples WRITE setMaxRTSamples NOTIFY maxRTSamplesChanged)
@@ -57,6 +59,7 @@ public:
     float unitCellThickness() const;
     QColor unitCellColor() const;
     float atomScale() const;
+    float bondScale() const;
     int rendererMode() const;
     int sampleCount() const;
     int maxRTSamples() const;
@@ -84,6 +87,7 @@ public slots:
     void setUnitCellThickness(float thickness);
     void setUnitCellColor(const QColor& color);
     void setAtomScale(float scale);
+    void setBondScale(float scale);
     void setRendererMode(int mode);
     void setMaxRTSamples(int samples);
     void setEnableAO(bool enable);
@@ -108,6 +112,7 @@ signals:
     void unitCellThicknessChanged();
     void unitCellColorChanged();
     void atomScaleChanged();
+    void bondScaleChanged();
     void rendererModeChanged();
     void sampleCountChanged();
     void maxRTSamplesChanged();
@@ -152,6 +157,7 @@ private:
     float m_unitCellThickness = 0.06f;
     QColor m_unitCellColor = QColor(0, 0, 0);
     float m_atomScale = 1.0f;
+    float m_bondScale = 1.0f;
     int m_rendererMode = 0;
     int m_sampleCount = 0;
     int m_maxRTSamples = 1000;
@@ -172,6 +178,13 @@ private:
 
     bool m_needsStructureUpdate = false;
     bool m_metalInitialized = false;
+
+    // Async bond detection
+    QFutureWatcher<std::shared_ptr<atom::data::BondList>>* m_bondWatcher = nullptr;
+    void startBondDetection();
+
+private slots:
+    void onBondsReady();
 };
 
 } // namespace atom::ui

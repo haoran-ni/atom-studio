@@ -6,6 +6,8 @@
 #include "../../render/metal/MetalRenderer.h"
 #include "../../render/metal/MetalRayTracingRenderer.h"
 #include "../../data/Structure.h"
+#include "../../data/BondList.h"
+#include "../../data/NeighborList.h"
 
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
@@ -16,6 +18,8 @@
 #include <QTimer>
 #include <QDebug>
 #include <QRunnable>
+#include <QFutureWatcher>
+#include <QtConcurrent>
 #include <algorithm>
 #include <vector>
 
@@ -207,6 +211,7 @@ void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
 
     if (m_structure) {
         fitToView();
+        startBondDetection();
     }
     update();
 }
@@ -284,6 +289,59 @@ void MetalViewport::setAtomScale(float scale) {
         emit atomScaleChanged();
         update();
     }
+}
+
+float MetalViewport::bondScale() const {
+    return m_bondScale;
+}
+
+void MetalViewport::setBondScale(float scale) {
+    if (qFuzzyCompare(m_bondScale, scale)) return;
+    m_bondScale = scale;
+    emit bondScaleChanged();
+    if (m_structure) {
+        startBondDetection();
+    }
+}
+
+void MetalViewport::startBondDetection() {
+    if (!m_structure) return;
+
+    if (!m_bondWatcher) {
+        m_bondWatcher = new QFutureWatcher<std::shared_ptr<data::BondList>>(this);
+        connect(m_bondWatcher,
+                &QFutureWatcher<std::shared_ptr<data::BondList>>::finished,
+                this, &MetalViewport::onBondsReady);
+    }
+
+    auto structure = m_structure;
+    float scale    = m_bondScale;
+
+    auto future = QtConcurrent::run([structure, scale]() -> std::shared_ptr<data::BondList> {
+        data::NeighborList nl;
+        nl.build(*structure, scale);
+        return nl.buildBondList(*structure, scale);
+    });
+
+    m_bondWatcher->setFuture(future);
+}
+
+void MetalViewport::onBondsReady() {
+    if (!m_bondWatcher || !m_structure) return;
+
+    auto newBonds = m_bondWatcher->result();
+    if (newBonds) {
+        m_structure->setBondList(std::move(newBonds));
+    }
+
+    m_needsStructureUpdate = true;
+    emit bondCountChanged();
+
+    if (auto* model = StructureModel::instance()) {
+        model->notifyBondsUpdated();
+    }
+
+    update();
 }
 
 void MetalViewport::setRendererMode(int mode) {

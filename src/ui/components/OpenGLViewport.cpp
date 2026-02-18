@@ -5,6 +5,7 @@
 #include "../../render/opengl/RayTracingRenderer.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
+#include "../../data/NeighborList.h"
 
 #include <QQuickWindow>
 #include <QMouseEvent>
@@ -12,6 +13,8 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QOpenGLFramebufferObjectFormat>
+#include <QFutureWatcher>
+#include <QtConcurrent>
 #include <QDebug>
 #include <algorithm>
 
@@ -316,6 +319,63 @@ void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
 
     if (m_structure) {
         fitToView();
+        startBondDetection();
+    }
+
+    update();
+}
+
+float OpenGLViewport::bondScale() const {
+    return m_bondScale;
+}
+
+void OpenGLViewport::setBondScale(float scale) {
+    if (qFuzzyCompare(m_bondScale, scale)) return;
+    m_bondScale = scale;
+    emit bondScaleChanged();
+    if (m_structure) {
+        startBondDetection();
+    }
+}
+
+void OpenGLViewport::startBondDetection() {
+    if (!m_structure) return;
+
+    // Create watcher on first use
+    if (!m_bondWatcher) {
+        m_bondWatcher = new QFutureWatcher<std::shared_ptr<data::BondList>>(this);
+        connect(m_bondWatcher,
+                &QFutureWatcher<std::shared_ptr<data::BondList>>::finished,
+                this, &OpenGLViewport::onBondsReady);
+    }
+
+    // Capture by value so the task holds the structure alive even if the
+    // viewport's m_structure is replaced before the task completes.
+    auto structure = m_structure;
+    float scale    = m_bondScale;
+
+    auto future = QtConcurrent::run([structure, scale]() -> std::shared_ptr<data::BondList> {
+        data::NeighborList nl;
+        nl.build(*structure, scale);
+        return nl.buildBondList(*structure, scale);
+    });
+
+    m_bondWatcher->setFuture(future);
+}
+
+void OpenGLViewport::onBondsReady() {
+    if (!m_bondWatcher || !m_structure) return;
+
+    auto newBonds = m_bondWatcher->result();
+    if (newBonds) {
+        m_structure->setBondList(std::move(newBonds));
+    }
+
+    m_needsStructureUpdate = true;
+    emit bondCountChanged();
+
+    if (auto* model = StructureModel::instance()) {
+        model->notifyBondsUpdated();
     }
 
     update();

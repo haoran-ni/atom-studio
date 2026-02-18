@@ -4,6 +4,151 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-18: *IMPORTANT* Neighbor List and PBC-Aware Bond Detection
+
+### Summary
+Implemented a complete neighbor list and bond detection system to replace the previous O(n²) brute-force `detectBonds()` approach. Bond detection now runs asynchronously on a background thread using `QtConcurrent`, supports periodic boundary conditions (PBC) with minimum image convention (MIC), stores image shift vectors on each bond for correct rendering of cross-boundary bonds, and exposes a user-tunable `bondScale` slider in the sidebar.
+
+This change is **IMPORTANT** because it:
+- Replaces the only remaining O(n²) algorithm in the data layer with an O(N log N) cell-list approach that scales to large periodic structures.
+- Adds full PBC awareness to bond detection, which was previously broken or absent.
+- Records image shift vectors `(imageX, imageY, imageZ)` on every bond, enabling both bond renderers (OpenGL and Metal) to draw cross-boundary bonds correctly by displacing atom j to its periodic image.
+- Moves bond computation off the main/render thread, keeping the UI responsive while bonds are computed in the background.
+
+### Files Created (2 files)
+| File | Purpose |
+|------|---------|
+| `src/data/NeighborList.h` | `NeighborEntry` struct + `NeighborList` class declaration |
+| `src/data/NeighborList.cpp` | Full cell-list implementation with PBC, MIC, CSR storage, and `buildBondList()` |
+
+### Files Modified (14 files)
+| File | Change |
+|------|--------|
+| `src/data/ElementData.h` | Added `static std::optional<float> covalentRadius(int atomicNumber)` accessor |
+| `src/data/ElementData.cpp` | Updated full covalent radii table from `resources/covalent_radii.md`; sentinel `-1.0f` for N/A elements (Z ≥ 97); updated `radiusForElement()` to fall back to VdW radius |
+| `src/data/BondList.h` | Added `imageX/Y/Z` fields to `Bond` struct; updated `addBond()` signature to include image shifts; removed old `detectBonds()` method |
+| `src/data/BondList.cpp` | Rewrote `addBond()` with normalization (`atomIndex1 < atomIndex2`) and sign flip on image shifts; removed O(n²) bond detection code |
+| `src/data/Structure.h` | Changed `m_bonds` from `unique_ptr` to `shared_ptr<BondList>`; added `setBondList(shared_ptr<BondList>)` |
+| `src/data/Structure.cpp` | Constructor uses `make_shared<BondList>()`; updated `setBondList()` |
+| `src/ui/components/OpenGLViewport.h` | Added `bondScale` Q_PROPERTY; added `m_bondWatcher`, `startBondDetection()`, `onBondsReady()` |
+| `src/ui/components/OpenGLViewport.cpp` | Added `bondScale` getter/setter; implemented `startBondDetection()` and `onBondsReady()` using `QtConcurrent::run`; modified `setStructure()` to call `startBondDetection()` |
+| `src/ui/components/MetalViewport.h` | Same `bondScale` Q_PROPERTY, watcher, and async detection declarations as OpenGLViewport |
+| `src/ui/components/MetalViewport.mm` | Same `bondScale` getter/setter, `startBondDetection()`, `onBondsReady()` implementations; modified `setStructure()` |
+| `src/ui/components/StructureModel.h` | Added `notifyBondsUpdated()` public slot |
+| `src/ui/components/StructureModel.cpp` | Implemented `notifyBondsUpdated()` — emits `structureChanged()` to refresh QML `bondCount` binding |
+| `src/render/opengl/BondRenderer.cpp` | Applied periodic image shift to cylinder endpoint: `endPos += imageX*a + imageY*b + imageZ*c` |
+| `src/render/metal/MetalBondRenderer.mm` | Same image shift applied to `instances[i].end` via lattice matrix |
+| `src/data/CMakeLists.txt` | Added `NeighborList.cpp` / `NeighborList.h` to `atom-data` |
+| `src/ui/CMakeLists.txt` | Added `Qt6::Concurrent` to `atom-ui` link libraries |
+| `src/ui/qml/Sidebar.qml` | Added "Bond Scale" label and slider (range 0.5–2.0, default 1.0) in Visualization section |
+
+### Architecture and Algorithm Details
+
+#### 1. NeighborEntry and CSR Storage
+Each entry in the neighbor list is:
+```cpp
+struct NeighborEntry {
+    uint32_t index;
+    int8_t imageX, imageY, imageZ;  // periodic image of atom j
+};
+```
+Neighbors are stored in Compressed Sparse Row (CSR) format:
+- `m_neighbors[]` — flat array of all neighbor entries
+- `m_offsets[]` — size `n+1`; neighbors of atom `i` are at `[m_offsets[i], m_offsets[i+1])`
+- Symmetric: each ordered pair `(i, j)` appears twice
+- Image shifts describe which periodic image of atom `j` is nearest to atom `i`: `real_pos_j = pos[j] + imageX*a + imageY*b + imageZ*c`
+
+#### 2. Cell-List Algorithm (O(N log N))
+1. **Active atoms**: only atoms with a defined covalent radius (elements Z = 1–96) are included. Elements Bk (Z=97) and above have `-1.0f` as sentinel and are excluded entirely.
+2. **Global cutoff**: `2 * max_covalent_radius_present * scale`. This defines both the grid cell size and the neighbor search radius.
+3. **Grid dimensions**: `nx = max(1, floor(boxX / globalCutoff))` (etc.), giving cells of size ≥ cutoff.
+4. **Bounding box**:
+   - Full PBC: from lattice matrix column sums.
+   - Non-PBC: from active atom bounding box padded by `globalCutoff`.
+5. **27-cell search**: for each atom `i`, search all 26 neighboring cells (3×3×3 minus self). PBC directions wrap with image shift tracking; non-PBC directions skip out-of-range cells.
+6. **MIC** (Minimum Image Convention): after computing the raw displacement and image shifts, `applyMIC()` projects to fractional coordinates, rounds to nearest integer image, subtracts from displacement. This ensures the nearest periodic image is used in all cases.
+7. **Pack into CSR**: results from per-atom temporary vectors are packed into the flat CSR arrays.
+
+#### 3. Bond Detection Pass
+`buildBondList()` iterates the neighbor list and for each pair `(i, j)` with `j > i`:
+- Recomputes actual distance using the stored image shift.
+- Applies MIC to ensure nearest image.
+- Bond criterion: `dist > 0.4 Å && dist < (r_cov_i + r_cov_j) * scale`.
+- Adds to `BondList` via `addBond(i, j, imageX, imageY, imageZ)`.
+- `addBond` normalizes so `atomIndex1 < atomIndex2`; if indices are swapped, image shifts are negated.
+
+#### 4. Async Bond Detection
+Both viewport backends use an identical async pattern:
+```
+setStructure() or setBondScale()
+    └── startBondDetection()
+           └── QtConcurrent::run(lambda)
+                   captures: shared_ptr<Structure> (by value), float scale
+                   runs on: worker thread
+                   returns: shared_ptr<BondList>
+    └── QFutureWatcher::finished → onBondsReady()
+           sets m_structure->setBondList(newBonds)
+           sets m_needsStructureUpdate = true
+           emits bondCountChanged()
+           calls StructureModel::instance()->notifyBondsUpdated()
+           calls update()
+```
+Calling `setFuture()` on an already-running watcher is safe — the new future replaces the old one and only the new future's `finished()` will fire (last-wins semantics for rapid scale changes).
+
+#### 5. Bond Rendering with Image Shifts
+Previously, `BondRenderer::setBondData()` and `MetalBondRenderer::setBondData()` used `pos[a2]` directly as the cylinder endpoint. Now:
+```cpp
+float ex = px[a2];
+float ey = py[a2];
+float ez = pz[a2];
+if (bond.imageX || bond.imageY || bond.imageZ) {
+    ex += bond.imageX * m[0][0] + bond.imageY * m[1][0] + bond.imageZ * m[2][0];
+    ey += bond.imageX * m[0][1] + bond.imageY * m[1][1] + bond.imageZ * m[2][1];
+    ez += bond.imageX * m[0][2] + bond.imageY * m[1][2] + bond.imageZ * m[2][2];
+}
+```
+This makes cross-boundary bonds draw correctly even when the two atoms are on opposite sides of the unit cell.
+
+#### 6. Type Decision: `shared_ptr<BondList>` Instead of `unique_ptr`
+`QFuture<T>` in Qt 6 requires `T` to be copyable (the `result()` accessor returns by value). `unique_ptr` is not copyable. To avoid this constraint, `BondList` ownership was changed from `unique_ptr` to `shared_ptr` throughout:
+- `Structure::m_bonds` is now `shared_ptr<BondList>`.
+- `NeighborList::buildBondList()` returns `shared_ptr<BondList>`.
+- `Structure::setBondList()` accepts `shared_ptr<BondList>`.
+- The async lambda result type and `QFutureWatcher` template argument match: `shared_ptr<BondList>`.
+
+#### 7. Covalent Radii Table
+Values sourced from `resources/covalent_radii.md` (from https://periodictable.com). Table covers H (0.31 Å) through Cm (1.69 Å). Elements Bk–Og use sentinel `-1.0f` (N/A) and are excluded from the neighbor list. The static method `ElementData::covalentRadius(int)` returns `std::optional<float>` (nullopt for N/A).
+
+#### 8. Bond Scale Slider
+`bondScale` (default 1.0, range 0.5–2.0) is a Q_PROPERTY on both viewport backends. Changing it calls `setBondScale()`, which triggers `startBondDetection()` asynchronously — no re-upload needed until the background task completes.
+
+### Verification
+- Build: `cmake --build build` — success (only expected macOS OpenGL deprecation warnings).
+
+---
+
+## 2026-02-17: Simplify Input Pipeline to ASE-Only
+
+### Summary
+Removed the legacy `FileReader`/`FileReaderRegistry` abstraction layer and routed structure loading directly through `ASEReader`.
+
+### Files Modified
+- `src/io/AsyncFileLoader.cpp` - Calls `ASEReader::read()` directly with `PythonRuntime::GILGuard`
+- `src/io/AsyncFileLoader.h` - Removed unused cancel state field
+- `src/io/CMakeLists.txt` - Keeps only `AsyncFileLoader` sources
+- `src/ui/components/FileController.cpp` - Uses `ASEReader::fileDialogFilter()` directly
+
+### Files Deleted
+- `src/io/FileReader.h`
+- `src/io/FileReader.cpp`
+- `src/io/FileReaderRegistry.h`
+- `src/io/FileReaderRegistry.cpp`
+
+### Note
+Input parsing now has a single path: `FileController` -> `AsyncFileLoader` -> `ASEReader`.
+
+---
+
 ## 2026-02-11: Exposed Ray-Tracing Parameter Controls in Sidebar (OpenGL + Metal)
 
 ### Summary
@@ -1104,27 +1249,5 @@ Run the app and open various file formats:
 ```
 
 Supported formats include: XYZ, CIF, LAMMPS dump/data, VASP POSCAR/CONTCAR, PDB, Gaussian, Quantum ESPRESSO, ASE traj/json/db, and 60+ more.
-
----
-
-## 2026-02-17: Simplify Input Pipeline to ASE-Only
-
-### Summary
-Removed the legacy `FileReader`/`FileReaderRegistry` abstraction layer and routed structure loading directly through `ASEReader`.
-
-### Files Modified
-- `src/io/AsyncFileLoader.cpp` - Calls `ASEReader::read()` directly with `PythonRuntime::GILGuard`
-- `src/io/AsyncFileLoader.h` - Removed unused cancel state field
-- `src/io/CMakeLists.txt` - Keeps only `AsyncFileLoader` sources
-- `src/ui/components/FileController.cpp` - Uses `ASEReader::fileDialogFilter()` directly
-
-### Files Deleted
-- `src/io/FileReader.h`
-- `src/io/FileReader.cpp`
-- `src/io/FileReaderRegistry.h`
-- `src/io/FileReaderRegistry.cpp`
-
-### Note
-Input parsing now has a single path: `FileController` -> `AsyncFileLoader` -> `ASEReader`.
 
 ---

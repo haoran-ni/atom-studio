@@ -6,6 +6,8 @@ add_library(atom-data STATIC
     ElementData.h
     BondList.cpp
     BondList.h
+    NeighborList.cpp
+    NeighborList.h
     Structure.cpp
     Structure.h
 )

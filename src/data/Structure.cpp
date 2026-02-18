@@ -175,7 +175,7 @@ bool Lattice::isCubic() const {
 // ============================================================================
 
 Structure::Structure()
-    : m_bonds(std::make_unique<BondList>()) {
+    : m_bonds(std::make_shared<BondList>()) {
 }
 
 Structure::~Structure() = default;
@@ -444,6 +444,12 @@ std::vector<float> Structure::packColors() const {
         data[i * 4 + 3] = m_colorA[i];
     }
     return data;
+}
+
+void Structure::setBondList(std::shared_ptr<BondList> newBonds) {
+    if (newBonds) {
+        m_bonds = std::move(newBonds);
+    }
 }
 
 } // namespace atom::data

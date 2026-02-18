@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -34,7 +35,7 @@ struct ElementInfo {
     std::string_view symbol;
     std::string_view name;
     float mass;            // atomic mass in amu
-    float covalentRadius;  // in Angstroms
+    float covalentRadius;  // in Angstroms; -1.0f if not defined for this element
     float vdwRadius;       // Van der Waals radius in Angstroms
     Color cpkColor;        // CPK/Jmol color scheme
 };
@@ -85,12 +86,19 @@ public:
     static Color colorForElement(int atomicNumber);
 
     /**
-     * @brief Get default radius for an element
+     * @brief Get default radius for an element (always returns a value)
      * @param atomicNumber Atomic number
-     * @param useVdW If true, use Van der Waals radius; otherwise covalent
+     * @param useVdW If true, use Van der Waals radius; otherwise covalent (falls back to vdwRadius if undefined)
      * @return Radius in Angstroms
      */
     static float radiusForElement(int atomicNumber, bool useVdW = false);
+
+    /**
+     * @brief Get covalent radius for bond detection, or nullopt if element cannot form covalent bonds
+     * @param atomicNumber Atomic number
+     * @return Covalent radius in Angstroms, or nullopt
+     */
+    static std::optional<float> covalentRadius(int atomicNumber);
 
 private:
     static const std::array<ElementInfo, MAX_ELEMENTS>& elements();

@@ -146,6 +146,8 @@ void BondRenderer::setBondData(const data::Structure* structure) {
     const float* cr = structure->colorsR();
     const float* cg = structure->colorsG();
     const float* cb = structure->colorsB();
+    const auto& lattice = structure->lattice();
+    const auto& m = lattice.matrix;
 
     for (size_t i = 0; i < m_bondCount; ++i) {
         const auto& bond = bonds.bond(i);
@@ -156,9 +158,18 @@ void BondRenderer::setBondData(const data::Structure* structure) {
         startData[i * 3 + 1] = py[a1];
         startData[i * 3 + 2] = pz[a1];
 
-        endData[i * 3 + 0] = px[a2];
-        endData[i * 3 + 1] = py[a2];
-        endData[i * 3 + 2] = pz[a2];
+        // Apply periodic image shift to atom j's position
+        float ex = px[a2];
+        float ey = py[a2];
+        float ez = pz[a2];
+        if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
+            ex += static_cast<float>(bond.imageX * m[0][0] + bond.imageY * m[1][0] + bond.imageZ * m[2][0]);
+            ey += static_cast<float>(bond.imageX * m[0][1] + bond.imageY * m[1][1] + bond.imageZ * m[2][1]);
+            ez += static_cast<float>(bond.imageX * m[0][2] + bond.imageY * m[1][2] + bond.imageZ * m[2][2]);
+        }
+        endData[i * 3 + 0] = ex;
+        endData[i * 3 + 1] = ey;
+        endData[i * 3 + 2] = ez;
 
         // Average color of two atoms
         colorData[i * 4 + 0] = (cr[a1] + cr[a2]) * 0.5f;

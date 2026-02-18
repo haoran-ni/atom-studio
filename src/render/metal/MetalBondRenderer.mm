@@ -120,14 +120,26 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
     const float* cr = structure->colorsR();
     const float* cg = structure->colorsG();
     const float* cb = structure->colorsB();
+    const auto& lattice = structure->lattice();
+    const auto& m = lattice.matrix;
 
     for (size_t i = 0; i < m_bondCount; ++i) {
         const auto& bond = bonds.bond(i);
         uint32_t a1 = bond.atomIndex1;
         uint32_t a2 = bond.atomIndex2;
 
+        // Apply periodic image shift to atom j's position
+        float ex = px[a2];
+        float ey = py[a2];
+        float ez = pz[a2];
+        if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
+            ex += static_cast<float>(bond.imageX * m[0][0] + bond.imageY * m[1][0] + bond.imageZ * m[2][0]);
+            ey += static_cast<float>(bond.imageX * m[0][1] + bond.imageY * m[1][1] + bond.imageZ * m[2][1]);
+            ez += static_cast<float>(bond.imageX * m[0][2] + bond.imageY * m[1][2] + bond.imageZ * m[2][2]);
+        }
+
         instances[i].start = simd_make_float3(px[a1], py[a1], pz[a1]);
-        instances[i].end   = simd_make_float3(px[a2], py[a2], pz[a2]);
+        instances[i].end   = simd_make_float3(ex, ey, ez);
         instances[i].color = simd_make_float4(
             (cr[a1] + cr[a2]) * 0.5f,
             (cg[a1] + cg[a2]) * 0.5f,

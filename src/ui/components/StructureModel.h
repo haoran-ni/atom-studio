@@ -55,6 +55,7 @@ public:
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
     void clear();
+    void notifyBondsUpdated();
 
 signals:
     void structureChanged();

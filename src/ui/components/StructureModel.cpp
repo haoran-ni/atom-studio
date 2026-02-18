@@ -97,6 +97,10 @@ void StructureModel::clear() {
     emit structureChanged();
 }
 
+void StructureModel::notifyBondsUpdated() {
+    emit structureChanged();
+}
+
 void StructureModel::updateElementList() {
     m_elements.clear();
 

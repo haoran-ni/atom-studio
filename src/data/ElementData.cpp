@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <mutex>
+#include <optional>
 
 namespace atom::data {
 
@@ -11,15 +12,15 @@ namespace {
 // Colors based on Jmol color scheme (similar to CPK)
 // Radii: covalent from Cordero et al., VdW from Bondi/Rowland & Taylor
 constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
-    // Unknown/placeholder (index 0)
-    {0, "X", "Unknown", 0.0f, 1.0f, 1.5f, Color::fromRgb(255, 20, 147)},
-    // Period 1
+    // Unknown/placeholder (index 0) — no covalent radius
+    {0, "X", "Unknown", 0.0f, -1.0f, 1.5f, Color::fromRgb(255, 20, 147)},
+    // Period 1 — covalent radii from covalent_radii.md
     {1, "H", "Hydrogen", 1.008f, 0.31f, 1.20f, Color::fromRgb(255, 255, 255)},
     {2, "He", "Helium", 4.003f, 0.28f, 1.40f, Color::fromRgb(217, 255, 255)},
     // Period 2
     {3, "Li", "Lithium", 6.941f, 1.28f, 1.82f, Color::fromRgb(204, 128, 255)},
     {4, "Be", "Beryllium", 9.012f, 0.96f, 1.53f, Color::fromRgb(194, 255, 0)},
-    {5, "B", "Boron", 10.81f, 0.84f, 1.92f, Color::fromRgb(255, 181, 181)},
+    {5, "B", "Boron", 10.81f, 0.85f, 1.92f, Color::fromRgb(255, 181, 181)},
     {6, "C", "Carbon", 12.01f, 0.76f, 1.70f, Color::fromRgb(144, 144, 144)},
     {7, "N", "Nitrogen", 14.01f, 0.71f, 1.55f, Color::fromRgb(48, 80, 248)},
     {8, "O", "Oxygen", 16.00f, 0.66f, 1.52f, Color::fromRgb(255, 13, 13)},
@@ -116,29 +117,29 @@ constexpr std::array<ElementInfo, ElementData::MAX_ELEMENTS> kElements = {{
     {94, "Pu", "Plutonium", 244.0f, 1.87f, 2.43f, Color::fromRgb(0, 107, 255)},
     {95, "Am", "Americium", 243.0f, 1.80f, 2.44f, Color::fromRgb(84, 92, 242)},
     {96, "Cm", "Curium", 247.0f, 1.69f, 2.45f, Color::fromRgb(120, 92, 227)},
-    {97, "Bk", "Berkelium", 247.0f, 1.60f, 2.44f, Color::fromRgb(138, 79, 227)},
-    {98, "Cf", "Californium", 251.0f, 1.60f, 2.45f, Color::fromRgb(161, 54, 212)},
-    {99, "Es", "Einsteinium", 252.0f, 1.60f, 2.45f, Color::fromRgb(179, 31, 212)},
-    {100, "Fm", "Fermium", 257.0f, 1.60f, 2.45f, Color::fromRgb(179, 31, 186)},
-    {101, "Md", "Mendelevium", 258.0f, 1.60f, 2.46f, Color::fromRgb(179, 13, 166)},
-    {102, "No", "Nobelium", 259.0f, 1.60f, 2.46f, Color::fromRgb(189, 13, 135)},
-    {103, "Lr", "Lawrencium", 262.0f, 1.60f, 2.46f, Color::fromRgb(199, 0, 102)},
-    // Period 7 d-block (fill remaining)
-    {104, "Rf", "Rutherfordium", 267.0f, 1.50f, 2.40f, Color::fromRgb(204, 0, 89)},
-    {105, "Db", "Dubnium", 268.0f, 1.50f, 2.40f, Color::fromRgb(209, 0, 79)},
-    {106, "Sg", "Seaborgium", 269.0f, 1.50f, 2.40f, Color::fromRgb(217, 0, 69)},
-    {107, "Bh", "Bohrium", 270.0f, 1.50f, 2.40f, Color::fromRgb(224, 0, 56)},
-    {108, "Hs", "Hassium", 269.0f, 1.50f, 2.40f, Color::fromRgb(230, 0, 46)},
-    {109, "Mt", "Meitnerium", 278.0f, 1.50f, 2.40f, Color::fromRgb(235, 0, 38)},
-    {110, "Ds", "Darmstadtium", 281.0f, 1.50f, 2.40f, Color::fromRgb(240, 0, 33)},
-    {111, "Rg", "Roentgenium", 282.0f, 1.50f, 2.40f, Color::fromRgb(245, 0, 29)},
-    {112, "Cn", "Copernicium", 285.0f, 1.50f, 2.40f, Color::fromRgb(250, 0, 25)},
-    {113, "Nh", "Nihonium", 286.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 20)},
-    {114, "Fl", "Flerovium", 289.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 15)},
-    {115, "Mc", "Moscovium", 290.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 10)},
-    {116, "Lv", "Livermorium", 293.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 5)},
-    {117, "Ts", "Tennessine", 294.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 0)},
-    {118, "Og", "Oganesson", 294.0f, 1.50f, 2.40f, Color::fromRgb(255, 0, 0)},
+    // Z >= 97: no covalent radius defined (-1.0f)
+    {97,  "Bk", "Berkelium",     247.0f, -1.0f, 2.44f, Color::fromRgb(138, 79, 227)},
+    {98,  "Cf", "Californium",   251.0f, -1.0f, 2.45f, Color::fromRgb(161, 54, 212)},
+    {99,  "Es", "Einsteinium",   252.0f, -1.0f, 2.45f, Color::fromRgb(179, 31, 212)},
+    {100, "Fm", "Fermium",       257.0f, -1.0f, 2.45f, Color::fromRgb(179, 31, 186)},
+    {101, "Md", "Mendelevium",   258.0f, -1.0f, 2.46f, Color::fromRgb(179, 13, 166)},
+    {102, "No", "Nobelium",      259.0f, -1.0f, 2.46f, Color::fromRgb(189, 13, 135)},
+    {103, "Lr", "Lawrencium",    262.0f, -1.0f, 2.46f, Color::fromRgb(199, 0, 102)},
+    {104, "Rf", "Rutherfordium", 267.0f, -1.0f, 2.40f, Color::fromRgb(204, 0, 89)},
+    {105, "Db", "Dubnium",       268.0f, -1.0f, 2.40f, Color::fromRgb(209, 0, 79)},
+    {106, "Sg", "Seaborgium",    269.0f, -1.0f, 2.40f, Color::fromRgb(217, 0, 69)},
+    {107, "Bh", "Bohrium",       270.0f, -1.0f, 2.40f, Color::fromRgb(224, 0, 56)},
+    {108, "Hs", "Hassium",       269.0f, -1.0f, 2.40f, Color::fromRgb(230, 0, 46)},
+    {109, "Mt", "Meitnerium",    278.0f, -1.0f, 2.40f, Color::fromRgb(235, 0, 38)},
+    {110, "Ds", "Darmstadtium",  281.0f, -1.0f, 2.40f, Color::fromRgb(240, 0, 33)},
+    {111, "Rg", "Roentgenium",   282.0f, -1.0f, 2.40f, Color::fromRgb(245, 0, 29)},
+    {112, "Cn", "Copernicium",   285.0f, -1.0f, 2.40f, Color::fromRgb(250, 0, 25)},
+    {113, "Nh", "Nihonium",      286.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 20)},
+    {114, "Fl", "Flerovium",     289.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 15)},
+    {115, "Mc", "Moscovium",     290.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 10)},
+    {116, "Lv", "Livermorium",   293.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 5)},
+    {117, "Ts", "Tennessine",    294.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 0)},
+    {118, "Og", "Oganesson",     294.0f, -1.0f, 2.40f, Color::fromRgb(255, 0, 0)},
 }};
 
 std::unordered_map<std::string, int> g_symbolMap;
@@ -203,7 +204,15 @@ Color ElementData::colorForElement(int atomicNumber) {
 
 float ElementData::radiusForElement(int atomicNumber, bool useVdW) {
     const auto& elem = byAtomicNumber(atomicNumber);
-    return useVdW ? elem.vdwRadius : elem.covalentRadius;
+    if (useVdW) return elem.vdwRadius;
+    // Fall back to vdwRadius for elements without a defined covalent radius
+    return (elem.covalentRadius >= 0.0f) ? elem.covalentRadius : elem.vdwRadius;
+}
+
+std::optional<float> ElementData::covalentRadius(int atomicNumber) {
+    const auto& elem = byAtomicNumber(atomicNumber);
+    if (elem.covalentRadius < 0.0f) return std::nullopt;
+    return elem.covalentRadius;
 }
 
 } // namespace atom::data

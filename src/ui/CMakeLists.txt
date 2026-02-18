@@ -68,6 +68,7 @@ target_link_libraries(atom-ui PUBLIC
     atom-io
     atom-render
     Qt6::Core
+    Qt6::Concurrent
     Qt6::Gui
     Qt6::Quick
     Qt6::OpenGL

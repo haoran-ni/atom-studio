@@ -167,6 +167,25 @@ Rectangle {
                             }
                         }
 
+                        Label {
+                            text: qsTr("Bond Scale")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        Slider {
+                            id: bondScaleSlider
+                            Layout.fillWidth: true
+                            from: 0.5
+                            to: 2.0
+                            value: 1.0
+                            onMoved: {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.bondScale = value
+                                }
+                            }
+                        }
+
                         CheckBox {
                             id: showBondsCheck
                             text: qsTr("Show Bonds")

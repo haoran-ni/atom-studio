@@ -218,6 +218,12 @@ public:
     BondList& bonds() { return *m_bonds; }
     const BondList& bonds() const { return *m_bonds; }
 
+    /**
+     * @brief Replace the bond list (used after async bond detection completes).
+     * @param newBonds New bond list to adopt; must not be null.
+     */
+    void setBondList(std::shared_ptr<BondList> newBonds);
+
     // ========== Metadata ==========
 
     void setSourcePath(const std::string& path) { m_sourcePath = path; }
@@ -297,7 +303,7 @@ private:
     Lattice m_lattice;
 
     // Bonds
-    std::unique_ptr<BondList> m_bonds;
+    std::shared_ptr<BondList> m_bonds;
 
     // Metadata
     std::string m_sourcePath;
