@@ -16,8 +16,11 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     };
 
     // Camera
-    combine(hf(camera.azimuth()));
-    combine(hf(camera.elevation()));
+    QQuaternion q = camera.orientation();
+    combine(hf(q.scalar()));
+    combine(hf(q.x()));
+    combine(hf(q.y()));
+    combine(hf(q.z()));
     combine(hf(camera.distance()));
     combine(hf(camera.target().x()));
     combine(hf(camera.target().y()));

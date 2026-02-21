@@ -10,6 +10,7 @@
 #include <QQuickWindow>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QNativeGestureEvent>
 #include <QDateTime>
 #include <QTimer>
 #include <QOpenGLFramebufferObjectFormat>
@@ -588,6 +589,34 @@ void OpenGLViewport::setLightDirZ(float value) {
     }
 }
 
+bool OpenGLViewport::event(QEvent* event) {
+    if (event->type() == QEvent::NativeGesture) {
+        auto* ge = static_cast<QNativeGestureEvent*>(event);
+        if (ge->gestureType() == Qt::ZoomNativeGesture) {
+            // value() > 0: spread (zoom in), value() < 0: pinch (zoom out)
+            float factor = 1.0f / (1.0f + static_cast<float>(ge->value()));
+
+            // Zoom toward pinch center, same as zoom-to-cursor
+            QPointF pos = ge->position();
+            int w = static_cast<int>(width());
+            int h = static_cast<int>(height());
+            QVector3D cursorWorld = m_camera->screenToWorld(
+                static_cast<float>(pos.x()),
+                static_cast<float>(pos.y()),
+                m_camera->distance(), w, h);
+            m_camera->setTarget(
+                m_camera->target() + (cursorWorld - m_camera->target()) * (1.0f - factor));
+
+            m_camera->zoom(factor);
+            emit cameraChanged();
+            update();
+            event->accept();
+            return true;
+        }
+    }
+    return QQuickFramebufferObject::event(event);
+}
+
 void OpenGLViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
     m_pressedButtons = event->buttons();
@@ -605,8 +634,9 @@ void OpenGLViewport::mouseMoveEvent(QMouseEvent* event) {
         // Pan
         m_camera->pan(delta.x(), delta.y());
     } else if (m_pressedButtons & Qt::MiddleButton) {
-        // Zoom via drag
-        m_camera->zoom(1.0f - delta.y() * 0.01f);
+        // Zoom via drag: drag up (delta.y < 0) → zoom in (factor < 1)
+        float factor = std::max(0.01f, 1.0f + static_cast<float>(delta.y()) * 0.01f);
+        m_camera->zoom(factor);
     }
 
     emit cameraChanged();
@@ -621,7 +651,22 @@ void OpenGLViewport::mouseReleaseEvent(QMouseEvent* event) {
 
 void OpenGLViewport::wheelEvent(QWheelEvent* event) {
     float delta = event->angleDelta().y();
-    float factor = (delta > 0) ? 0.9f : 1.1f;
+    if (qFuzzyIsNull(delta)) { event->accept(); return; }
+
+    // Proportional zoom: one standard notch (delta=120) → ~11% zoom
+    float factor = std::pow(0.999f, delta);
+
+    // Zoom-to-cursor: shift target toward the world point under the cursor
+    QPointF cursorPos = event->position();
+    int w = static_cast<int>(width());
+    int h = static_cast<int>(height());
+    QVector3D cursorWorld = m_camera->screenToWorld(
+        static_cast<float>(cursorPos.x()),
+        static_cast<float>(cursorPos.y()),
+        m_camera->distance(), w, h);
+    m_camera->setTarget(
+        m_camera->target() + (cursorWorld - m_camera->target()) * (1.0f - factor));
+
     m_camera->zoom(factor);
     emit cameraChanged();
     update();

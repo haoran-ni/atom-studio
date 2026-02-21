@@ -41,12 +41,9 @@ public:
     QVector3D target() const { return m_target; }
 
     // View parameters
-    float azimuth() const { return m_azimuth; }
-    float elevation() const { return m_elevation; }
+    QQuaternion orientation() const { return m_orientation; }
+    void setOrientation(const QQuaternion& q);
     float distance() const { return m_distance; }
-
-    void setAzimuth(float azimuth);
-    void setElevation(float elevation);
 
     // Camera position (computed from target, azimuth, elevation, distance)
     QVector3D position() const;
@@ -85,12 +82,10 @@ public:
 
 private:
     void updateMatrices() const;
-    void clampElevation();
 
     // Orbit parameters
     QVector3D m_target = {0, 0, 0};
-    float m_azimuth = 45.0f;     // Horizontal angle in degrees
-    float m_elevation = 30.0f;   // Vertical angle in degrees
+    QQuaternion m_orientation;   // Camera orientation (replaces azimuth + elevation)
     float m_distance = 50.0f;
 
     // Projection parameters

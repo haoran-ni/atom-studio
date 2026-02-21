@@ -9,24 +9,24 @@ Camera::Camera() {
 
 void Camera::reset() {
     m_target = QVector3D(0, 0, 0);
-    m_azimuth = 45.0f;
-    m_elevation = 30.0f;
     m_distance = 50.0f;
     m_fov = 45.0f;
     m_orthoScale = 10.0f;
+    // Default view: azimuth≈45°, elevation≈30° (matches old Euler default)
+    m_orientation = QQuaternion::fromEulerAngles(-30.0f, 45.0f, 0.0f).normalized();
     m_viewDirty = true;
     m_projDirty = true;
 }
 
 void Camera::orbit(float deltaAzimuth, float deltaElevation) {
-    m_azimuth += deltaAzimuth;
-    m_elevation += deltaElevation;
+    // Horizontal: rotate around world Y (stable ground-plane turntable feel)
+    QQuaternion yaw = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), deltaAzimuth);
 
-    // Wrap azimuth
-    while (m_azimuth > 360.0f) m_azimuth -= 360.0f;
-    while (m_azimuth < 0.0f) m_azimuth += 360.0f;
+    // Vertical: rotate around camera's current right axis (no pole clamping needed)
+    QVector3D cameraRight = m_orientation.rotatedVector(QVector3D(1, 0, 0));
+    QQuaternion pitch = QQuaternion::fromAxisAndAngle(cameraRight, deltaElevation);
 
-    clampElevation();
+    m_orientation = (pitch * yaw * m_orientation).normalized();
     m_viewDirty = true;
 }
 
@@ -48,6 +48,10 @@ void Camera::zoom(float factor) {
     // Also adjust ortho scale for orthographic mode
     m_orthoScale *= factor;
     m_orthoScale = qBound(0.1f, m_orthoScale, 10000.0f);
+
+    // Keep clipping planes consistent with distance to prevent atom clipping
+    m_near = m_distance * 0.001f;
+    m_far  = m_distance * 10.0f;
 
     m_viewDirty = true;
     m_projDirty = true;
@@ -85,49 +89,25 @@ void Camera::setTarget(const QVector3D& target) {
     m_viewDirty = true;
 }
 
-void Camera::setAzimuth(float azimuth) {
-    m_azimuth = azimuth;
-    while (m_azimuth > 360.0f) m_azimuth -= 360.0f;
-    while (m_azimuth < 0.0f) m_azimuth += 360.0f;
+void Camera::setOrientation(const QQuaternion& q) {
+    m_orientation = q.normalized();
     m_viewDirty = true;
-}
-
-void Camera::setElevation(float elevation) {
-    m_elevation = elevation;
-    clampElevation();
-    m_viewDirty = true;
-}
-
-void Camera::clampElevation() {
-    m_elevation = qBound(-89.0f, m_elevation, 89.0f);
 }
 
 QVector3D Camera::position() const {
-    float azimuthRad = qDegreesToRadians(m_azimuth);
-    float elevationRad = qDegreesToRadians(m_elevation);
-
-    float cosElev = qCos(elevationRad);
-    float x = m_distance * cosElev * qSin(azimuthRad);
-    float y = m_distance * qSin(elevationRad);
-    float z = m_distance * cosElev * qCos(azimuthRad);
-
-    return m_target + QVector3D(x, y, z);
+    return m_target + m_orientation.rotatedVector(QVector3D(0, 0, m_distance));
 }
 
 QVector3D Camera::forwardVector() const {
-    return (m_target - position()).normalized();
+    return m_orientation.rotatedVector(QVector3D(0, 0, -1));
 }
 
 QVector3D Camera::rightVector() const {
-    QVector3D forward = forwardVector();
-    QVector3D worldUp(0, 1, 0);
-    return QVector3D::crossProduct(forward, worldUp).normalized();
+    return m_orientation.rotatedVector(QVector3D(1, 0, 0));
 }
 
 QVector3D Camera::upVector() const {
-    QVector3D forward = forwardVector();
-    QVector3D right = rightVector();
-    return QVector3D::crossProduct(right, forward).normalized();
+    return m_orientation.rotatedVector(QVector3D(0, 1, 0));
 }
 
 void Camera::setProjection(bool perspective) {
@@ -181,7 +161,7 @@ QMatrix4x4 Camera::viewProjectionMatrix() const {
 void Camera::updateMatrices() const {
     if (m_viewDirty) {
         m_viewMatrix.setToIdentity();
-        m_viewMatrix.lookAt(position(), m_target, QVector3D(0, 1, 0));
+        m_viewMatrix.lookAt(position(), m_target, upVector());
         m_viewDirty = false;
     }
 

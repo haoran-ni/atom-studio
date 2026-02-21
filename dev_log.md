@@ -4,6 +4,34 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-20: Quaternion Trackball Camera + Viewport Interaction Improvements
+
+### Summary
+Refactored the camera from Euler spherical coordinates (azimuth + elevation) to a quaternion-based orientation, and fixed four viewport interaction issues.
+
+### Interaction Fixes
+1. **Zoom-to-cursor** — scroll wheel now zooms toward the world point under the cursor rather than always toward the fixed orbit center, using `Camera::screenToWorld()` to shift `m_target` proportionally.
+2. **MMB drag zoom direction** — drag up now zooms in (was inverted).
+3. **Dynamic near/far planes** — `Camera::zoom()` now updates `m_near`/`m_far` after every zoom, matching `fitToView()` convention; prevents atom clipping when zooming in manually.
+4. **macOS pinch-to-zoom** — added `bool event(QEvent*)` override in `OpenGLViewport` to handle `Qt::ZoomNativeGesture`, with the same zoom-to-pinch-center logic as the wheel handler.
+
+### Quaternion Camera Refactor
+Replaced `m_azimuth` + `m_elevation` + `clampElevation()` with a single `QQuaternion m_orientation`. Orbit style is turntable-with-quaternions: horizontal drag rotates around world Y (stable ground-plane feel), vertical drag rotates around the camera's current right axis. No elevation clamping → free rotation past the poles.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/common/Camera.h` | Replaced `m_azimuth`/`m_elevation` + setters/getters with `QQuaternion m_orientation`; removed `clampElevation()` |
+| `src/render/common/Camera.cpp` | Rewrote `reset`, `orbit`, `position`, `rightVector`, `upVector`, `forwardVector`, `updateMatrices`; added `setOrientation()`; removed `setAzimuth/setElevation/clampElevation` |
+| `src/render/common/RenderStateHash.cpp` | Hash 4 quaternion components instead of azimuth + elevation |
+| `src/ui/components/OpenGLViewport.h` | Added `bool event(QEvent*)` override declaration |
+| `src/ui/components/OpenGLViewport.cpp` | Added `#include <QNativeGestureEvent>`; rewrote `wheelEvent`; fixed `mouseMoveEvent` MMB sign; added `event()` for pinch |
+
+### Verification
+- Build: `cmake --build build` — success (only expected macOS OpenGL deprecation warnings).
+
+---
+
 ## 2026-02-18: Sidebar Slider Controls — Numeric Input + Per-Field Reset
 
 ### Summary
