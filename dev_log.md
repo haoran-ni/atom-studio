@@ -4,6 +4,40 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## IMPORTANT — 2026-02-23: Unwrap Molecules Operation
+
+### Summary
+Added a "Unwrap Molecules" structure manipulation operation. For periodic structures, atoms are typically stored wrapped inside the unit cell, which can break the visual continuity of bonded molecules that span a periodic boundary. Unwrap resolves this by restoring each organic molecular fragment to a contiguous Cartesian arrangement, with the fragment's geometric centre placed inside the unit cell.
+
+### Algorithm
+1. **Precompute fractional coordinates** for all atoms using `Lattice::cartesianToFractional`.
+2. **Classify atoms**: only non-metals and metalloids commonly found in organic chemistry are processed (H, B, C, N, O, F, Si, P, S, Cl, Ge, As, Se, Br, Sb, Te, I, At). All metallic and noble-gas atoms are skipped and their positions are never altered.
+3. **Build an adjacency list** from the `BondList`, including only organic–organic bonds. The existing `Bond.imageX/Y/Z` fields encode which periodic image of the second atom is bonded to the first, so no minimum-image recomputation is needed.
+4. **BFS over connected components**: starting from each unvisited organic atom, traverse the bond graph and accumulate an integer lattice-vector offset per atom so that bonded atoms are adjacent (offset propagation: `offset[v] = offset[u] + image_shift_from_bond`).
+5. **Centre fragment in unit cell**: compute the geometric centre in adjusted fractional coordinates (`frac[i] + offset[i]`), then translate by `floor(centre)` to bring the centre into `[0, 1)³`.
+6. **Write back Cartesian positions** via `Structure::setPosition()` using `Lattice::fractionalToCartesian`.
+
+### Key Design Decisions
+- **Bond image shifts used directly**: because `BondList` already stores the image vector `(imageX, imageY, imageZ)` for each cross-boundary bond (from bond detection), the unwrap step is exact and avoids floating-point minimum-image heuristics.
+- **Operates on working structure** (`m_structure`), not the original. Modifications stack on top of whatever the current working copy is (e.g., you can replicate then unwrap). "Reset to Original" undoes everything.
+- **Organic-only atoms moved**: skipping metals prevents accidentally dismantling coordination or ionic frameworks. Each organic fragment (including ligands of organometallic compounds) is unwrapped independently.
+- **Button disabled until bonds exist**: the "Unwrap Molecules" button requires a non-empty `BondList`. It shows `"Bond detection required"` on hover if bonds haven't been detected yet, or `"Not applicable for non-periodic structures"` if the structure has no lattice.
+- **Bond re-detection after unwrap**: emitting `structureUpdated(m_structure)` triggers the existing async bond-detection pipeline in the viewport, which re-detects bonds on the new positions (bonds across periodic images that are now resolved will have zero image shifts after re-detection).
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/data/StructureOperations.h` | Added `void unwrapMolecules(Structure& s)` declaration + doc comment |
+| `src/data/StructureOperations.cpp` | Implemented `unwrapMolecules` + internal `isOrganicElement` helper |
+| `src/ui/components/StructureModel.h` | Added `Q_PROPERTY(bool hasBonds ...)`, `hasBonds()`, `Q_INVOKABLE void unwrapMolecules()` |
+| `src/ui/components/StructureModel.cpp` | Implemented `hasBonds()` and `unwrapMolecules()` |
+| `src/ui/qml/Sidebar.qml` | Added "Unwrap Molecules" button with disabled-overlay tooltip in Structure Manipulation section |
+
+### Verification
+- Build: `cmake --build build` — success (only expected macOS OpenGL deprecation warnings).
+
+---
+
 ## IMPORTANT — 2026-02-23: Non-Destructive Structure Manipulation (Original + Working Copy)
 
 ### Summary

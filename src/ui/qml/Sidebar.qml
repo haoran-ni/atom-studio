@@ -243,6 +243,32 @@ Rectangle {
                             }
                         }
 
+                        // ---- Unwrap Molecules ----
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: unwrapButton.implicitHeight
+
+                            Button {
+                                id: unwrapButton
+                                text: qsTr("Unwrap Molecules")
+                                width: parent.width
+                                enabled: StructureModel.hasUnitCell && StructureModel.hasBonds
+                                opacity: enabled ? 1.0 : 0.4
+                                onClicked: StructureModel.unwrapMolecules()
+                            }
+
+                            // Transparent overlay for tooltip when disabled
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: !(StructureModel.hasUnitCell && StructureModel.hasBonds)
+                                ToolTip.visible: containsMouse
+                                ToolTip.text: !StructureModel.hasUnitCell
+                                    ? qsTr("Not applicable for non-periodic structures")
+                                    : qsTr("Bond detection required")
+                            }
+                        }
+
                         // ---- Reset ----
                         Button {
                             text: qsTr("Reset to Original")

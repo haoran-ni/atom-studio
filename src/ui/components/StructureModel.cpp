@@ -72,6 +72,10 @@ bool StructureModel::hasUnitCell() const {
     return m_structure && m_structure->hasLattice();
 }
 
+bool StructureModel::hasBonds() const {
+    return m_structure && !m_structure->bonds().empty();
+}
+
 QString StructureModel::cellParameters() const {
     if (!hasUnitCell()) return QString();
 
@@ -110,6 +114,15 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
 
     m_structure = std::move(replicated);
     updateElementList();
+    emit structureChanged();
+    emit structureUpdated(m_structure);
+}
+
+void StructureModel::unwrapMolecules() {
+    if (!m_structure || !m_structure->hasLattice()) return;
+    if (m_structure->bonds().empty()) return;
+
+    data::unwrapMolecules(*m_structure);
     emit structureChanged();
     emit structureUpdated(m_structure);
 }

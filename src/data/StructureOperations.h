@@ -25,4 +25,23 @@ namespace atom::data {
  */
 std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, int nz);
 
+/**
+ * @brief Unwrap molecules so that bonded atoms are adjacent in Cartesian space.
+ *
+ * For each connected fragment of organic atoms (H, B, C, N, O, F, Si, P, S, Cl,
+ * Ge, As, Se, Br, Sb, Te, I, At), the BondList image shifts are used to resolve
+ * which periodic image of each atom keeps the fragment contiguous.  The fragment
+ * is then translated so that its geometric centre lies within the unit cell
+ * ([0,1)^3 in fractional coordinates).
+ *
+ * Metallic and noble-gas atoms are left at their original positions.
+ *
+ * Requirements:
+ *   - @p s must have a lattice defined.
+ *   - @p s must have a non-empty BondList (call bond detection first).
+ *
+ * The structure is modified in-place.
+ */
+void unwrapMolecules(Structure& s);
+
 } // namespace atom::data

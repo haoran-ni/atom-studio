@@ -31,6 +31,7 @@ class StructureModel : public QObject {
     Q_PROPERTY(int atomTypeCount READ atomTypeCount NOTIFY structureChanged)
     Q_PROPERTY(QStringList elements READ elements NOTIFY structureChanged)
     Q_PROPERTY(bool hasUnitCell READ hasUnitCell NOTIFY structureChanged)
+    Q_PROPERTY(bool hasBonds READ hasBonds NOTIFY structureChanged)
     Q_PROPERTY(QString cellParameters READ cellParameters NOTIFY structureChanged)
 
 public:
@@ -54,12 +55,14 @@ public:
     int atomTypeCount() const;
     QStringList elements() const;
     bool hasUnitCell() const;
+    bool hasBonds() const;
     QString cellParameters() const;
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
     Q_INVOKABLE void resetToOriginal();
     Q_INVOKABLE void replicateCell(int nx, int ny, int nz);
+    Q_INVOKABLE void unwrapMolecules();
     void clear();
     void notifyBondsUpdated();
 
