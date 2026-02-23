@@ -603,7 +603,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     auto* node = static_cast<QSGSimpleTextureNode*>(oldNode);
     if (!node) {
         node = new QSGSimpleTextureNode();
-        node->setTextureCoordinatesTransform(QSGSimpleTextureNode::MirrorVertically);
+        node->setTextureCoordinatesTransform(QSGSimpleTextureNode::NoTransform);
         node->setOwnsTexture(false); // Texture lifetime is managed by m_impl->textureCache.
     }
 

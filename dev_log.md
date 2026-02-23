@@ -4,6 +4,29 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-23: Mouse Interaction Fixes — Trackball Rotation + Metal Y-Flip
+
+### Summary
+Fixed two mouse interaction bugs in the Metal viewport: horizontal drag was rotating around the world Y axis (turntable style) instead of the camera's current up axis (true trackball), and vertical drag direction was inverted along with a mirrored coordinate frame in the axis indicator.
+
+### Interaction Fixes
+1. **Horizontal drag — trackball yaw** — `Camera::orbit()` was computing yaw around world +Y, causing rotation to always twist in the x-z plane regardless of camera tilt. Changed to use the camera's current up vector (`m_orientation.rotatedVector(QVector3D(0,1,0))`).
+2. **Vertical drag direction + axis indicator** — `QSGSimpleTextureNode::MirrorVertically` was applied to the Metal texture in `MetalViewport.mm`. Metal textures are already Y-correct (the projection matrix maps world +Y → NDC Y=+1 → texture top), so the extra flip was double-inverting Y in the display. This caused drag-up to show the structure top instead of bottom, and made the axis indicator appear mirrored. Replaced with `NoTransform`. The RT renderer is unaffected — its NDC Y-inversion and the fullscreen quad texCoord mapping cancel independently.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/common/Camera.cpp` | `orbit()`: yaw axis changed from world +Y to camera up (`m_orientation.rotatedVector(0,1,0)`) |
+| `src/ui/components/MetalViewport.mm` | `updatePaintNode()`: `MirrorVertically` → `NoTransform` |
+
+### Verification
+- Build: `cmake --build build` — success.
+- Drag up → structure rotates to show its bottom face ✓
+- Axis indicator X/Y/Z arrows align with the structure's coordinate frame ✓
+- Ray Tracing mode renders correctly (not upside-down) ✓
+
+---
+
 ## 2026-02-20: Quaternion Trackball Camera + Viewport Interaction Improvements
 
 ### Summary

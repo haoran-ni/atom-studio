@@ -19,8 +19,9 @@ void Camera::reset() {
 }
 
 void Camera::orbit(float deltaAzimuth, float deltaElevation) {
-    // Horizontal: rotate around world Y (stable ground-plane turntable feel)
-    QQuaternion yaw = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), deltaAzimuth);
+    // Horizontal: rotate around camera's current up axis (true trackball feel)
+    QVector3D cameraUp = m_orientation.rotatedVector(QVector3D(0, 1, 0));
+    QQuaternion yaw = QQuaternion::fromAxisAndAngle(cameraUp, deltaAzimuth);
 
     // Vertical: rotate around camera's current right axis (no pole clamping needed)
     QVector3D cameraRight = m_orientation.rotatedVector(QVector3D(1, 0, 0));
