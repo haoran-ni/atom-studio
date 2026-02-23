@@ -2,6 +2,7 @@
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
 #include "../../data/ElementData.h"
+#include "../../data/StructureOperations.h"
 
 #include <QFileInfo>
 #include <QQmlEngine>
@@ -85,13 +86,36 @@ QString StructureModel::cellParameters() const {
 }
 
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
-    m_structure = structure;
+    m_originalStructure = structure;
+    m_structure = structure->clone();
     updateElementList();
     emit structureChanged();
-    emit structureUpdated(structure);
+    emit structureUpdated(m_structure);
+}
+
+void StructureModel::resetToOriginal() {
+    if (!m_originalStructure) return;
+    m_structure = m_originalStructure->clone();
+    updateElementList();
+    emit structureChanged();
+    emit structureUpdated(m_structure);
+}
+
+void StructureModel::replicateCell(int nx, int ny, int nz) {
+    if (!m_originalStructure || !m_originalStructure->hasLattice()) return;
+    if (nx < 1 || ny < 1 || nz < 1) return;
+
+    auto replicated = data::replicateCell(*m_originalStructure, nx, ny, nz);
+    if (!replicated) return;
+
+    m_structure = std::move(replicated);
+    updateElementList();
+    emit structureChanged();
+    emit structureUpdated(m_structure);
 }
 
 void StructureModel::clear() {
+    m_originalStructure.reset();
     m_structure.reset();
     m_elements.clear();
     emit structureChanged();

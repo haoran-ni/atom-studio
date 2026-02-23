@@ -4,6 +4,51 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## IMPORTANT — 2026-02-23: Non-Destructive Structure Manipulation (Original + Working Copy)
+
+### Summary
+Introduced a non-destructive structure editing model. The original loaded structure is now preserved immutably; all user modifications (replication, future edits) operate on a separate working copy. The viewport always displays the working copy. A "Reset to Original" operation restores the working copy from the original at any time.
+
+### Architecture — Original vs. Working Structure
+`StructureModel` now owns two `shared_ptr<Structure>`:
+- **`m_originalStructure`** — set once when a file is loaded, never modified thereafter.
+- **`m_structure`** (working copy) — a deep clone of the original; receives all user edits and is what the viewport renders.
+
+When `setStructure()` is called (file load), the incoming structure is stored as original and immediately cloned into the working copy. The viewport receives the clone via `structureUpdated`. This means the raw loaded structure is never directly rendered — the viewport always gets a clone.
+
+### Structure::clone()
+Added `std::unique_ptr<Structure> Structure::clone() const` — a full deep copy of all SoA arrays (positions, atomic numbers, symbols, radii, colors), optional arrays (velocities, forces, charges, masses), lattice, bond list (independent `BondList` copy-constructed from source), and all metadata.
+
+### StructureOperations — replicateCell()
+New pure function `atom::data::replicateCell(src, nx, ny, nz)` in `src/data/StructureOperations.h/.cpp`:
+- Iterates all (i, j, k) image cells, copies each atom with position offset `i·a + j·b + k·c`
+- Scales lattice vectors by nx/ny/nz; preserves PBC flags
+- Replicates all optional per-atom arrays
+- Leaves bond list empty — bond re-detection is triggered automatically by the viewport on `setStructure`
+- Always operates on `m_originalStructure`, so clicking "Apply" with different values always produces the correct supercell size relative to the original (not cumulative)
+
+### Sidebar — Structure Manipulation Section
+New collapsible section in the sidebar with:
+- **Replicate Unit Cell**: X/Y/Z integer text fields (1–99) + "Apply Replication" button. Fades to 40% opacity and shows tooltip "Not applicable for non-periodic structures" on hover when structure has no lattice.
+- **Reset to Original**: button (enabled only when a structure is loaded) that clones `m_originalStructure` back into the working copy and pushes it to the viewport.
+
+### Files Modified / Created
+| File | Change |
+|------|--------|
+| `src/data/Structure.h` | Added `clone()` declaration |
+| `src/data/Structure.cpp` | Implemented `clone()` |
+| `src/data/StructureOperations.h` | **New** — declares `replicateCell()` |
+| `src/data/StructureOperations.cpp` | **New** — implements `replicateCell()` |
+| `src/data/CMakeLists.txt` | Added `StructureOperations.cpp/.h` to `atom-data` target |
+| `src/ui/components/StructureModel.h` | Added `m_originalStructure`, `originalStructure()`, `resetToOriginal()`, `replicateCell()` |
+| `src/ui/components/StructureModel.cpp` | Implemented `setStructure` (clone on load), `resetToOriginal`, `replicateCell`, updated `clear()` |
+| `src/ui/qml/Sidebar.qml` | Added "Structure Manipulation" collapsible section |
+
+### Verification
+- Build: `cmake --build build` — success (only expected macOS OpenGL deprecation warnings).
+
+---
+
 ## 2026-02-23: Mouse Interaction Fixes — Trackball Rotation + Metal Y-Flip
 
 ### Summary

@@ -10,6 +10,8 @@ add_library(atom-data STATIC
     NeighborList.h
     Structure.cpp
     Structure.h
+    StructureOperations.cpp
+    StructureOperations.h
 )
 
 target_include_directories(atom-data PUBLIC

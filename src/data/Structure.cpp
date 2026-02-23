@@ -183,6 +183,42 @@ Structure::~Structure() = default;
 Structure::Structure(Structure&&) noexcept = default;
 Structure& Structure::operator=(Structure&&) noexcept = default;
 
+std::unique_ptr<Structure> Structure::clone() const {
+    auto s = std::make_unique<Structure>();
+    s->m_atomCount = m_atomCount;
+
+    s->m_posX          = m_posX;
+    s->m_posY          = m_posY;
+    s->m_posZ          = m_posZ;
+    s->m_atomicNumbers = m_atomicNumbers;
+    s->m_symbols       = m_symbols;
+
+    s->m_velX   = m_velX;
+    s->m_velY   = m_velY;
+    s->m_velZ   = m_velZ;
+    s->m_forceX = m_forceX;
+    s->m_forceY = m_forceY;
+    s->m_forceZ = m_forceZ;
+    s->m_charges = m_charges;
+    s->m_masses  = m_masses;
+
+    s->m_radii  = m_radii;
+    s->m_colorR = m_colorR;
+    s->m_colorG = m_colorG;
+    s->m_colorB = m_colorB;
+    s->m_colorA = m_colorA;
+
+    s->m_lattice = m_lattice;
+    s->m_bonds   = std::make_shared<BondList>(*m_bonds);
+
+    s->m_sourcePath = m_sourcePath;
+    s->m_name       = m_name;
+    s->m_info       = m_info;
+    s->m_energy     = m_energy;
+
+    return s;
+}
+
 void Structure::reserve(size_t count) {
     m_posX.reserve(count);
     m_posY.reserve(count);

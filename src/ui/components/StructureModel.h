@@ -40,7 +40,11 @@ public:
     static StructureModel* create(QQmlEngine* qmlEngine, QJSEngine* jsEngine);
     static StructureModel* instance() { return s_instance; }
 
+    /** Returns the working (possibly modified) structure shown in the viewport. */
     std::shared_ptr<data::Structure> structure() const { return m_structure; }
+
+    /** Returns the original structure as loaded from file (never modified). */
+    std::shared_ptr<data::Structure> originalStructure() const { return m_originalStructure; }
 
     bool hasStructure() const;
     QString fileName() const;
@@ -54,6 +58,8 @@ public:
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
+    Q_INVOKABLE void resetToOriginal();
+    Q_INVOKABLE void replicateCell(int nx, int ny, int nz);
     void clear();
     void notifyBondsUpdated();
 
@@ -64,7 +70,8 @@ signals:
 private:
     void updateElementList();
 
-    std::shared_ptr<data::Structure> m_structure;
+    std::shared_ptr<data::Structure> m_originalStructure;  // immutable — set once on load
+    std::shared_ptr<data::Structure> m_structure;          // working copy shown in viewport
     QStringList m_elements;
 
     static StructureModel* s_instance;

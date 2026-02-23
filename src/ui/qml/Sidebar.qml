@@ -134,6 +134,125 @@ Rectangle {
                     }
                 }
 
+                // Structure Manipulation Section
+                CollapsibleSection {
+                    title: qsTr("Structure Manipulation")
+                    Layout.fillWidth: true
+
+                    content: ColumnLayout {
+                        spacing: 8
+
+                        // ---- Replicate Unit Cell ----
+                        Label {
+                            text: qsTr("Replicate Unit Cell")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        // Controls + disabled overlay
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: replicateControls.implicitHeight
+
+                            ColumnLayout {
+                                id: replicateControls
+                                width: parent.width
+                                spacing: 6
+                                enabled: StructureModel.hasUnitCell
+                                opacity: enabled ? 1.0 : 0.4
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Label {
+                                        text: qsTr("X:")
+                                        color: "#cccccc"
+                                        font.pixelSize: 11
+                                        Layout.preferredWidth: 16
+                                    }
+                                    TextField {
+                                        id: replicateX
+                                        Layout.fillWidth: true
+                                        text: "1"
+                                        horizontalAlignment: TextInput.AlignHCenter
+                                        inputMethodHints: Qt.ImhDigitsOnly
+                                        validator: IntValidator { bottom: 1; top: 99 }
+                                        selectByMouse: true
+                                    }
+
+                                    Label {
+                                        text: qsTr("Y:")
+                                        color: "#cccccc"
+                                        font.pixelSize: 11
+                                        Layout.preferredWidth: 16
+                                    }
+                                    TextField {
+                                        id: replicateY
+                                        Layout.fillWidth: true
+                                        text: "1"
+                                        horizontalAlignment: TextInput.AlignHCenter
+                                        inputMethodHints: Qt.ImhDigitsOnly
+                                        validator: IntValidator { bottom: 1; top: 99 }
+                                        selectByMouse: true
+                                    }
+
+                                    Label {
+                                        text: qsTr("Z:")
+                                        color: "#cccccc"
+                                        font.pixelSize: 11
+                                        Layout.preferredWidth: 16
+                                    }
+                                    TextField {
+                                        id: replicateZ
+                                        Layout.fillWidth: true
+                                        text: "1"
+                                        horizontalAlignment: TextInput.AlignHCenter
+                                        inputMethodHints: Qt.ImhDigitsOnly
+                                        validator: IntValidator { bottom: 1; top: 99 }
+                                        selectByMouse: true
+                                    }
+                                }
+
+                                Button {
+                                    text: qsTr("Apply Replication")
+                                    Layout.fillWidth: true
+                                    onClicked: {
+                                        const nx = parseInt(replicateX.text)
+                                        const ny = parseInt(replicateY.text)
+                                        const nz = parseInt(replicateZ.text)
+                                        if (!Number.isInteger(nx) || nx < 1 ||
+                                            !Number.isInteger(ny) || ny < 1 ||
+                                            !Number.isInteger(nz) || nz < 1) {
+                                            sidebar.showSliderInputError(
+                                                qsTr("Replication factors must be integers \u2265 1."))
+                                            return
+                                        }
+                                        StructureModel.replicateCell(nx, ny, nz)
+                                    }
+                                }
+                            }
+
+                            // Transparent overlay: captures hover when disabled to show tooltip
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: !StructureModel.hasUnitCell
+                                ToolTip.visible: containsMouse
+                                ToolTip.text: qsTr("Not applicable for non-periodic structures")
+                            }
+                        }
+
+                        // ---- Reset ----
+                        Button {
+                            text: qsTr("Reset to Original")
+                            Layout.fillWidth: true
+                            enabled: StructureModel.hasStructure
+                            onClicked: StructureModel.resetToOriginal()
+                        }
+                    }
+                }
+
                 // Visualization Section
                 CollapsibleSection {
                     title: qsTr("Visualization")

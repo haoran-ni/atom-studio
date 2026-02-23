@@ -82,6 +82,14 @@ public:
     Structure(const Structure&) = delete;
     Structure& operator=(const Structure&) = delete;
 
+    /**
+     * @brief Deep-copy this structure into a new independent instance.
+     *
+     * All SoA arrays, lattice, bonds, and metadata are copied.
+     * The returned structure shares no data with the original.
+     */
+    std::unique_ptr<Structure> clone() const;
+
     // ========== Atom management ==========
 
     /**
