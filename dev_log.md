@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-24: Default Setting Changes + Raster Renderer Settings Exposure + Camera-Relative Light Direction
+
+### Summary
+Three related improvements to sidebar defaults, visibility, and light direction behavior:
+1. Changed "Bond Scale" default from 1.0 → 1.1.
+2. Changed "Specular" default from 0.5 → 0.0 for all renderers.
+3. Exposed all general lighting/render settings (Ambient, Diffuse, Specular, Shininess, Light Direction X/Y/Z, Reset button) for the raster renderer — they were previously gated behind `rtSettingsVisible` (RT-only mode).
+4. Fixed light direction slider behavior: changed light direction convention from world-space to camera-relative (view-space) across all four shader/renderer locations.
+
+### Root Cause of Light Direction Issue
+Raster shaders were transforming `lightDir` by the view matrix (`scene.viewMatrix * lightDir` in Metal; `mat3(uViewMatrix) * uLightDir` in OpenGL), expecting a world-space input. RT renderers used world-space directly. At the default camera orientation (yaw=45°, elevation=30°), world X and Z axes map diagonally into view space (partially onto the depth/forward axis), making those sliders produce minimal visual change and appear "limited in range." The fix: treat `lightDir` as view-space (camera-relative) in all shaders, and convert view→world for RT renderers using camera basis vectors.
+
+### Changes
+
+#### Default Values
+| Location | Property | Old | New |
+|----------|----------|-----|-----|
+| `src/ui/qml/Sidebar.qml` | Bond Scale `defaultValue` | 1.0 | 1.1 |
+| `src/ui/qml/Sidebar.qml` | Specular `defaultValue` | 0.5 | 0.0 |
+| `src/ui/qml/Sidebar.qml` | Specular reset function | `= 0.5` | `= 0.0` |
+| `src/ui/components/OpenGLViewport.h` | `m_bondScale` | 1.0f | 1.1f |
+| `src/ui/components/OpenGLViewport.h` | `m_specularStrength` | 0.5f | 0.0f |
+| `src/ui/components/MetalViewport.h` | `m_specularStrength` | 0.5f | 0.0f |
+| `src/render/common/RenderSettings.h` | `specularStrength` | 0.5f | 0.0f |
+
+#### Sidebar Visibility (Raster Mode Exposure)
+Removed `visible: sidebar.rtSettingsVisible` from: Specular, Ambient, Diffuse, Shininess, Light Direction X, Light Direction Y, Light Direction Z, and the Reset button. Renamed Reset button text from `"Reset RT Settings"` → `"Reset Render Settings"`. RT-only items (Max RT Samples label+field, AO checkbox, Shadows checkbox, AO samples, AO radius) retain their `visible: sidebar.rtSettingsVisible` guard.
+
+#### Light Direction — Camera-Relative Convention
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalShaderLibrary.mm` | `sphere_fragment` and `bond_fragment`: removed `(scene.viewMatrix * float4(scene.lightDir, 0.0)).xyz`, now uses `normalize(scene.lightDir)` directly — light dir is already in view/camera space |
+| `src/render/metal/MetalRayTracingRenderer.mm` | `renderRTPass()`: converts view-space → world-space via `camera.rightVector()*x + camera.upVector()*y + (-camera.forwardVector())*z` before uploading to shader |
+| `src/render/opengl/ShaderManager.cpp` | Sphere and bond fragment shaders: removed `mat3(uViewMatrix) *` from `lightDir` computation |
+| `src/render/opengl/RayTracingRenderer.cpp` | `renderRTPass()`: same view→world transform as Metal RT |
+| `src/render/common/RenderSettings.h` | Updated comment: `// Light direction (in view/camera space: X=right, Y=up, Z=toward viewer)` |
+
+### Key Architectural Note
+On macOS, `ViewportPanel.qml` instantiates `MetalViewport` (not `OpenGLViewport`) via `Qt.platform.os === "osx"`. Consequently, `MetalViewport.h` must be updated independently for any default value changes — it is not sufficient to only update `OpenGLViewport.h`.
+
+---
+
 ## IMPORTANT — 2026-02-23: Unwrap Molecules Operation
 
 ### Summary

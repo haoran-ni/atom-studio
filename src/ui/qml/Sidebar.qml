@@ -33,7 +33,7 @@ Rectangle {
         sidebar.viewport.aoRadius = 3.0
         sidebar.viewport.ambientStrength = 0.3
         sidebar.viewport.diffuseStrength = 0.7
-        sidebar.viewport.specularStrength = 0.5
+        sidebar.viewport.specularStrength = 0.0
         sidebar.viewport.shininess = 32
         sidebar.viewport.lightDirX = 0.3
         sidebar.viewport.lightDirY = 0.8
@@ -317,9 +317,9 @@ Rectangle {
                             title: qsTr("Bond Scale")
                             from: 0.5
                             to: 2.0
-                            defaultValue: 1.0
+                            defaultValue: 1.1
                             decimals: 2
-                            sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.0
+                            sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.1
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.bondScale = newValue
@@ -666,7 +666,6 @@ Rectangle {
                             stepSize: 0.01
                             decimals: 2
                             defaultValue: 0.3
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.3
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -683,7 +682,6 @@ Rectangle {
                             stepSize: 0.01
                             decimals: 2
                             defaultValue: 0.7
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.diffuseStrength : 0.7
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -699,9 +697,8 @@ Rectangle {
                             to: 1
                             stepSize: 0.01
                             decimals: 2
-                            defaultValue: 0.5
-                            visible: sidebar.rtSettingsVisible
-                            sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.5
+                            defaultValue: 0.0
+                            sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.0
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.specularStrength = newValue
@@ -717,7 +714,6 @@ Rectangle {
                             to: 128
                             stepSize: 1
                             defaultValue: 32
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.shininess : 32
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -733,7 +729,6 @@ Rectangle {
                             stepSize: 0.01
                             decimals: 2
                             defaultValue: 0.3
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.lightDirX : 0.3
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -749,7 +744,6 @@ Rectangle {
                             stepSize: 0.01
                             decimals: 2
                             defaultValue: 0.8
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.lightDirY : 0.8
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -765,7 +759,6 @@ Rectangle {
                             stepSize: 0.01
                             decimals: 2
                             defaultValue: 0.5
-                            visible: sidebar.rtSettingsVisible
                             sourceValue: sidebar.viewport ? sidebar.viewport.lightDirZ : 0.5
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
@@ -775,9 +768,8 @@ Rectangle {
                         }
 
                         Button {
-                            text: qsTr("Reset RT Settings")
+                            text: qsTr("Reset Render Settings")
                             Layout.fillWidth: true
-                            visible: sidebar.rtSettingsVisible
                             onClicked: sidebar.resetRayTracingSettings()
                         }
                     }

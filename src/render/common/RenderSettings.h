@@ -27,10 +27,10 @@ struct RenderSettings {
     // Lighting
     float ambientStrength = 0.3f;
     float diffuseStrength = 0.7f;
-    float specularStrength = 0.5f;
+    float specularStrength = 0.0f;
     float shininess = 32.0f;
 
-    // Light direction (in world space, pointing towards light)
+    // Light direction (in view/camera space: X=right, Y=up, Z=toward viewer)
     float lightDirX = 0.3f;
     float lightDirY = 0.8f;
     float lightDirZ = 0.5f;

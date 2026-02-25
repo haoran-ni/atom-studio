@@ -103,8 +103,8 @@ void main() {
     vec3 hitPos = t * rayDir;
     vec3 normal = normalize(hitPos - C);
 
-    // Lighting calculation — transform world-space light to view space
-    vec3 lightDir = normalize(mat3(uViewMatrix) * uLightDir);
+    // Lighting calculation — light direction is in view space (camera-relative)
+    vec3 lightDir = normalize(uLightDir);
     vec3 viewDir = normalize(-hitPos);
 
     // Ambient
@@ -195,8 +195,8 @@ out vec4 fragColor;
 
 void main() {
     vec3 normal = normalize(vNormal);
-    // Transform world-space light direction to view space
-    vec3 lightDir = normalize(mat3(uViewMatrix) * uLightDir);
+    // Light direction is in view space (camera-relative)
+    vec3 lightDir = normalize(uLightDir);
     vec3 viewDir = normalize(-vViewPos);
 
     // Ambient

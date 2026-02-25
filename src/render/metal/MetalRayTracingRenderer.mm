@@ -428,9 +428,14 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.cameraPosition = simd_make_float3(camPos.x(), camPos.y(), camPos.z());
     rt.atomScale = m_settings.atomScale;
 
-    QVector3D lightDir(m_settings.lightDirX, m_settings.lightDirY, m_settings.lightDirZ);
-    lightDir.normalize();
-    rt.lightDir = simd_make_float3(lightDir.x(), lightDir.y(), lightDir.z());
+    // Light direction sliders are in view space (camera-relative); transform to world space for RT
+    QVector3D viewLightDir(m_settings.lightDirX, m_settings.lightDirY, m_settings.lightDirZ);
+    viewLightDir.normalize();
+    QVector3D worldLightDir = camera.rightVector()    * viewLightDir.x()
+                            + camera.upVector()       * viewLightDir.y()
+                            + (-camera.forwardVector()) * viewLightDir.z();
+    worldLightDir.normalize();
+    rt.lightDir = simd_make_float3(worldLightDir.x(), worldLightDir.y(), worldLightDir.z());
     rt.ambient = m_settings.ambientStrength;
 
     QColor bg = m_settings.backgroundColor;

@@ -167,7 +167,7 @@ private:
     float m_aoRadius = 3.0f;
     float m_ambientStrength = 0.3f;
     float m_diffuseStrength = 0.7f;
-    float m_specularStrength = 0.5f;
+    float m_specularStrength = 0.0f;
     float m_shininess = 32.0f;
     float m_lightDirX = 0.3f;
     float m_lightDirY = 0.8f;
