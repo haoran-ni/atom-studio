@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-25: Viewport Overlay Layout Updates + Interactive XYZ Axes Widget
+
+### Summary
+Updated the viewport overlays in QML:
+1. Moved the FPS/info overlay (including RT sample info) to the upper-right corner.
+2. Reworked the XYZ axes indicator into an interactive UI-only overlay that can be hovered, dragged, and resized with the mouse wheel.
+
+### What Changed
+1. **FPS/info overlay repositioned**
+   - Moved the viewport info block from bottom-left to top-right.
+   - This includes the FPS label and RT-only `Mode: Ray Tracing` / `Samples` lines.
+2. **XYZ axes overlay repositioned**
+   - Moved the axes indicator to the lower-left area of the viewport.
+3. **Removed axes background panel**
+   - Replaced the old background `Rectangle` with a non-visual `Item`, so the axes render without a boxed background.
+4. **Removed effective clipping window**
+   - The axes now draw on a larger transparent `Canvas`, preventing arrowheads/labels from being cut off when they extend beyond the previous small canvas bounds.
+5. **Interactive axes overlay (QML only)**
+   - Hovering the axes area marks it as selected (no pre-click selection step).
+   - Selected/hovered state is indicated by a slight axes enlargement.
+   - Left click + hold directly drags the axes overlay.
+   - Mouse wheel over the axes scales it (`up = enlarge`, `down = shrink`) with clamped limits.
+   - When hovered, a hint bubble appears: `Left click to move. Scroll to change size.`
+   - When not hovered, the axes are considered deselected.
+6. **Viewport resize handling**
+   - Added clamping logic so the draggable/resizable axes overlay stays within the viewport bounds when the viewport size changes.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/ui/qml/ViewportPanel.qml` | Repositioned FPS overlay; moved/de-backgrounded axes overlay; added hover/drag/wheel-resize interaction, hover hint, and bounds clamping for the XYZ axes widget |
+
+### Notes
+- The XYZ axes remain a **UI overlay only** and do not participate in scene rendering (raster or ray tracing).
+- Axis orientation is still driven by `viewport.getAxisDirections()`; only the QML overlay behavior/presentation changed.
+
+### Verification
+- `qmllint src/ui/qml/ViewportPanel.qml` — no syntax errors in the updated QML; only expected module import warnings due to local lint environment not loading the `AtomStudio` QML module.
+- No app run/build performed in this session.
+
+---
+
 ## 2026-02-25: Ray Tracing Shadow Opacity Control + RT Sidebar Order Tweaks
 
 ### Summary

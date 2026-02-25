@@ -252,10 +252,10 @@ Rectangle {
         }
     }
 
-    // Viewport info overlay (bottom-left)
+    // Viewport info overlay (top-right)
     Rectangle {
-        anchors.left: parent.left
-        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.margins: 10
         width: infoColumn.width + 16
         height: infoColumn.height + 12
@@ -333,37 +333,100 @@ Rectangle {
         }
     }
 
-    // Axis indicator (top-left) — rotates with the camera
-    Rectangle {
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.margins: 10
-        width: 80
-        height: 80
-        color: "#000000"
-        opacity: 0.3
-        radius: 4
+    // Axis indicator (UI overlay only; not part of raster/ray tracing)
+    Item {
+        id: axisOverlay
+        z: 40
+        width: 0
+        height: 0
+
+        property bool positioned: false
+        property real axisScale: 1.0
+        property real minAxisScale: 0.6
+        property real maxAxisScale: 2.0
+        property real hoverScaleBoost: 1.12
+        property real edgeMargin: 10
+        property real baseLength: 25
+        property real baseArrowLength: 5
+        property real baseLineWidth: 2
+        property real baseLabelOffset: 10
+        property real baseFontSize: 10
+        property real interactionPadding: 12
+        property bool selected: axisMouseArea.containsMouse || axisMouseArea.pressed
+        property real visualScale: axisScale * (selected ? hoverScaleBoost : 1.0)
+        property real visualExtent: (baseLength + baseLabelOffset + baseArrowLength + baseFontSize) * visualScale
+        property real boundsRadius: visualExtent + 4
+        property real hitRadius: Math.max(boundsRadius + interactionPadding, 44)
+        property real canvasHalfSize: Math.max(boundsRadius + 20, 70)
+
+        function clampToBounds() {
+            if (viewportPanel.width <= 0 || viewportPanel.height <= 0) {
+                return
+            }
+
+            var minX = boundsRadius + edgeMargin
+            var maxX = Math.max(minX, viewportPanel.width - boundsRadius - edgeMargin)
+            var minY = boundsRadius + edgeMargin
+            var maxY = Math.max(minY, viewportPanel.height - boundsRadius - edgeMargin)
+
+            x = Math.max(minX, Math.min(x, maxX))
+            y = Math.max(minY, Math.min(y, maxY))
+        }
+
+        function placeDefaultPosition() {
+            if (viewportPanel.width <= 0 || viewportPanel.height <= 0) {
+                return
+            }
+
+            x = boundsRadius + edgeMargin
+            y = viewportPanel.height - boundsRadius - edgeMargin
+            positioned = true
+            clampToBounds()
+        }
+
+        Component.onCompleted: {
+            placeDefaultPosition()
+            axisCanvas.requestPaint()
+        }
+
+        onVisualScaleChanged: {
+            if (positioned) {
+                clampToBounds()
+            }
+            axisCanvas.requestPaint()
+        }
 
         Canvas {
             id: axisCanvas
-            anchors.fill: parent
-            anchors.margins: 10
+            x: -width / 2
+            y: -height / 2
+            width: axisOverlay.canvasHalfSize * 2
+            height: axisOverlay.canvasHalfSize * 2
 
             Connections {
                 target: viewportPanel.viewport
                 function onCameraChanged() { axisCanvas.requestPaint() }
             }
 
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+
             onPaint: {
                 var ctx = getContext("2d");
                 ctx.clearRect(0, 0, width, height);
 
-                var cx = width / 2;
-                var cy = height / 2;
-                var len = 25;
-
                 // Get camera-projected axis directions from the view matrix
                 if (!viewportPanel.viewport) return;
+
+                var cx = width / 2;
+                var cy = height / 2;
+                var scale = axisOverlay.visualScale;
+                var len = axisOverlay.baseLength * scale;
+                var aLen = axisOverlay.baseArrowLength * scale;
+                var lineWidth = axisOverlay.baseLineWidth * scale;
+                var labelOffset = axisOverlay.baseLabelOffset * scale;
+                var fontSize = Math.max(8, Math.round(axisOverlay.baseFontSize * scale));
+
                 var d = viewportPanel.viewport.getAxisDirections();
                 // d = [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz]
                 var axes = [
@@ -383,14 +446,13 @@ Rectangle {
 
                     // Axis line
                     ctx.strokeStyle = ax.color;
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = lineWidth;
                     ctx.beginPath();
                     ctx.moveTo(cx, cy);
                     ctx.lineTo(ex, ey);
                     ctx.stroke();
 
                     // Small arrowhead at the tip
-                    var aLen = 5;
                     var norm = Math.sqrt(ax.dx * ax.dx + ax.dy * ax.dy);
                     if (norm > 0.01) {
                         var ndx = ax.dx / norm;
@@ -409,13 +471,73 @@ Rectangle {
                     }
 
                     // Label just past the endpoint
-                    ctx.font = "bold 10px sans-serif";
+                    ctx.font = "bold " + fontSize + "px sans-serif";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
                     ctx.fillStyle = ax.color;
-                    ctx.fillText(ax.label, cx + ax.dx * (len + 10),
-                                           cy + ax.dy * (len + 10));
+                    ctx.fillText(ax.label, cx + ax.dx * (len + labelOffset),
+                                           cy + ax.dy * (len + labelOffset));
                 }
+            }
+        }
+
+        MouseArea {
+            id: axisMouseArea
+            z: 1
+            x: -width / 2
+            y: -height / 2
+            width: axisOverlay.hitRadius * 2
+            height: axisOverlay.hitRadius * 2
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton
+            preventStealing: true
+            cursorShape: pressed ? Qt.ClosedHandCursor : (containsMouse ? Qt.OpenHandCursor : Qt.ArrowCursor)
+
+            drag.target: axisOverlay
+            drag.axis: Drag.XAndYAxis
+            drag.minimumX: axisOverlay.boundsRadius + axisOverlay.edgeMargin
+            drag.maximumX: Math.max(drag.minimumX, viewportPanel.width - axisOverlay.boundsRadius - axisOverlay.edgeMargin)
+            drag.minimumY: axisOverlay.boundsRadius + axisOverlay.edgeMargin
+            drag.maximumY: Math.max(drag.minimumY, viewportPanel.height - axisOverlay.boundsRadius - axisOverlay.edgeMargin)
+
+            onContainsMouseChanged: axisCanvas.requestPaint()
+            onPressed: axisCanvas.requestPaint()
+            onReleased: axisCanvas.requestPaint()
+            onCanceled: axisCanvas.requestPaint()
+
+            onWheel: (wheel) => {
+                var deltaY = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.pixelDelta.y
+                if (deltaY === 0) {
+                    return
+                }
+
+                var nextScale = axisOverlay.axisScale + (deltaY > 0 ? 0.1 : -0.1)
+                axisOverlay.axisScale = Math.max(axisOverlay.minAxisScale,
+                                                 Math.min(axisOverlay.maxAxisScale, nextScale))
+                axisOverlay.clampToBounds()
+                axisCanvas.requestPaint()
+                wheel.accepted = true
+            }
+        }
+
+        Rectangle {
+            id: axisHintBubble
+            z: 2
+            visible: axisMouseArea.containsMouse && !axisMouseArea.pressed
+            x: axisMouseArea.x + axisMouseArea.width * 0.5 + 10
+            y: axisMouseArea.y - height - 8
+            width: axisHintText.implicitWidth + 12
+            height: axisHintText.implicitHeight + 8
+            color: "#000000"
+            opacity: 0.75
+            radius: 4
+
+            Label {
+                id: axisHintText
+                anchors.centerIn: parent
+                text: "Left click to move. Scroll to change size."
+                color: "#ffffff"
+                font.pixelSize: 10
             }
         }
     }
@@ -436,6 +558,12 @@ Rectangle {
         } else if (floatingTabBar.positioned) {
             floatingTabBar.clampToBounds()
         }
+
+        if (!axisOverlay.positioned) {
+            axisOverlay.placeDefaultPosition()
+        } else {
+            axisOverlay.clampToBounds()
+        }
     }
 
     onHeightChanged: {
@@ -443,6 +571,12 @@ Rectangle {
             floatingTabBar.placeDefaultPosition()
         } else if (floatingTabBar.positioned) {
             floatingTabBar.clampToBounds()
+        }
+
+        if (!axisOverlay.positioned) {
+            axisOverlay.placeDefaultPosition()
+        } else {
+            axisOverlay.clampToBounds()
         }
     }
 }
