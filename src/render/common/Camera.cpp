@@ -12,8 +12,17 @@ void Camera::reset() {
     m_distance = 50.0f;
     m_fov = 45.0f;
     m_orthoScale = 10.0f;
-    // Default view: azimuth≈45°, elevation≈30° (matches old Euler default)
-    m_orientation = QQuaternion::fromEulerAngles(-30.0f, 45.0f, 0.0f).normalized();
+    // Default view: Z-up, azimuth=45° from +X, elevation=30° above XY plane.
+    // Axis indicator: Z points up, X to lower-left, Y to lower-right.
+    // Build in three steps (each rotation in world space, rightmost applied first):
+    //   qBase: 90° around +X  → establishes Z-up (camera sits at -Y, up=+Z)
+    //   qAz:  135° around +Z  → swings camera to azimuth=45° from +X
+    //   qElev: -30° around (-1,1,0)/√2 → tilts camera 30° above XY plane
+    QQuaternion qBase = QQuaternion::fromAxisAndAngle(QVector3D(1.0f, 0.0f, 0.0f), 90.0f);
+    QQuaternion qAz   = QQuaternion::fromAxisAndAngle(QVector3D(0.0f, 0.0f, 1.0f), 135.0f);
+    QQuaternion qElev = QQuaternion::fromAxisAndAngle(
+                            QVector3D(-1.0f, 1.0f, 0.0f).normalized(), -30.0f);
+    m_orientation = (qElev * qAz * qBase).normalized();
     m_viewDirty = true;
     m_projDirty = true;
 }
