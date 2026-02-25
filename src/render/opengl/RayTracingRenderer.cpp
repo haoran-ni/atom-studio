@@ -67,6 +67,7 @@ uniform uint uFrameCount;
 // Feature toggles
 uniform bool uEnableShadows;
 uniform bool uEnableAO;
+uniform float uShadowOpacity;
 uniform int uAOSamples;
 uniform float uAORadius;
 
@@ -328,7 +329,7 @@ void main() {
     float shadow = 1.0;
     if (uEnableShadows) {
         if (traceAnyHit(biasedOrigin, lightDir, 10000.0)) {
-            shadow = 0.0;
+            shadow = 1.0 - clamp(uShadowOpacity, 0.0, 1.0);
         }
     }
 
@@ -824,6 +825,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     // Feature toggles
     m_rtShader->setUniformValue("uEnableShadows", m_settings.enableShadows);
     m_rtShader->setUniformValue("uEnableAO", m_settings.enableAmbientOcclusion);
+    m_rtShader->setUniformValue("uShadowOpacity", m_settings.shadowOpacity);
     m_rtShader->setUniformValue("uAOSamples", m_settings.aoSamples);
     m_rtShader->setUniformValue("uAORadius", m_settings.aoRadius);
 

@@ -179,6 +179,7 @@ int MetalViewport::sampleCount() const { return m_sampleCount; }
 int MetalViewport::maxRTSamples() const { return m_maxRTSamples; }
 bool MetalViewport::enableAO() const { return m_enableAO; }
 bool MetalViewport::enableShadows() const { return m_enableShadows; }
+float MetalViewport::shadowOpacity() const { return m_shadowOpacity; }
 int MetalViewport::aoSamples() const { return m_aoSamples; }
 float MetalViewport::aoRadius() const { return m_aoRadius; }
 float MetalViewport::ambientStrength() const { return m_ambientStrength; }
@@ -398,6 +399,15 @@ void MetalViewport::setEnableShadows(bool enable) {
     }
 }
 
+void MetalViewport::setShadowOpacity(float opacity) {
+    const float clamped = std::clamp(opacity, 0.0f, 1.0f);
+    if (!qFuzzyCompare(m_shadowOpacity, clamped)) {
+        m_shadowOpacity = clamped;
+        emit shadowOpacityChanged();
+        update();
+    }
+}
+
 void MetalViewport::setAOSamples(int samples) {
     const int clamped = std::clamp(samples, 1, 16);
     if (m_aoSamples != clamped) {
@@ -552,6 +562,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.maxRTSamples = m_maxRTSamples;
     m_renderSettings.enableAmbientOcclusion = m_enableAO;
     m_renderSettings.enableShadows = m_enableShadows;
+    m_renderSettings.shadowOpacity = m_shadowOpacity;
     m_renderSettings.aoSamples = m_aoSamples;
     m_renderSettings.aoRadius = m_aoRadius;
     m_renderSettings.ambientStrength = m_ambientStrength;

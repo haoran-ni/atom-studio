@@ -29,6 +29,7 @@ Rectangle {
         sidebar.viewport.maxRTSamples = 1000
         sidebar.viewport.enableAO = false
         sidebar.viewport.enableShadows = false
+        sidebar.viewport.shadowOpacity = 1.0
         sidebar.viewport.aoSamples = 4
         sidebar.viewport.aoRadius = 3.0
         sidebar.viewport.ambientStrength = 0.3
@@ -625,40 +626,6 @@ Rectangle {
                         }
 
                         NumericSliderControl {
-                            title: qsTr("Ambient occlusion samples")
-                            tooltipText: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
-                            integer: true
-                            from: 1
-                            to: 16
-                            stepSize: 1
-                            defaultValue: 4
-                            visible: sidebar.rtSettingsVisible
-                            sourceValue: sidebar.viewport ? sidebar.viewport.aoSamples : 4
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.aoSamples = Math.round(newValue)
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Ambient occlusion radius")
-                            tooltipText: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
-                            from: 1
-                            to: 10
-                            stepSize: 0.1
-                            decimals: 1
-                            defaultValue: 3.0
-                            visible: sidebar.rtSettingsVisible
-                            sourceValue: sidebar.viewport ? sidebar.viewport.aoRadius : 3.0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.aoRadius = newValue
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
                             title: qsTr("Ambient")
                             tooltipText: qsTr("Base light intensity applied everywhere. Higher values brighten the whole scene, including shadowed areas.")
                             from: 0
@@ -686,6 +653,24 @@ Rectangle {
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.diffuseStrength = newValue
+                                }
+                            }
+                        }
+
+                        NumericSliderControl {
+                            title: qsTr("Shadow opacity")
+                            tooltipText: qsTr("Strength of ray-traced shadows. 0 disables shadow darkening, 1 keeps fully dark shadows.")
+                            from: 0
+                            to: 1
+                            stepSize: 0.01
+                            decimals: 2
+                            defaultValue: 1.0
+                            visible: sidebar.rtSettingsVisible
+                            enabled: sidebar.viewport ? sidebar.viewport.enableShadows : false
+                            sourceValue: sidebar.viewport ? sidebar.viewport.shadowOpacity : 1.0
+                            onValueApplied: function(newValue) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.shadowOpacity = newValue
                                 }
                             }
                         }
@@ -763,6 +748,40 @@ Rectangle {
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
                                     sidebar.viewport.lightDirZ = newValue
+                                }
+                            }
+                        }
+
+                        NumericSliderControl {
+                            title: qsTr("Ambient occlusion samples")
+                            tooltipText: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
+                            integer: true
+                            from: 1
+                            to: 16
+                            stepSize: 1
+                            defaultValue: 4
+                            visible: sidebar.rtSettingsVisible
+                            sourceValue: sidebar.viewport ? sidebar.viewport.aoSamples : 4
+                            onValueApplied: function(newValue) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.aoSamples = Math.round(newValue)
+                                }
+                            }
+                        }
+
+                        NumericSliderControl {
+                            title: qsTr("Ambient occlusion radius")
+                            tooltipText: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
+                            from: 1
+                            to: 10
+                            stepSize: 0.1
+                            decimals: 1
+                            defaultValue: 3.0
+                            visible: sidebar.rtSettingsVisible
+                            sourceValue: sidebar.viewport ? sidebar.viewport.aoRadius : 3.0
+                            onValueApplied: function(newValue) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.aoRadius = newValue
                                 }
                             }
                         }

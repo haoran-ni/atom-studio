@@ -451,6 +451,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.height = m_height;
     rt.frameCount = static_cast<uint32_t>(m_sampleCount);
     rt.enableShadows = m_settings.enableShadows ? 1 : 0;
+    rt.shadowOpacity = m_settings.shadowOpacity;
     rt.enableAO = m_settings.enableAmbientOcclusion ? 1 : 0;
     rt.aoSamples = m_settings.aoSamples;
     rt.aoRadius = m_settings.aoRadius;

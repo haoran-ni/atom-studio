@@ -4,6 +4,48 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-25: Ray Tracing Shadow Opacity Control + RT Sidebar Order Tweaks
+
+### Summary
+Added a `Shadow opacity` control for the ray tracing renderer to reduce cast-shadow darkness without changing other lighting terms, and exposed it in the sidebar (ray tracing mode). Also adjusted the order of several RT sidebar controls per request.
+
+### What Changed
+1. **New RT-only shadow strength parameter**: added `shadowOpacity` (default `1.0`) to `RenderSettings`.
+   - `1.0` keeps the previous behavior (fully dark direct-light shadows on occlusion).
+   - `0.0` removes direct-light shadow darkening.
+2. **OpenGL RT shader path**: added `uShadowOpacity` and applied it only to the shadow factor when a shadow ray hits.
+3. **Metal RT shader path**: matched the same behavior after discovering the initial implementation only affected OpenGL. The active macOS RT backend (`MetalRayTracingRenderer`) now uploads and uses `shadowOpacity`.
+4. **State hashing**: included `shadowOpacity` in `computeRenderStateHash(...)` so progressive RT accumulation resets when the slider changes.
+5. **Sidebar (RT mode)**:
+   - Added `Shadow opacity` slider.
+   - Reordered controls:
+     - Moved `Ambient occlusion samples` and `Ambient occlusion radius` to after `Light direction (Z)`.
+     - Moved `Shadow opacity` to after `Diffuse`.
+   - Updated RT reset function to restore `shadowOpacity = 1.0`.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/common/RenderSettings.h` | Added `shadowOpacity` field (default `1.0f`) |
+| `src/render/common/RenderStateHash.cpp` | Added `shadowOpacity` to render-state hash |
+| `src/render/opengl/RayTracingRenderer.cpp` | Added `uShadowOpacity`, applied shadow opacity in RT shader, uploaded uniform |
+| `src/render/metal/MetalTypes.h` | Added `shadowOpacity` to `RTUniforms` |
+| `src/render/metal/MetalShaderLibrary.mm` | Applied `shadowOpacity` in Metal RT shadow shading |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Uploaded `shadowOpacity` into Metal RT uniforms |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Added Q_PROPERTY/getter/setter/signal/state sync for `shadowOpacity` |
+| `src/ui/components/MetalViewport.h/.mm` | Added Q_PROPERTY/getter/setter/signal/state sync for `shadowOpacity` |
+| `src/ui/qml/Sidebar.qml` | Added `Shadow opacity` slider, updated reset defaults, reordered RT controls |
+
+### Notes
+- The user reported the slider initially had no visible effect; root cause was backend coverage: only the OpenGL RT shader had been updated, while macOS uses the Metal RT path.
+- The parameter intentionally affects **only cast-shadow darkness** (direct light shadow term), not global ambient/diffuse/specular strengths.
+
+### Verification
+- `git diff --check` — passed.
+- No build/run performed in this session (no existing build directory in the workspace at the time of changes).
+
+---
+
 ## 2026-02-25: Rotation Center Gizmo Overlay + Cylinder Geometry + Depth Ordering Fix
 
 ### Summary

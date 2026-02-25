@@ -65,6 +65,7 @@ struct RTUniforms {
     int      height;
     uint     frameCount;
     int      enableShadows;
+    float    shadowOpacity;
     int      enableAO;
     int      aoSamples;
     float    aoRadius;
@@ -687,7 +688,7 @@ fragment float4 rt_fragment(
                         atomPositions, rt.atomCount, rt.atomScale,
                         bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                         rt.bvhNodeCount)) {
-            shadow = 0.0;
+            shadow = 1.0 - clamp(rt.shadowOpacity, 0.0f, 1.0f);
         }
     }
 

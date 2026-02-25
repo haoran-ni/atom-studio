@@ -33,6 +33,7 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     // Settings that affect the image
     combine(hf(settings.atomScale));
     combine(hb(settings.enableShadows));
+    combine(hf(settings.shadowOpacity));
     combine(hb(settings.enableAmbientOcclusion));
     combine(hi(settings.aoSamples));
     combine(hf(settings.aoRadius));

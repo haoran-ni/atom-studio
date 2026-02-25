@@ -63,6 +63,7 @@ struct RTUniforms {
     int32_t       height;
     uint32_t      frameCount;
     int32_t       enableShadows;
+    float         shadowOpacity;
     int32_t       enableAO;
     int32_t       aoSamples;
     float         aoRadius;
