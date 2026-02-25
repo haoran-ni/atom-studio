@@ -7,7 +7,7 @@ namespace atom::render::metal {
 class MetalShaderLibrary;
 struct SceneUniforms;
 
-/// Draws a 3-axis (X/Y/Z) line gizmo at a given world-space position.
+/// Draws a 3-axis (X/Y/Z) cylinder gizmo at a given world-space position.
 /// Used to visualize the camera rotation center during interaction.
 class MetalGizmoRenderer {
 public:
@@ -17,7 +17,7 @@ public:
     bool initialize(void* device, MetalShaderLibrary* shaderLibrary);
     void cleanup();
 
-    /// Render ±X (red), ±Y (green), ±Z (blue) line segments through (cx, cy, cz)
+    /// Render ±X (red), ±Y (green), ±Z (blue) cylinders through (cx, cy, cz)
     /// with half-length axisLength.
     /// @param depthTest  true = depth-tested (raster pass); false = always on top (RT display pass).
     void render(void* encoder, const SceneUniforms& uniforms,

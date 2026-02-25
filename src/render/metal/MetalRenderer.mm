@@ -207,10 +207,10 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         m_sphereRenderer.render((__bridge void*)encoder, uniforms);
     }
     if (settings.showRotationCenter) {
-        float len = camera.distance() * 0.05f;
+        float len = camera.distance() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, uniforms,
                                settings.rotationCenterX, settings.rotationCenterY,
-                               settings.rotationCenterZ, len);
+                               settings.rotationCenterZ, len, /*depthTest=*/false);
     }
 
     [encoder endEncoding];

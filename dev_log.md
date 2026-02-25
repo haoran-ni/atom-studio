@@ -4,6 +4,54 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-25: Rotation Center Gizmo Overlay + Cylinder Geometry + Depth Ordering Fix
+
+### Summary
+Refined the Metal rotation-center axis gizmo used during orbit interaction:
+1. **Raster mode overlay behavior**: the gizmo now always appears on top while visible (left mouse drag), matching the requested interaction behavior.
+2. **Thicker gizmo geometry**: replaced 1-pixel line primitives with cylinder geometry so the axes are easier to see.
+3. **Correct gizmo self-depth in overlay mode**: fixed the case where one axis could appear to stay on top due to fixed draw order when depth testing is disabled.
+4. **Closed cylinder ends**: capped the cylinder mesh so axis tips no longer look hollow.
+5. **Size tuning**: reduced gizmo half-length scale from `camera.distance() * 0.05f` to `camera.distance() * 0.03f`.
+
+### Scope / Notes
+- **Metal only**: the current branch does not have an equivalent OpenGL rotation-center gizmo render path wired in (`OpenGLRenderer` still renders unit cell, bonds, atoms only), so no OpenGL changes were made for this feature.
+- **Trigger behavior unchanged**: the gizmo is still shown only while the left mouse button is held during orbit, and hidden on release.
+
+### Architecture Decisions
+
+#### 1. Overlay in Metal Raster Path
+`MetalRenderer` now calls `MetalGizmoRenderer::render(..., depthTest=false)` (same as the RT display pass), so the gizmo is not occluded by atoms in raster mode.
+
+#### 2. Reuse Bond Shader/Pipeline for Cylinders
+Instead of creating a new shader, `MetalGizmoRenderer` now renders 6 instanced `BondInstance` cylinders (±X, ±Y, ±Z) using the existing bond pipeline. This preserves color control and keeps the implementation small.
+
+#### 3. Flat Shading for Stable Axis Colors
+The gizmo uses the bond shader path but overrides lighting terms (`ambient=1`, `diffuse=0`, `specular=0`) so the axis colors stay visually consistent regardless of scene lighting settings.
+
+#### 4. Overlay-Mode Self-Depth via Painter Sorting
+When `depthTest=false`, scene depth is intentionally disabled. To preserve the gizmo's own depth cues, the 6 half-axis cylinders are sorted by view-space midpoint `z` (back-to-front) and drawn one at a time.
+
+#### 5. Capped Cylinder Mesh
+The original cylinder mesh used for bonds/unit-cell edges is an open tube (no end caps). `MetalGizmoRenderer` now builds its own capped unit cylinder mesh so the axis tips render solid.
+
+#### 6. RT Gizmo Uniforms Updated for Cylinder Path
+After switching from the line shader to the bond shader, the RT display-pass gizmo path now fills `SceneUniforms.viewMatrix` and `SceneUniforms.projectionMatrix` (not only `viewProjectionMatrix`), since the bond vertex shader needs both.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalRenderer.mm` | Raster gizmo now renders with `depthTest=false`; gizmo half-length scale changed `0.05f` → `0.03f` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | RT gizmo `SceneUniforms` now fills `viewMatrix` + `projectionMatrix` for cylinder shader path; gizmo half-length scale changed `0.05f` → `0.03f` |
+| `src/render/metal/MetalGizmoRenderer.h` | Updated docs: gizmo is now cylinder-based rather than line-based |
+| `src/render/metal/MetalGizmoRenderer.mm` | Replaced line draw with cylinder mesh rendering via bond pipeline; added capped cylinder mesh generation; flat-color lighting override; overlay depth sorting of 6 axis segments |
+
+### Verification
+- Build: `cmake --build build --target atom-studio` — success.
+- Build: `cmake --build build --target atom-render` — success (re-run after depth-order and capped-cylinder updates).
+
+---
+
 ## 2026-02-24: Rotation Center Axis Gizmo + Bond Scale Default Fix
 
 ### Summary
