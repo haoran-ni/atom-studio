@@ -157,7 +157,7 @@ private:
     float m_unitCellThickness = 0.06f;
     QColor m_unitCellColor = QColor(0, 0, 0);
     float m_atomScale = 1.0f;
-    float m_bondScale = 1.0f;
+    float m_bondScale = 1.1f;
     int m_rendererMode = 0;
     int m_sampleCount = 0;
     int m_maxRTSamples = 1000;
