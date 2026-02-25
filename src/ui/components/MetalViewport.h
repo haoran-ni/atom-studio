@@ -178,6 +178,7 @@ private:
 
     bool m_needsStructureUpdate = false;
     bool m_metalInitialized = false;
+    bool m_showRotationCenter = false;
 
     // Async bond detection
     struct BondResult {

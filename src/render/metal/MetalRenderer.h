@@ -5,6 +5,7 @@
 #include "MetalSphereRenderer.h"
 #include "MetalBondRenderer.h"
 #include "MetalUnitCellRenderer.h"
+#include "MetalGizmoRenderer.h"
 #include <memory>
 
 namespace atom::render::metal {
@@ -41,6 +42,7 @@ private:
     MetalSphereRenderer m_sphereRenderer;
     MetalBondRenderer m_bondRenderer;
     MetalUnitCellRenderer m_unitCellRenderer;
+    MetalGizmoRenderer m_gizmoRenderer;
 
     const data::Structure* m_structure = nullptr;
     int m_width = 0;

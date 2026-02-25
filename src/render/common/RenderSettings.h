@@ -49,6 +49,12 @@ struct RenderSettings {
     int aoSamples = 4;            // AO rays per pixel per frame
     float aoRadius = 3.0f;        // AO sampling radius in Angstroms
     int maxRTSamples = 1000;      // Max progressive samples before stopping
+
+    // Rotation center gizmo (transient — set by viewport during active rotation)
+    bool showRotationCenter = false;
+    float rotationCenterX = 0.0f;
+    float rotationCenterY = 0.0f;
+    float rotationCenterZ = 0.0f;
 };
 
 } // namespace atom::render

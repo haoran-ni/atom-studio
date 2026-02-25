@@ -140,12 +140,15 @@ bool MetalRayTracingRenderer::initialize() {
                    options:MTLResourceStorageModeShared];
     m_unitCellSphereIndexCount = static_cast<int>(sphereIndices.size());
 
+    if (!m_gizmoRenderer.initialize((__bridge void*)m_impl->device, &m_shaderLibrary)) return false;
+
     m_initialized = true;
     qInfo() << "MetalRayTracingRenderer: initialized successfully";
     return true;
 }
 
 void MetalRayTracingRenderer::cleanup() {
+    m_gizmoRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
     m_impl->quadVertexBuffer = nil;
@@ -538,6 +541,19 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
         const RTUnitCellUniforms unitCell = makeRTUnitCellUniforms(
             camera, m_settings, m_atomCount, m_bvhNodeCount);
         encodeUnitCellOverlayDraws((__bridge void*)encoder, unitCell);
+    }
+
+    if (m_settings.showRotationCenter) {
+        // Build minimal SceneUniforms — only viewProjectionMatrix is used by the line shader.
+        QMatrix4x4 bias;
+        bias(2, 2) = 0.5f;
+        bias(2, 3) = 0.5f;
+        SceneUniforms gizmoUniforms{};
+        gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
+        float len = camera.distance() * 0.05f;
+        m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
+                               m_settings.rotationCenterX, m_settings.rotationCenterY,
+                               m_settings.rotationCenterZ, len, /*depthTest=*/false);
     }
 
     [encoder endEncoding];

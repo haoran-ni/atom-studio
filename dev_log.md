@@ -4,6 +4,43 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-24: Rotation Center Axis Gizmo + Bond Scale Default Fix
+
+### Summary
+Two related fixes:
+1. Fixed `MetalViewport.h` bond scale default (`m_bondScale`) from 1.0 → 1.1, matching `OpenGLViewport.h` (the macOS Metal viewport was missed in the prior session).
+2. Added a 3-axis (X/Y/Z) rotation center gizmo that appears at `Camera::m_target` while the left mouse button is held during rotation, then disappears on release.
+
+### Rotation Center Gizmo — Design Decisions
+- **Trigger**: shown on `mousePressEvent(LeftButton)`, hidden on `mouseReleaseEvent` when LeftButton is no longer pressed.
+- **Appearance**: 6 line segments (±X red, ±Y green, ±Z blue) through the orbit center; half-length = `camera.distance() * 0.05f` for consistent apparent screen size.
+- **Depth behavior**: depth-tested in raster mode (occluded naturally by atoms); depth-disabled in RT mode (displayed on top, since the RT display pass has no depth buffer).
+- **Scope**: raster renderer draws it at the end of the main render pass. RT renderer draws it at the end of `renderDisplayPass()`, after the unit cell overlay.
+
+### Architecture
+New sub-renderer `MetalGizmoRenderer` follows the `MetalUnitCellRenderer` pattern. It reuses the existing `line_vertex`/`line_fragment` shaders and `linePipeline()` from `MetalShaderLibrary`. Vertex data (12 `LineVertex`) is built on the stack each call via `setVertexBytes:` — no persistent GPU buffer needed.
+
+Gizmo state (`showRotationCenter`, `rotationCenterX/Y/Z`) is carried in `RenderSettings` (consistent with `showBonds`, `showUnitCell`). `MetalViewport::updatePaintNode()` writes `rotationCenterX/Y/Z` from `m_camera->target()` every frame, so it automatically tracks pan changes.
+
+### Files Modified / Created
+| File | Change |
+|------|--------|
+| `src/ui/components/MetalViewport.h` | `m_bondScale` 1.0f → 1.1f; added `m_showRotationCenter = false` |
+| `src/render/common/RenderSettings.h` | Added `showRotationCenter`, `rotationCenterX/Y/Z` fields |
+| `src/render/metal/MetalGizmoRenderer.h` | **New** — declares `MetalGizmoRenderer` with `render(..., bool depthTest = true)` |
+| `src/render/metal/MetalGizmoRenderer.mm` | **New** — implements gizmo; selects `depthLessWriteState` or `depthDisabledState` based on `depthTest` flag |
+| `src/render/metal/MetalRenderer.h` | Added `#include "MetalGizmoRenderer.h"` + `MetalGizmoRenderer m_gizmoRenderer` |
+| `src/render/metal/MetalRenderer.mm` | Init/cleanup gizmo renderer; draw after spheres if `settings.showRotationCenter` |
+| `src/render/metal/MetalRayTracingRenderer.h` | Added `#include "MetalGizmoRenderer.h"` + `MetalGizmoRenderer m_gizmoRenderer` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Init/cleanup gizmo renderer; draw at end of `renderDisplayPass()` with `depthTest=false`; builds minimal `SceneUniforms` with remapped VP matrix |
+| `src/render/CMakeLists.txt` | Added `MetalGizmoRenderer.h/.mm` to `RENDER_METAL_SOURCES` |
+| `src/ui/components/MetalViewport.mm` | `mousePressEvent`: set `m_showRotationCenter=true` on LeftButton; `mouseReleaseEvent`: clear when LeftButton released; settings build: write `showRotationCenter` + center coords |
+
+### Verification
+- Build: `cmake --build build` — success (only expected macOS OpenGL deprecation warnings).
+
+---
+
 ## 2026-02-24: Default Setting Changes + Raster Renderer Settings Exposure + Camera-Relative Light Direction
 
 ### Summary

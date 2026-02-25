@@ -561,6 +561,10 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.lightDirX = m_lightDirX;
     m_renderSettings.lightDirY = m_lightDirY;
     m_renderSettings.lightDirZ = m_lightDirZ;
+    m_renderSettings.showRotationCenter = m_showRotationCenter;
+    m_renderSettings.rotationCenterX = m_camera->target().x();
+    m_renderSettings.rotationCenterY = m_camera->target().y();
+    m_renderSettings.rotationCenterZ = m_camera->target().z();
 
     if (m_needsStructureUpdate) {
         m_impl->activeRenderer->setStructure(m_structure.get());
@@ -694,6 +698,10 @@ void MetalViewport::geometryChange(const QRectF& newGeometry,
 void MetalViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
     m_pressedButtons = event->buttons();
+    if (m_pressedButtons & Qt::LeftButton) {
+        m_showRotationCenter = true;
+        update();
+    }
     event->accept();
 }
 
@@ -716,6 +724,10 @@ void MetalViewport::mouseMoveEvent(QMouseEvent* event) {
 
 void MetalViewport::mouseReleaseEvent(QMouseEvent* event) {
     m_pressedButtons = event->buttons();
+    if (!(m_pressedButtons & Qt::LeftButton)) {
+        m_showRotationCenter = false;
+        update();
+    }
     event->accept();
 }
 

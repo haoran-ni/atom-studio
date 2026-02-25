@@ -2,6 +2,7 @@
 
 #include "../common/Renderer.h"
 #include "MetalShaderLibrary.h"
+#include "MetalGizmoRenderer.h"
 #include <memory>
 #include <cstdint>
 
@@ -51,6 +52,7 @@ private:
     std::unique_ptr<Impl> m_impl;
 
     MetalShaderLibrary m_shaderLibrary;
+    MetalGizmoRenderer m_gizmoRenderer;
 
     RenderSettings m_settings;  // Local copy for isConverged() / state hashing
     const data::Structure* m_structure = nullptr;

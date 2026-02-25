@@ -55,6 +55,8 @@ set(RENDER_METAL_SOURCES
     metal/MetalUnitCellShared.cpp
     metal/MetalUnitCellRenderer.h
     metal/MetalUnitCellRenderer.mm
+    metal/MetalGizmoRenderer.h
+    metal/MetalGizmoRenderer.mm
     metal/MetalRenderer.h
     metal/MetalRenderer.mm
     metal/MetalRayTracingRenderer.h

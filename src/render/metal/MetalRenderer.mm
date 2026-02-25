@@ -91,6 +91,7 @@ bool MetalRenderer::initialize() {
     if (!m_sphereRenderer.initialize(dev, &m_shaderLibrary)) return false;
     if (!m_bondRenderer.initialize(dev, &m_shaderLibrary)) return false;
     if (!m_unitCellRenderer.initialize(dev, &m_shaderLibrary)) return false;
+    if (!m_gizmoRenderer.initialize(dev, &m_shaderLibrary)) return false;
 
     m_initialized = true;
     qInfo() << "MetalRenderer: initialized successfully";
@@ -101,6 +102,7 @@ void MetalRenderer::cleanup() {
     m_sphereRenderer.cleanup();
     m_bondRenderer.cleanup();
     m_unitCellRenderer.cleanup();
+    m_gizmoRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
     m_impl->msaaColorTexture = nil;
@@ -194,7 +196,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         static_cast<double>(m_width), static_cast<double>(m_height),
         0.0, 1.0}];
 
-    // Render order: unit-cell object -> bonds -> spheres
+    // Render order: unit-cell object -> bonds -> spheres -> rotation center gizmo
     if (settings.showUnitCell) {
         m_unitCellRenderer.render((__bridge void*)encoder, uniforms, settings);
     }
@@ -203,6 +205,12 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     }
     if (settings.showAtoms) {
         m_sphereRenderer.render((__bridge void*)encoder, uniforms);
+    }
+    if (settings.showRotationCenter) {
+        float len = camera.distance() * 0.05f;
+        m_gizmoRenderer.render((__bridge void*)encoder, uniforms,
+                               settings.rotationCenterX, settings.rotationCenterY,
+                               settings.rotationCenterZ, len);
     }
 
     [encoder endEncoding];
