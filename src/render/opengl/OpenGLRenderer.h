@@ -5,6 +5,7 @@
 #include "SphereRenderer.h"
 #include "BondRenderer.h"
 #include "UnitCellRenderer.h"
+#include "ViewportAxesRenderer.h"
 
 #include <QOpenGLFunctions>
 #include <memory>
@@ -47,6 +48,7 @@ private:
     SphereRenderer m_sphereRenderer;
     BondRenderer m_bondRenderer;
     UnitCellRenderer m_unitCellRenderer;
+    ViewportAxesRenderer m_viewportAxesRenderer;
 
     const data::Structure* m_structure = nullptr;
 

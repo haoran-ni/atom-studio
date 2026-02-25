@@ -189,6 +189,9 @@ float MetalViewport::shininess() const { return m_shininess; }
 float MetalViewport::lightDirX() const { return m_lightDirX; }
 float MetalViewport::lightDirY() const { return m_lightDirY; }
 float MetalViewport::lightDirZ() const { return m_lightDirZ; }
+float MetalViewport::viewportAxesX() const { return m_viewportAxesX; }
+float MetalViewport::viewportAxesY() const { return m_viewportAxesY; }
+float MetalViewport::viewportAxesScale() const { return m_viewportAxesScale; }
 
 QVariantList MetalViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
@@ -489,6 +492,34 @@ void MetalViewport::setLightDirZ(float value) {
     }
 }
 
+void MetalViewport::setViewportAxesX(float value) {
+    if (!std::isfinite(value)) return;
+    if (!qFuzzyCompare(m_viewportAxesX, value)) {
+        m_viewportAxesX = value;
+        emit viewportAxesXChanged();
+        update();
+    }
+}
+
+void MetalViewport::setViewportAxesY(float value) {
+    if (!std::isfinite(value)) return;
+    if (!qFuzzyCompare(m_viewportAxesY, value)) {
+        m_viewportAxesY = value;
+        emit viewportAxesYChanged();
+        update();
+    }
+}
+
+void MetalViewport::setViewportAxesScale(float value) {
+    if (!std::isfinite(value)) return;
+    const float clamped = std::clamp(value, 0.1f, 10.0f);
+    if (!qFuzzyCompare(m_viewportAxesScale, clamped)) {
+        m_viewportAxesScale = clamped;
+        emit viewportAxesScaleChanged();
+        update();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scene graph: updatePaintNode
 // ---------------------------------------------------------------------------
@@ -592,6 +623,11 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     qreal dpr = renderWindow->devicePixelRatio();
     int pw = static_cast<int>(width() * dpr);
     int ph = static_cast<int>(height() * dpr);
+    m_renderSettings.showViewportAxes = true;
+    m_renderSettings.viewportAxesScreenX = m_viewportAxesX * static_cast<float>(dpr);
+    m_renderSettings.viewportAxesScreenY = m_viewportAxesY * static_cast<float>(dpr);
+    m_renderSettings.viewportAxesScale = m_viewportAxesScale;
+    m_renderSettings.viewportAxesPixelRatio = static_cast<float>(dpr);
     if (pw > 0 && ph > 0) {
         m_impl->activeRenderer->resize(pw, ph);
         m_camera->setAspectRatio(static_cast<float>(width()) / static_cast<float>(height()));

@@ -3,6 +3,7 @@
 #include "../common/Renderer.h"
 #include "MetalShaderLibrary.h"
 #include "MetalGizmoRenderer.h"
+#include "MetalViewportAxesRenderer.h"
 #include <memory>
 #include <cstdint>
 
@@ -53,6 +54,7 @@ private:
 
     MetalShaderLibrary m_shaderLibrary;
     MetalGizmoRenderer m_gizmoRenderer;
+    MetalViewportAxesRenderer m_viewportAxesRenderer;
 
     RenderSettings m_settings;  // Local copy for isConverged() / state hashing
     const data::Structure* m_structure = nullptr;

@@ -92,6 +92,7 @@ bool MetalRenderer::initialize() {
     if (!m_bondRenderer.initialize(dev, &m_shaderLibrary)) return false;
     if (!m_unitCellRenderer.initialize(dev, &m_shaderLibrary)) return false;
     if (!m_gizmoRenderer.initialize(dev, &m_shaderLibrary)) return false;
+    if (!m_viewportAxesRenderer.initialize(dev, &m_shaderLibrary)) return false;
 
     m_initialized = true;
     qInfo() << "MetalRenderer: initialized successfully";
@@ -103,6 +104,7 @@ void MetalRenderer::cleanup() {
     m_bondRenderer.cleanup();
     m_unitCellRenderer.cleanup();
     m_gizmoRenderer.cleanup();
+    m_viewportAxesRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
     m_impl->msaaColorTexture = nil;
@@ -169,12 +171,16 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
+    const bool needsViewportAxesOverlay = settings.showViewportAxes;
+
     MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
     passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
     if (m_impl->msaaColorTexture) {
         passDesc.colorAttachments[0].texture = m_impl->msaaColorTexture;
         passDesc.colorAttachments[0].resolveTexture = m_impl->colorTexture;
-        passDesc.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+        passDesc.colorAttachments[0].storeAction = needsViewportAxesOverlay
+            ? MTLStoreActionStoreAndMultisampleResolve
+            : MTLStoreActionMultisampleResolve;
     } else {
         passDesc.colorAttachments[0].texture = m_impl->colorTexture;
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -214,6 +220,36 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     }
 
     [encoder endEncoding];
+
+    if (needsViewportAxesOverlay) {
+        MTLRenderPassDescriptor* overlayPass = [MTLRenderPassDescriptor renderPassDescriptor];
+        if (m_impl->msaaColorTexture) {
+            overlayPass.colorAttachments[0].texture = m_impl->msaaColorTexture;
+            overlayPass.colorAttachments[0].resolveTexture = m_impl->colorTexture;
+            overlayPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+            overlayPass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+        } else {
+            overlayPass.colorAttachments[0].texture = m_impl->colorTexture;
+            overlayPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+            overlayPass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        }
+
+        overlayPass.depthAttachment.texture = m_impl->depthTexture;
+        overlayPass.depthAttachment.loadAction = MTLLoadActionClear;
+        overlayPass.depthAttachment.storeAction = MTLStoreActionDontCare;
+        overlayPass.depthAttachment.clearDepth = 1.0;
+
+        id<MTLRenderCommandEncoder> overlayEncoder =
+            [cmdBuffer renderCommandEncoderWithDescriptor:overlayPass];
+
+        [overlayEncoder setViewport:(MTLViewport){0, 0,
+            static_cast<double>(m_width), static_cast<double>(m_height),
+            0.0, 1.0}];
+
+        m_viewportAxesRenderer.render((__bridge void*)overlayEncoder, camera, settings, m_width, m_height);
+        [overlayEncoder endEncoding];
+    }
+
     [cmdBuffer commit];
     [cmdBuffer waitUntilCompleted];
 }

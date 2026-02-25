@@ -45,6 +45,9 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(float lightDirX READ lightDirX WRITE setLightDirX NOTIFY lightDirXChanged)
     Q_PROPERTY(float lightDirY READ lightDirY WRITE setLightDirY NOTIFY lightDirYChanged)
     Q_PROPERTY(float lightDirZ READ lightDirZ WRITE setLightDirZ NOTIFY lightDirZChanged)
+    Q_PROPERTY(float viewportAxesX READ viewportAxesX WRITE setViewportAxesX NOTIFY viewportAxesXChanged)
+    Q_PROPERTY(float viewportAxesY READ viewportAxesY WRITE setViewportAxesY NOTIFY viewportAxesYChanged)
+    Q_PROPERTY(float viewportAxesScale READ viewportAxesScale WRITE setViewportAxesScale NOTIFY viewportAxesScaleChanged)
 
 public:
     explicit MetalViewport(QQuickItem* parent = nullptr);
@@ -76,6 +79,9 @@ public:
     float lightDirX() const;
     float lightDirY() const;
     float lightDirZ() const;
+    float viewportAxesX() const;
+    float viewportAxesY() const;
+    float viewportAxesScale() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
 
@@ -104,6 +110,9 @@ public slots:
     void setLightDirX(float value);
     void setLightDirY(float value);
     void setLightDirZ(float value);
+    void setViewportAxesX(float value);
+    void setViewportAxesY(float value);
+    void setViewportAxesScale(float value);
 
 signals:
     void atomCountChanged();
@@ -131,6 +140,9 @@ signals:
     void lightDirXChanged();
     void lightDirYChanged();
     void lightDirZChanged();
+    void viewportAxesXChanged();
+    void viewportAxesYChanged();
+    void viewportAxesScaleChanged();
     void cameraChanged();
 
 protected:
@@ -177,6 +189,9 @@ private:
     float m_lightDirX = 0.3f;
     float m_lightDirY = 0.8f;
     float m_lightDirZ = 0.5f;
+    float m_viewportAxesX = 60.0f;
+    float m_viewportAxesY = 60.0f;
+    float m_viewportAxesScale = 1.0f;
     float m_fps = 0.0f;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;

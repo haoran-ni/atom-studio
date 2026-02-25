@@ -164,6 +164,11 @@ public:
         viewport->m_renderSettings.lightDirX = viewport->m_lightDirX;
         viewport->m_renderSettings.lightDirY = viewport->m_lightDirY;
         viewport->m_renderSettings.lightDirZ = viewport->m_lightDirZ;
+        viewport->m_renderSettings.showViewportAxes = true;
+        viewport->m_renderSettings.viewportAxesScreenX = viewport->m_viewportAxesX * static_cast<float>(dpr);
+        viewport->m_renderSettings.viewportAxesScreenY = viewport->m_viewportAxesY * static_cast<float>(dpr);
+        viewport->m_renderSettings.viewportAxesScale = viewport->m_viewportAxesScale;
+        viewport->m_renderSettings.viewportAxesPixelRatio = static_cast<float>(dpr);
 
         // Update FPS
         qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
@@ -305,6 +310,18 @@ float OpenGLViewport::lightDirY() const {
 
 float OpenGLViewport::lightDirZ() const {
     return m_lightDirZ;
+}
+
+float OpenGLViewport::viewportAxesX() const {
+    return m_viewportAxesX;
+}
+
+float OpenGLViewport::viewportAxesY() const {
+    return m_viewportAxesY;
+}
+
+float OpenGLViewport::viewportAxesScale() const {
+    return m_viewportAxesScale;
 }
 
 QVariantList OpenGLViewport::getAxisDirections() const {
@@ -599,6 +616,34 @@ void OpenGLViewport::setLightDirZ(float value) {
     if (!qFuzzyCompare(m_lightDirZ, clamped)) {
         m_lightDirZ = clamped;
         emit lightDirZChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setViewportAxesX(float value) {
+    if (!std::isfinite(value)) return;
+    if (!qFuzzyCompare(m_viewportAxesX, value)) {
+        m_viewportAxesX = value;
+        emit viewportAxesXChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setViewportAxesY(float value) {
+    if (!std::isfinite(value)) return;
+    if (!qFuzzyCompare(m_viewportAxesY, value)) {
+        m_viewportAxesY = value;
+        emit viewportAxesYChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setViewportAxesScale(float value) {
+    if (!std::isfinite(value)) return;
+    const float clamped = std::clamp(value, 0.1f, 10.0f);
+    if (!qFuzzyCompare(m_viewportAxesScale, clamped)) {
+        m_viewportAxesScale = clamped;
+        emit viewportAxesScaleChanged();
         update();
     }
 }

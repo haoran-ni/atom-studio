@@ -44,6 +44,8 @@ struct MetalRayTracingRenderer::Impl {
     // Display output texture (BGRA8Unorm) — what the viewport shows
     id<MTLTexture> msaaOutputTexture = nil;
     id<MTLTexture> outputTexture = nil;
+    id<MTLTexture> msaaOverlayDepthTexture = nil;
+    id<MTLTexture> overlayDepthTexture = nil;
 
     // Atom data buffers
     id<MTLBuffer> atomPositionBuffer = nil;  // float4(x,y,z,radius) per atom
@@ -141,6 +143,7 @@ bool MetalRayTracingRenderer::initialize() {
     m_unitCellSphereIndexCount = static_cast<int>(sphereIndices.size());
 
     if (!m_gizmoRenderer.initialize((__bridge void*)m_impl->device, &m_shaderLibrary)) return false;
+    if (!m_viewportAxesRenderer.initialize((__bridge void*)m_impl->device, &m_shaderLibrary)) return false;
 
     m_initialized = true;
     qInfo() << "MetalRayTracingRenderer: initialized successfully";
@@ -149,12 +152,15 @@ bool MetalRayTracingRenderer::initialize() {
 
 void MetalRayTracingRenderer::cleanup() {
     m_gizmoRenderer.cleanup();
+    m_viewportAxesRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
     m_impl->quadVertexBuffer = nil;
     m_impl->accumTexture = nil;
     m_impl->msaaOutputTexture = nil;
     m_impl->outputTexture = nil;
+    m_impl->msaaOverlayDepthTexture = nil;
+    m_impl->overlayDepthTexture = nil;
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
     m_impl->bvhNodeMinBuffer = nil;
@@ -211,8 +217,9 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     }
 
     // Ensure render targets exist
-    if (!m_impl->accumTexture || !m_impl->outputTexture ||
-        (m_impl->overlaySampleCount > 1 && !m_impl->msaaOutputTexture)) {
+    if (!m_impl->accumTexture || !m_impl->outputTexture || !m_impl->overlayDepthTexture ||
+        (m_impl->overlaySampleCount > 1 &&
+         (!m_impl->msaaOutputTexture || !m_impl->msaaOverlayDepthTexture))) {
         createRenderTargets();
         resetAccumulation();
     }
@@ -222,7 +229,12 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
     if (m_atomCount == 0) {
-        if (m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0) {
+        const bool hasUnitCellOverlay =
+            m_settings.showUnitCell && m_unitCellEdgeCount > 0 && m_unitCellJointCount > 0;
+        const bool hasAnyOverlay =
+            hasUnitCellOverlay || m_settings.showViewportAxes || m_settings.showRotationCenter;
+
+        if (hasAnyOverlay) {
             renderUnitCellOverlay(camera, (__bridge void*)cmdBuffer);
         } else if (m_impl->outputTexture) {
             // Clear output to background
@@ -315,9 +327,30 @@ void MetalRayTracingRenderer::createRenderTargets() {
         msaaOutputDesc.usage = MTLTextureUsageRenderTarget;
         msaaOutputDesc.storageMode = MTLStorageModePrivate;
         m_impl->msaaOutputTexture = [m_impl->device newTextureWithDescriptor:msaaOutputDesc];
+
+        MTLTextureDescriptor* msaaDepthDesc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                        width:m_width
+                                       height:m_height
+                                    mipmapped:NO];
+        msaaDepthDesc.textureType = MTLTextureType2DMultisample;
+        msaaDepthDesc.sampleCount = m_impl->overlaySampleCount;
+        msaaDepthDesc.usage = MTLTextureUsageRenderTarget;
+        msaaDepthDesc.storageMode = MTLStorageModePrivate;
+        m_impl->msaaOverlayDepthTexture = [m_impl->device newTextureWithDescriptor:msaaDepthDesc];
     } else {
         m_impl->msaaOutputTexture = nil;
+        m_impl->msaaOverlayDepthTexture = nil;
     }
+
+    MTLTextureDescriptor* overlayDepthDesc = [MTLTextureDescriptor
+        texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                    width:m_width
+                                   height:m_height
+                                mipmapped:NO];
+    overlayDepthDesc.usage = MTLTextureUsageRenderTarget;
+    overlayDepthDesc.storageMode = MTLStorageModePrivate;
+    m_impl->overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
 }
 
 void MetalRayTracingRenderer::uploadAtomData() {
@@ -519,6 +552,11 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
         pass.colorAttachments[0].texture = m_impl->outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
+    pass.depthAttachment.texture = m_impl->msaaOutputTexture ? m_impl->msaaOverlayDepthTexture
+                                                             : m_impl->overlayDepthTexture;
+    pass.depthAttachment.loadAction = MTLLoadActionClear;
+    pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+    pass.depthAttachment.clearDepth = 1.0;
 
     id<MTLRenderCommandEncoder> encoder = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
 
@@ -559,16 +597,29 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
                                m_settings.rotationCenterZ, len, /*depthTest=*/false);
     }
 
+    if (m_settings.showViewportAxes) {
+        m_viewportAxesRenderer.render((__bridge void*)encoder, camera, m_settings, m_width, m_height);
+    }
+
     [encoder endEncoding];
 }
 
 void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* cmdBuf) {
-    if (!m_impl->outputTexture || !hasUnitCellOverlayData()) {
+    if (!m_impl->outputTexture) {
         return;
     }
 
-    const RTUnitCellUniforms unitCell = makeRTUnitCellUniforms(
-        camera, m_settings, m_atomCount, m_bvhNodeCount);
+    const bool drawUnitCell = m_settings.showUnitCell && hasUnitCellOverlayData();
+    const bool drawViewportAxes = m_settings.showViewportAxes;
+    const bool drawRotationCenter = m_settings.showRotationCenter;
+    if (!drawUnitCell && !drawViewportAxes && !drawRotationCenter) {
+        return;
+    }
+
+    RTUnitCellUniforms unitCell{};
+    if (drawUnitCell) {
+        unitCell = makeRTUnitCellUniforms(camera, m_settings, m_atomCount, m_bvhNodeCount);
+    }
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
@@ -581,6 +632,11 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* 
         pass.colorAttachments[0].texture = m_impl->outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
+    pass.depthAttachment.texture = m_impl->msaaOutputTexture ? m_impl->msaaOverlayDepthTexture
+                                                             : m_impl->overlayDepthTexture;
+    pass.depthAttachment.loadAction = MTLLoadActionClear;
+    pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+    pass.depthAttachment.clearDepth = 1.0;
     if (m_atomCount == 0) {
         const auto& bg = m_settings.backgroundColor;
         pass.colorAttachments[0].clearColor = MTLClearColorMake(
@@ -596,7 +652,28 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* 
         static_cast<double>(m_width), static_cast<double>(m_height),
         0.0, 1.0}];
 
-    encodeUnitCellOverlayDraws((__bridge void*)encoder, unitCell);
+    if (drawUnitCell) {
+        encodeUnitCellOverlayDraws((__bridge void*)encoder, unitCell);
+    }
+
+    if (drawRotationCenter) {
+        QMatrix4x4 bias;
+        bias(2, 2) = 0.5f;
+        bias(2, 3) = 0.5f;
+        SceneUniforms gizmoUniforms{};
+        gizmoUniforms.viewMatrix = qMatToSimd(camera.viewMatrix());
+        gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
+        gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
+        float len = camera.distance() * 0.03f;
+        m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
+                               m_settings.rotationCenterX, m_settings.rotationCenterY,
+                               m_settings.rotationCenterZ, len, /*depthTest=*/false);
+    }
+
+    if (drawViewportAxes) {
+        m_viewportAxesRenderer.render((__bridge void*)encoder, camera, m_settings, m_width, m_height);
+    }
+
     [encoder endEncoding];
 }
 

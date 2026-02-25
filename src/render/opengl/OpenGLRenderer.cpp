@@ -39,6 +39,11 @@ bool OpenGLRenderer::initialize() {
         return false;
     }
 
+    if (!m_viewportAxesRenderer.initialize(&m_shaderManager)) {
+        qCritical() << "OpenGLRenderer: Failed to initialize viewport axes renderer";
+        return false;
+    }
+
     // Set up OpenGL state
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -52,6 +57,7 @@ bool OpenGLRenderer::initialize() {
 }
 
 void OpenGLRenderer::cleanup() {
+    m_viewportAxesRenderer.cleanup();
     m_unitCellRenderer.cleanup();
     m_bondRenderer.cleanup();
     m_sphereRenderer.cleanup();
@@ -121,6 +127,13 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
 
     // Render atoms
     m_sphereRenderer.render(camera, settings);
+
+    // Viewport-corner XYZ axes overlay: clear depth so it stays on top of the scene,
+    // but keep depth testing enabled so the gizmo self-occludes correctly.
+    if (settings.showViewportAxes) {
+        glClear(GL_DEPTH_BUFFER_BIT);
+        m_viewportAxesRenderer.render(camera, settings, m_width, m_height);
+    }
 }
 
 } // namespace atom::render

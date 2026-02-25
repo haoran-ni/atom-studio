@@ -346,11 +346,11 @@ Rectangle {
         property real maxAxisScale: 2.0
         property real hoverScaleBoost: 1.12
         property real edgeMargin: 10
-        property real baseLength: 25
+        property real baseLength: 68
         property real baseArrowLength: 5
         property real baseLineWidth: 2
-        property real baseLabelOffset: 10
-        property real baseFontSize: 10
+        property real baseLabelOffset: 8
+        property real baseFontSize: 18
         property real interactionPadding: 12
         property bool selected: axisMouseArea.containsMouse || axisMouseArea.pressed
         property real visualScale: axisScale * (selected ? hoverScaleBoost : 1.0)
@@ -384,16 +384,39 @@ Rectangle {
             clampToBounds()
         }
 
+        function syncBackendAxesState() {
+            if (!viewportPanel.viewport) {
+                return
+            }
+
+            viewportPanel.viewport.viewportAxesX = x
+            viewportPanel.viewport.viewportAxesY = y
+            viewportPanel.viewport.viewportAxesScale = visualScale
+        }
+
         Component.onCompleted: {
             placeDefaultPosition()
+            syncBackendAxesState()
             axisCanvas.requestPaint()
         }
+
+        onXChanged: syncBackendAxesState()
+        onYChanged: syncBackendAxesState()
 
         onVisualScaleChanged: {
             if (positioned) {
                 clampToBounds()
             }
+            syncBackendAxesState()
             axisCanvas.requestPaint()
+        }
+
+        Connections {
+            target: viewportPanel
+            function onViewportChanged() {
+                axisOverlay.syncBackendAxesState()
+                axisCanvas.requestPaint()
+            }
         }
 
         Canvas {
@@ -422,61 +445,33 @@ Rectangle {
                 var cy = height / 2;
                 var scale = axisOverlay.visualScale;
                 var len = axisOverlay.baseLength * scale;
-                var aLen = axisOverlay.baseArrowLength * scale;
-                var lineWidth = axisOverlay.baseLineWidth * scale;
                 var labelOffset = axisOverlay.baseLabelOffset * scale;
                 var fontSize = Math.max(8, Math.round(axisOverlay.baseFontSize * scale));
 
                 var d = viewportPanel.viewport.getAxisDirections();
                 // d = [Xx, Xy, Xz,  Yx, Yy, Yz,  Zx, Zy, Zz]
                 var axes = [
-                    { dx: d[0], dy: d[1], z: d[2], color: "#ff4444", label: "X" },
-                    { dx: d[3], dy: d[4], z: d[5], color: "#44ff44", label: "Y" },
-                    { dx: d[6], dy: d[7], z: d[8], color: "#4444ff", label: "Z" }
+                    { axisId: 0, dx: d[0], dy: d[1], z: d[2], color: "#ff4444", label: "X" },
+                    { axisId: 1, dx: d[3], dy: d[4], z: d[5], color: "#44ff44", label: "Y" },
+                    { axisId: 2, dx: d[6], dy: d[7], z: d[8], color: "#4444ff", label: "Z" }
                 ];
 
-                // Sort ascending by z: draw into-screen axes first,
-                // toward-camera axes last (on top)
-                axes.sort(function(a, b) { return a.z - b.z; });
+                axes.sort(function(a, b) { return a.z - b.z })
 
-                for (var i = 0; i < 3; i++) {
-                    var ax = axes[i];
-                    var ex = cx + ax.dx * len;
-                    var ey = cy + ax.dy * len;
+                ctx.font = "bold " + fontSize + "px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
 
-                    // Axis line
-                    ctx.strokeStyle = ax.color;
-                    ctx.lineWidth = lineWidth;
-                    ctx.beginPath();
-                    ctx.moveTo(cx, cy);
-                    ctx.lineTo(ex, ey);
-                    ctx.stroke();
-
-                    // Small arrowhead at the tip
-                    var norm = Math.sqrt(ax.dx * ax.dx + ax.dy * ax.dy);
-                    if (norm > 0.01) {
-                        var ndx = ax.dx / norm;
-                        var ndy = ax.dy / norm;
-                        // Perpendicular direction
-                        var px = -ndy;
-                        var py = ndx;
-                        ctx.beginPath();
-                        ctx.moveTo(ex, ey);
-                        ctx.lineTo(ex - ndx * aLen + px * aLen * 0.4,
-                                   ey - ndy * aLen + py * aLen * 0.4);
-                        ctx.moveTo(ex, ey);
-                        ctx.lineTo(ex - ndx * aLen - px * aLen * 0.4,
-                                   ey - ndy * aLen - py * aLen * 0.4);
-                        ctx.stroke();
+                for (var i = 0; i < axes.length; i++) {
+                    var ax = axes[i]
+                    // Hide labels when the corresponding axis points strongly into the screen.
+                    if (ax.z < -0.9) {
+                        continue
                     }
-
-                    // Label just past the endpoint
-                    ctx.font = "bold " + fontSize + "px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillStyle = ax.color;
-                    ctx.fillText(ax.label, cx + ax.dx * (len + labelOffset),
-                                           cy + ax.dy * (len + labelOffset));
+                    var lx = cx + ax.dx * (len + labelOffset)
+                    var ly = cy + ax.dy * (len + labelOffset)
+                    ctx.fillStyle = ax.color
+                    ctx.fillText(ax.label, lx, ly)
                 }
             }
         }

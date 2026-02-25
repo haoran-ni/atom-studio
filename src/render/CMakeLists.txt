@@ -27,6 +27,8 @@ set(RENDER_OPENGL_SOURCES
     opengl/BondRenderer.h
     opengl/UnitCellRenderer.cpp
     opengl/UnitCellRenderer.h
+    opengl/ViewportAxesRenderer.cpp
+    opengl/ViewportAxesRenderer.h
     opengl/OpenGLRenderer.cpp
     opengl/OpenGLRenderer.h
     opengl/RayTracingRenderer.cpp
@@ -57,6 +59,8 @@ set(RENDER_METAL_SOURCES
     metal/MetalUnitCellRenderer.mm
     metal/MetalGizmoRenderer.h
     metal/MetalGizmoRenderer.mm
+    metal/MetalViewportAxesRenderer.h
+    metal/MetalViewportAxesRenderer.mm
     metal/MetalRenderer.h
     metal/MetalRenderer.mm
     metal/MetalRayTracingRenderer.h

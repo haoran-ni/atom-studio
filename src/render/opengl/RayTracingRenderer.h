@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../common/Renderer.h"
+#include "ShaderManager.h"
+#include "ViewportAxesRenderer.h"
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <memory>
@@ -42,13 +44,15 @@ private:
 
     // Render passes
     void renderRTPass(const Camera& camera);
-    void renderDisplayPass();
+    void renderDisplayPass(const Camera& camera);
 
     // --- GL resources ---
 
     // Shaders
     std::unique_ptr<QOpenGLShaderProgram> m_rtShader;
     std::unique_ptr<QOpenGLShaderProgram> m_displayShader;
+    ShaderManager m_overlayShaderManager;
+    ViewportAxesRenderer m_viewportAxesRenderer;
 
     // Full-screen quad
     GLuint m_quadVAO = 0;

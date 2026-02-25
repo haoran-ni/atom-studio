@@ -24,6 +24,13 @@ struct RenderSettings {
     QColor unitCellColor = QColor(0, 0, 0);
     float unitCellThickness = 0.06f;  // Cylinder/sphere radius in Angstroms
 
+    // Viewport-corner XYZ axes overlay (screen-space 3D gizmo; not scene geometry)
+    bool showViewportAxes = true;
+    float viewportAxesScreenX = 60.0f;   // center position in rendered pixels
+    float viewportAxesScreenY = 60.0f;   // center position in rendered pixels (y-down)
+    float viewportAxesScale = 1.0f;      // includes hover enlargement from UI
+    float viewportAxesPixelRatio = 1.0f; // renderer pixels per QML logical pixel for overlay sizing
+
     // Lighting
     float ambientStrength = 0.3f;
     float diffuseStrength = 0.7f;

@@ -404,6 +404,15 @@ bool RayTracingRenderer::initialize() {
         return false;
     }
 
+    if (!m_overlayShaderManager.initialize()) {
+        qCritical() << "RayTracingRenderer: Failed to initialize overlay shader manager";
+        return false;
+    }
+    if (!m_viewportAxesRenderer.initialize(&m_overlayShaderManager)) {
+        qCritical() << "RayTracingRenderer: Failed to initialize viewport axes renderer";
+        return false;
+    }
+
     createFullScreenQuad();
 
     // Query TBO size limit
@@ -434,6 +443,8 @@ void RayTracingRenderer::cleanup() {
 
     m_rtShader.reset();
     m_displayShader.reset();
+    m_viewportAxesRenderer.cleanup();
+    m_overlayShaderManager.cleanup();
 
     if (m_quadVAO) { glDeleteVertexArrays(1, &m_quadVAO); m_quadVAO = 0; }
     if (m_quadVBO) { glDeleteBuffers(1, &m_quadVBO); m_quadVBO = 0; }
@@ -488,7 +499,11 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
         // No atoms — just clear with background color
         QColor bg = m_settings.backgroundColor;
         glClearColor(bg.redF(), bg.greenF(), bg.blueF(), 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        if (m_settings.showViewportAxes) {
+            glClear(GL_DEPTH_BUFFER_BIT);
+            m_viewportAxesRenderer.render(camera, m_settings, m_width, m_height);
+        }
         return;
     }
 
@@ -499,11 +514,6 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
         resetAccumulation();
     }
 
-    // Don't render beyond max samples
-    if (isConverged()) return;
-
-    m_sampleCount++;
-
     // Save Qt's FBO binding
     GLint qtFBO;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &qtFBO);
@@ -513,13 +523,16 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
         createAccumulationFBO();
     }
 
-    // Pass 1: Ray trace into accumulation FBO (additive)
-    renderRTPass(camera);
+    // Pass 1: Ray trace into accumulation FBO (additive) until convergence.
+    if (!isConverged()) {
+        m_sampleCount++;
+        renderRTPass(camera);
+    }
 
     // Pass 2: Display accumulated result into Qt's FBO
     glBindFramebuffer(GL_FRAMEBUFFER, qtFBO);
     glViewport(0, 0, m_width, m_height);
-    renderDisplayPass();
+    renderDisplayPass(camera);
 }
 
 void RayTracingRenderer::invalidateAtomData() {
@@ -838,7 +851,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     glDisable(GL_BLEND);
 }
 
-void RayTracingRenderer::renderDisplayPass() {
+void RayTracingRenderer::renderDisplayPass(const Camera& camera) {
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 
@@ -856,6 +869,13 @@ void RayTracingRenderer::renderDisplayPass() {
     glBindVertexArray(0);
 
     m_displayShader->release();
+
+    if (m_settings.showViewportAxes) {
+        // Fresh depth for overlay so it stays on top of the displayed RT image
+        // while preserving true self-occlusion inside the gizmo geometry.
+        glClear(GL_DEPTH_BUFFER_BIT);
+        m_viewportAxesRenderer.render(camera, m_settings, m_width, m_height);
+    }
 }
 
 } // namespace atom::render
