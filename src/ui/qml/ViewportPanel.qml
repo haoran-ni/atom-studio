@@ -356,7 +356,17 @@ Rectangle {
         property real visualScale: axisScale * (selected ? hoverScaleBoost : 1.0)
         property real visualExtent: (baseLength + baseLabelOffset + baseArrowLength + baseFontSize) * visualScale
         property real boundsRadius: visualExtent + 4
-        property real hitRadius: Math.max(boundsRadius + interactionPadding, 44)
+        // Reserve space for the hover enlargement so hover does not change the
+        // persisted overlay position via bounds clamping.
+        property real layoutScale: axisScale * hoverScaleBoost
+        property real layoutExtent: (baseLength + baseLabelOffset + baseArrowLength + baseFontSize) * layoutScale
+        property real layoutBoundsRadius: layoutExtent + 4
+        // Keep the drag/selection hit area closer to the visible axes body/arrowheads
+        // instead of the full label/canvas bounds. Use a hover-independent radius
+        // (reserve hover size) to avoid containsMouse <-> hit-size flicker loops.
+        property real hitScale: axisScale * hoverScaleBoost
+        property real hitVisualRadius: (baseLength + baseArrowLength + 8) * hitScale
+        property real hitRadius: Math.max(hitVisualRadius + interactionPadding, 34)
         property real canvasHalfSize: Math.max(boundsRadius + 20, 70)
 
         function clampToBounds() {
@@ -364,10 +374,10 @@ Rectangle {
                 return
             }
 
-            var minX = boundsRadius + edgeMargin
-            var maxX = Math.max(minX, viewportPanel.width - boundsRadius - edgeMargin)
-            var minY = boundsRadius + edgeMargin
-            var maxY = Math.max(minY, viewportPanel.height - boundsRadius - edgeMargin)
+            var minX = layoutBoundsRadius + edgeMargin
+            var maxX = Math.max(minX, viewportPanel.width - layoutBoundsRadius - edgeMargin)
+            var minY = layoutBoundsRadius + edgeMargin
+            var maxY = Math.max(minY, viewportPanel.height - layoutBoundsRadius - edgeMargin)
 
             x = Math.max(minX, Math.min(x, maxX))
             y = Math.max(minY, Math.min(y, maxY))
@@ -378,8 +388,8 @@ Rectangle {
                 return
             }
 
-            x = boundsRadius + edgeMargin
-            y = viewportPanel.height - boundsRadius - edgeMargin
+            x = layoutBoundsRadius + edgeMargin
+            y = viewportPanel.height - layoutBoundsRadius - edgeMargin
             positioned = true
             clampToBounds()
         }
@@ -402,11 +412,13 @@ Rectangle {
 
         onXChanged: syncBackendAxesState()
         onYChanged: syncBackendAxesState()
-
-        onVisualScaleChanged: {
+        onAxisScaleChanged: {
             if (positioned) {
                 clampToBounds()
             }
+        }
+
+        onVisualScaleChanged: {
             syncBackendAxesState()
             axisCanvas.requestPaint()
         }
@@ -465,7 +477,7 @@ Rectangle {
                 for (var i = 0; i < axes.length; i++) {
                     var ax = axes[i]
                     // Hide labels when the corresponding axis points strongly into the screen.
-                    if (ax.z < -0.9) {
+                    if (ax.z < -0.95) {
                         continue
                     }
                     var lx = cx + ax.dx * (len + labelOffset)
@@ -490,10 +502,10 @@ Rectangle {
 
             drag.target: axisOverlay
             drag.axis: Drag.XAndYAxis
-            drag.minimumX: axisOverlay.boundsRadius + axisOverlay.edgeMargin
-            drag.maximumX: Math.max(drag.minimumX, viewportPanel.width - axisOverlay.boundsRadius - axisOverlay.edgeMargin)
-            drag.minimumY: axisOverlay.boundsRadius + axisOverlay.edgeMargin
-            drag.maximumY: Math.max(drag.minimumY, viewportPanel.height - axisOverlay.boundsRadius - axisOverlay.edgeMargin)
+            drag.minimumX: axisOverlay.layoutBoundsRadius + axisOverlay.edgeMargin
+            drag.maximumX: Math.max(drag.minimumX, viewportPanel.width - axisOverlay.layoutBoundsRadius - axisOverlay.edgeMargin)
+            drag.minimumY: axisOverlay.layoutBoundsRadius + axisOverlay.edgeMargin
+            drag.maximumY: Math.max(drag.minimumY, viewportPanel.height - axisOverlay.layoutBoundsRadius - axisOverlay.edgeMargin)
 
             onContainsMouseChanged: axisCanvas.requestPaint()
             onPressed: axisCanvas.requestPaint()
