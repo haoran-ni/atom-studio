@@ -44,6 +44,11 @@ public:
     QOpenGLShaderProgram* lineShader() { return m_lineShader.get(); }
 
     /**
+     * @brief Get the viewport axes overlay mesh shader (unlit flat color)
+     */
+    QOpenGLShaderProgram* viewportAxesShader() { return m_viewportAxesShader.get(); }
+
+    /**
      * @brief Check if shaders are initialized
      */
     bool isInitialized() const { return m_initialized; }
@@ -56,6 +61,7 @@ private:
     std::unique_ptr<QOpenGLShaderProgram> m_sphereShader;
     std::unique_ptr<QOpenGLShaderProgram> m_bondShader;
     std::unique_ptr<QOpenGLShaderProgram> m_lineShader;
+    std::unique_ptr<QOpenGLShaderProgram> m_viewportAxesShader;
     bool m_initialized = false;
 };
 
@@ -67,6 +73,8 @@ namespace shaders {
     extern const char* bondFragmentShader;
     extern const char* lineVertexShader;
     extern const char* lineFragmentShader;
+    extern const char* viewportAxesVertexShader;
+    extern const char* viewportAxesFragmentShader;
 }
 
 } // namespace atom::render

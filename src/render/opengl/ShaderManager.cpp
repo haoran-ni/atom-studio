@@ -243,6 +243,51 @@ void main() {
 }
 )";
 
+const char* viewportAxesVertexShader = R"(
+#version 410 core
+
+layout(location = 0) in vec3 aPosition;    // Mesh vertex (unit radius; z in [0,1])
+layout(location = 1) in vec3 aStart;       // Instance start point
+layout(location = 2) in vec3 aEnd;         // Instance end point
+layout(location = 3) in vec4 aColor;       // Instance color
+
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform float uBondRadius;
+
+out vec4 vColor;
+
+void main() {
+    vColor = aColor;
+
+    vec3 axisVec = aEnd - aStart;
+    float axisLength = length(axisVec);
+    vec3 axisDir = (axisLength > 1e-8) ? (axisVec / axisLength) : vec3(0.0, 0.0, 1.0);
+
+    vec3 up = abs(axisDir.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
+    vec3 localPos = right * aPosition.x * uBondRadius +
+                    up * aPosition.y * uBondRadius +
+                    axisDir * aPosition.z * axisLength;
+
+    vec3 worldPos = aStart + localPos;
+    gl_Position = uProjectionMatrix * (uViewMatrix * vec4(worldPos, 1.0));
+}
+)";
+
+const char* viewportAxesFragmentShader = R"(
+#version 410 core
+
+in vec4 vColor;
+out vec4 fragColor;
+
+void main() {
+    fragColor = vColor;
+}
+)";
+
 } // namespace shaders
 
 ShaderManager::ShaderManager() = default;
@@ -257,6 +302,7 @@ bool ShaderManager::initialize() {
     m_sphereShader = std::make_unique<QOpenGLShaderProgram>();
     m_bondShader = std::make_unique<QOpenGLShaderProgram>();
     m_lineShader = std::make_unique<QOpenGLShaderProgram>();
+    m_viewportAxesShader = std::make_unique<QOpenGLShaderProgram>();
 
     bool success = true;
 
@@ -272,6 +318,10 @@ bool ShaderManager::initialize() {
                              shaders::lineVertexShader,
                              shaders::lineFragmentShader);
 
+    success &= compileShader(m_viewportAxesShader.get(),
+                             shaders::viewportAxesVertexShader,
+                             shaders::viewportAxesFragmentShader);
+
     if (!success) {
         cleanup();
         return false;
@@ -285,6 +335,7 @@ void ShaderManager::cleanup() {
     m_sphereShader.reset();
     m_bondShader.reset();
     m_lineShader.reset();
+    m_viewportAxesShader.reset();
     m_initialized = false;
 }
 

@@ -260,6 +260,51 @@ fragment float4 bond_fragment(
 }
 
 // -------------------------------------------------------
+// Viewport Axes Overlay Mesh Shader (unlit flat color)
+// -------------------------------------------------------
+
+struct AxesOverlayVertexOut {
+    float4 position [[position]];
+    float4 color;
+};
+
+vertex AxesOverlayVertexOut axes_overlay_vertex(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant packed_float3* meshVertices [[buffer(1)]],
+    constant BondInstance* instances [[buffer(2)]])
+{
+    AxesOverlayVertexOut out;
+
+    BondInstance inst = instances[iid];
+    out.color = inst.color;
+
+    float3 axisVec = inst.end - inst.start;
+    float axisLength = length(axisVec);
+    float3 axisDir = (axisLength > 1e-8f) ? (axisVec / axisLength) : float3(0.0f, 0.0f, 1.0f);
+
+    float3 up = abs(axisDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
+    float3 vert = meshVertices[vid];
+    float3 localPos = right * vert.x * scene.bondRadius +
+                      up * vert.y * scene.bondRadius +
+                      axisDir * vert.z * axisLength;
+
+    float3 worldPos = inst.start + localPos;
+    out.position = scene.projectionMatrix * (scene.viewMatrix * float4(worldPos, 1.0));
+    return out;
+}
+
+fragment float4 axes_overlay_fragment(
+    AxesOverlayVertexOut in [[stage_in]])
+{
+    return in.color;
+}
+
+// -------------------------------------------------------
 // Line Shader (unit cell wireframe)
 // -------------------------------------------------------
 
@@ -737,6 +782,7 @@ struct MetalShaderLibrary::Impl {
     id<MTLLibrary> library = nil;
     id<MTLRenderPipelineState> spherePipeline = nil;
     id<MTLRenderPipelineState> bondPipeline = nil;
+    id<MTLRenderPipelineState> viewportAxesPipeline = nil;
     id<MTLRenderPipelineState> linePipeline = nil;
     id<MTLRenderPipelineState> rtPipeline = nil;
     id<MTLRenderPipelineState> displayPipeline = nil;
@@ -844,6 +890,34 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         m_impl->bondPipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!m_impl->bondPipeline) {
             qCritical() << "MetalShaderLibrary: bond pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
+    // --- Viewport axes overlay mesh pipeline (flat color, depth-enabled overlay) ---
+    {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"axes_overlay_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"axes_overlay_fragment"];
+        desc.rasterSampleCount = rasterSamples;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+
+        if (!desc.vertexFunction || !desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: viewport axes shader functions not found";
+            return false;
+        }
+
+        m_impl->viewportAxesPipeline =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->viewportAxesPipeline) {
+            qCritical() << "MetalShaderLibrary: viewport axes pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -984,6 +1058,7 @@ void MetalShaderLibrary::cleanup() {
     if (m_impl) {
         m_impl->spherePipeline = nil;
         m_impl->bondPipeline = nil;
+        m_impl->viewportAxesPipeline = nil;
         m_impl->linePipeline = nil;
         m_impl->rtPipeline = nil;
         m_impl->displayPipeline = nil;
@@ -1003,6 +1078,10 @@ void* MetalShaderLibrary::spherePipeline() const {
 
 void* MetalShaderLibrary::bondPipeline() const {
     return (__bridge void*)m_impl->bondPipeline;
+}
+
+void* MetalShaderLibrary::viewportAxesPipeline() const {
+    return (__bridge void*)m_impl->viewportAxesPipeline;
 }
 
 void* MetalShaderLibrary::linePipeline() const {

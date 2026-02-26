@@ -4,6 +4,49 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-02-26: Viewport XYZ Axes Solid Overlay + Correct Self-Depth (No Hollow Appearance)
+
+### Summary
+Fixed the viewport-corner XYZ axes overlay so it renders as a visually solid closed object with correct self-depth, eliminating the hollow-looking appearance seen from some camera angles.
+
+### Root Cause
+The axes overlay geometry already used capped cylinders/cones, but two overlay rendering choices caused the visual artifact:
+1. A black center sphere was drawn as a masking hack over the axis junction, which could visually read like a hollow opening.
+2. Back-face culling on the overlay meshes could produce cap/winding artifacts depending on orientation.
+
+### What Changed
+1. **Removed center masking sphere from viewport axes overlay**
+   - Deleted the black center sphere draw from the viewport axes overlay render path in both OpenGL and Metal.
+   - The axes now render using only the closed cylinder/cone meshes.
+2. **Disabled face culling for viewport axes overlay meshes**
+   - Kept depth testing enabled for correct self-occlusion.
+   - Disabled culling for the overlay axes pass to avoid cap visibility/winding artifacts across orientations.
+3. **Dedicated viewport-axes overlay shader/pipeline (flat color)**
+   - Added a dedicated unlit/flat-color overlay shader program (OpenGL) and pipeline (Metal) for the viewport axes.
+   - This decouples the axes overlay from the shared bond shader/pipeline and keeps the axes overlay logic isolated from scene bond rendering.
+
+### Behavior Kept Unchanged
+- **Overlay only**: the axes do not participate in scene raster geometry rendering or ray tracing geometry/BVH.
+- **Size / scaling**: existing viewport position, scaling, and DPR behavior preserved.
+- **Appearance**: axis colors and `X/Y/Z` labels remain unchanged.
+- **Depth model**: scene depth is still cleared before axes overlay draw so it stays on top of the scene, while the axes object still self-occludes correctly.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/opengl/ViewportAxesRenderer.cpp` | Switched to dedicated axes shader; removed black center sphere draw; disabled culling for axes overlay pass |
+| `src/render/opengl/ShaderManager.h` | Added `viewportAxesShader()` accessor + shader member declarations |
+| `src/render/opengl/ShaderManager.cpp` | Added embedded viewport-axes vertex/fragment shaders and initialization/cleanup wiring |
+| `src/render/metal/MetalViewportAxesRenderer.mm` | Switched to dedicated viewport axes pipeline; disabled culling; removed black center sphere draw |
+| `src/render/metal/MetalShaderLibrary.h` | Added `viewportAxesPipeline()` accessor |
+| `src/render/metal/MetalShaderLibrary.mm` | Added viewport axes overlay MSL shader functions and pipeline creation/cleanup/accessor |
+
+### Verification
+- Build: `cmake --build build --parallel 4` — success.
+- Visual check: user confirmed the viewport axes visualization is now correct (solid appearance with proper depth cues).
+
+---
+
 ## 2026-02-25: Viewport Overlay Layout Updates + Interactive XYZ Axes Widget
 
 ### Summary

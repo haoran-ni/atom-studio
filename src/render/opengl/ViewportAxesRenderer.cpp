@@ -268,8 +268,8 @@ void ViewportAxesRenderer::render(const Camera& camera, const RenderSettings& se
         return;
     }
 
-    QOpenGLShaderProgram* bondShader = m_shaderManager ? m_shaderManager->bondShader() : nullptr;
-    if (!bondShader) {
+    QOpenGLShaderProgram* axesShader = m_shaderManager ? m_shaderManager->viewportAxesShader() : nullptr;
+    if (!axesShader) {
         return;
     }
 
@@ -344,18 +344,14 @@ void ViewportAxesRenderer::render(const Camera& camera, const RenderSettings& se
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    // Render the axes overlay as closed solid surfaces; disable culling to avoid
+    // any cap/face winding artifacts across orientations.
+    glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
 
-    bondShader->bind();
-    bondShader->setUniformValue("uViewMatrix", overlayView);
-    bondShader->setUniformValue("uProjectionMatrix", overlayProj);
-    bondShader->setUniformValue("uLightDir", QVector3D(0.0f, 0.0f, 1.0f));
-    bondShader->setUniformValue("uAmbient", 1.0f);
-    bondShader->setUniformValue("uDiffuse", 0.0f);
-    bondShader->setUniformValue("uSpecular", 0.0f);
-    bondShader->setUniformValue("uShininess", 1.0f);
+    axesShader->bind();
+    axesShader->setUniformValue("uViewMatrix", overlayView);
+    axesShader->setUniformValue("uProjectionMatrix", overlayProj);
 
     if (cylCount > 0) {
         m_instanceStartBuffer.bind();
@@ -365,7 +361,7 @@ void ViewportAxesRenderer::render(const Camera& camera, const RenderSettings& se
         m_instanceColorBuffer.bind();
         m_instanceColorBuffer.allocate(cylColors.data(), cylCount * 4 * static_cast<int>(sizeof(float)));
 
-        bondShader->setUniformValue("uBondRadius", shaftRadius);
+        axesShader->setUniformValue("uBondRadius", shaftRadius);
         m_cylinderVAO.bind();
         glDrawElementsInstanced(GL_TRIANGLES, m_cylinderIndexCount, GL_UNSIGNED_INT, nullptr, cylCount);
         m_cylinderVAO.release();
@@ -379,39 +375,13 @@ void ViewportAxesRenderer::render(const Camera& camera, const RenderSettings& se
         m_instanceColorBuffer.bind();
         m_instanceColorBuffer.allocate(coneColors.data(), coneCount * 4 * static_cast<int>(sizeof(float)));
 
-        bondShader->setUniformValue("uBondRadius", headRadius);
+        axesShader->setUniformValue("uBondRadius", headRadius);
         m_coneVAO.bind();
         glDrawElementsInstanced(GL_TRIANGLES, m_coneIndexCount, GL_UNSIGNED_INT, nullptr, coneCount);
         m_coneVAO.release();
     }
 
-    // Black center sphere (same radius as the shaft) hides cap/intersection artifacts.
-    if (m_centerSphereIndexCount > 0) {
-        const std::array<float, 3> sphereStart = {
-            origin.x(), origin.y(), origin.z() - shaftRadius
-        };
-        const std::array<float, 3> sphereEnd = {
-            origin.x(), origin.y(), origin.z() + shaftRadius
-        };
-        const std::array<float, 4> sphereColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-        m_instanceStartBuffer.bind();
-        m_instanceStartBuffer.allocate(sphereStart.data(), static_cast<int>(sphereStart.size() * sizeof(float)));
-        m_instanceEndBuffer.bind();
-        m_instanceEndBuffer.allocate(sphereEnd.data(), static_cast<int>(sphereEnd.size() * sizeof(float)));
-        m_instanceColorBuffer.bind();
-        m_instanceColorBuffer.allocate(sphereColor.data(), static_cast<int>(sphereColor.size() * sizeof(float)));
-
-        glDisable(GL_CULL_FACE);
-        bondShader->setUniformValue("uBondRadius", shaftRadius);
-        m_centerSphereVAO.bind();
-        glDrawElementsInstanced(GL_TRIANGLES, m_centerSphereIndexCount, GL_UNSIGNED_INT, nullptr, 1);
-        m_centerSphereVAO.release();
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-    }
-
-    bondShader->release();
+    axesShader->release();
 }
 
 } // namespace atom::render

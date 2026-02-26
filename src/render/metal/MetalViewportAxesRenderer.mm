@@ -263,7 +263,7 @@ void MetalViewportAxesRenderer::render(void* encoderPtr,
 
     id<MTLRenderCommandEncoder> encoder = (__bridge id<MTLRenderCommandEncoder>)encoderPtr;
     id<MTLRenderPipelineState> pipeline =
-        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->bondPipeline();
+        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->viewportAxesPipeline();
     id<MTLDepthStencilState> depthState =
         (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthLessWriteState();
     if (!pipeline || !depthState) {
@@ -342,7 +342,7 @@ void MetalViewportAxesRenderer::render(void* encoderPtr,
     [encoder setRenderPipelineState:pipeline];
     [encoder setDepthStencilState:depthState];
     [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
-    [encoder setCullMode:MTLCullModeBack];
+    [encoder setCullMode:MTLCullModeNone];
     [encoder setVertexBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
     [encoder setFragmentBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
 
@@ -378,29 +378,6 @@ void MetalViewportAxesRenderer::render(void* encoderPtr,
                          instanceCount:coneCount];
     }
 
-    // Black center sphere (same radius as the shaft) hides cap/intersection artifacts.
-    if (m_impl->centerSphereVertexBuffer && m_impl->centerSphereIndexBuffer &&
-        m_impl->centerSphereIndexCount > 0) {
-        BondInstance centerSphere{};
-        centerSphere.start = simd_make_float3(origin.x, origin.y, origin.z - shaftRadius);
-        centerSphere.end   = simd_make_float3(origin.x, origin.y, origin.z + shaftRadius);
-        centerSphere.color = simd_make_float4(0.0f, 0.0f, 0.0f, 1.0f);
-
-        uniforms.bondRadius = shaftRadius;
-        [encoder setRenderPipelineState:pipeline];
-        [encoder setDepthStencilState:depthState];
-        [encoder setCullMode:MTLCullModeNone];
-        [encoder setVertexBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
-        [encoder setFragmentBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
-        [encoder setVertexBuffer:m_impl->centerSphereVertexBuffer offset:0 atIndex:1];
-        [encoder setVertexBytes:&centerSphere length:sizeof(BondInstance) atIndex:2];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                            indexCount:m_impl->centerSphereIndexCount
-                             indexType:MTLIndexTypeUInt32
-                           indexBuffer:m_impl->centerSphereIndexBuffer
-                     indexBufferOffset:0
-                         instanceCount:1];
-    }
 }
 
 } // namespace atom::render::metal

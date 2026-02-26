@@ -26,6 +26,7 @@ public:
     // Pipeline state accessors (return id<MTLRenderPipelineState> as void*)
     void* spherePipeline() const;
     void* bondPipeline() const;
+    void* viewportAxesPipeline() const;
     void* linePipeline() const;
     void* rtPipeline() const;
     void* displayPipeline() const;
