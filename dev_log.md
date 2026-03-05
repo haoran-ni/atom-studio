@@ -4,6 +4,41 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-05: World-Space Light Direction with Azimuth/Elevation Controls
+
+### Summary
+Changed the light direction from a view-space 3-component vector (X/Y/Z) to a world-space direction defined by two spherical angles (azimuth and elevation in degrees). This fixes two issues: (1) the old sliders coupled direction with brightness, and (2) the light was glued to the camera so orbiting never revealed a shadowed side.
+
+### What Changed
+1. **RenderSettings**: Replaced `lightDirX/Y/Z` with `lightAzimuth` (0°) and `lightElevation` (45°). Added `lightDirWorld()` helper that computes a unit vector using the convention: azimuth rotates in XY plane (0° = +X, 90° = +Y), elevation is angle from XY plane toward +Z (90° = +Z).
+2. **Raster renderers** (SphereRenderer, BondRenderer, UnitCellRenderer): Transform world-space light direction to view space via `camera.viewMatrix()` before passing to shader. Shaders unchanged.
+3. **RT renderers** (OpenGL + Metal): Pass `lightDirWorld()` directly — removed the old view→world transform that was keeping the light camera-relative.
+4. **Viewport properties**: Replaced 3 Q_PROPERTYs (`lightDirX/Y/Z`) with 2 (`lightAzimuth`, `lightElevation`) in both OpenGLViewport and MetalViewport.
+5. **Sidebar**: Replaced 3 direction sliders with 2 angle sliders (azimuth: -180° to 180°, elevation: -90° to 90°).
+
+### Behavior Change
+- Light is now fixed in world space — orbiting the camera reveals lit and shadowed sides of the structure.
+- Angle-based parameterization always produces a unit vector, so direction changes cannot affect brightness.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/common/RenderSettings.h` | Replaced `lightDirX/Y/Z` with `lightAzimuth`/`lightElevation` + `lightDirWorld()` helper |
+| `src/render/common/RenderStateHash.cpp` | Hash azimuth/elevation instead of X/Y/Z |
+| `src/render/opengl/SphereRenderer.cpp` | World→view transform for `uLightDir` |
+| `src/render/opengl/BondRenderer.cpp` | World→view transform for `uLightDir` |
+| `src/render/opengl/UnitCellRenderer.cpp` | World→view transform for `uLightDir` |
+| `src/render/opengl/RayTracingRenderer.cpp` | Pass `lightDirWorld()` directly, removed view→world transform |
+| `src/render/metal/MetalRenderer.mm` | World→view transform for `uniforms.lightDir` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Pass `lightDirWorld()` directly, removed view→world transform |
+| `src/ui/components/OpenGLViewport.h` | Replaced 3 properties with 2 angle properties |
+| `src/ui/components/OpenGLViewport.cpp` | Updated getters, setters, settings sync |
+| `src/ui/components/MetalViewport.h` | Replaced 3 properties with 2 angle properties |
+| `src/ui/components/MetalViewport.mm` | Updated getters, setters, settings sync |
+| `src/ui/qml/Sidebar.qml` | Replaced 3 sliders with 2 angle sliders, updated reset defaults |
+
+---
+
 ## 2026-02-26: Viewport XYZ Axes Solid Overlay + Correct Self-Depth (No Hollow Appearance)
 
 ### Summary

@@ -36,9 +36,8 @@ Rectangle {
         sidebar.viewport.diffuseStrength = 0.7
         sidebar.viewport.specularStrength = 0.0
         sidebar.viewport.shininess = 32
-        sidebar.viewport.lightDirX = 0.3
-        sidebar.viewport.lightDirY = 0.8
-        sidebar.viewport.lightDirZ = 0.5
+        sidebar.viewport.lightAzimuth = 0
+        sidebar.viewport.lightElevation = 45
     }
 
     color: "#252526"
@@ -708,46 +707,33 @@ Rectangle {
                         }
 
                         NumericSliderControl {
-                            title: qsTr("Light direction (X)")
-                            from: -1
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.3
-                            sourceValue: sidebar.viewport ? sidebar.viewport.lightDirX : 0.3
+                            title: qsTr("Light azimuth")
+                            tooltipText: qsTr("Angle in the XY plane. 0° = +X, 90° = +Y, ±180° = −X.")
+                            from: -180
+                            to: 180
+                            stepSize: 1
+                            decimals: 0
+                            defaultValue: 0
+                            sourceValue: sidebar.viewport ? sidebar.viewport.lightAzimuth : 0
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
-                                    sidebar.viewport.lightDirX = newValue
+                                    sidebar.viewport.lightAzimuth = newValue
                                 }
                             }
                         }
 
                         NumericSliderControl {
-                            title: qsTr("Light direction (Y)")
-                            from: -1
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.8
-                            sourceValue: sidebar.viewport ? sidebar.viewport.lightDirY : 0.8
+                            title: qsTr("Light elevation")
+                            tooltipText: qsTr("Angle from the XY plane toward +Z. 0° = in XY plane, 90° = +Z, -90° = −Z.")
+                            from: -90
+                            to: 90
+                            stepSize: 1
+                            decimals: 0
+                            defaultValue: 45
+                            sourceValue: sidebar.viewport ? sidebar.viewport.lightElevation : 45
                             onValueApplied: function(newValue) {
                                 if (sidebar.viewport) {
-                                    sidebar.viewport.lightDirY = newValue
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Light direction (Z)")
-                            from: -1
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.5
-                            sourceValue: sidebar.viewport ? sidebar.viewport.lightDirZ : 0.5
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.lightDirZ = newValue
+                                    sidebar.viewport.lightElevation = newValue
                                 }
                             }
                         }

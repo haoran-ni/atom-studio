@@ -310,8 +310,9 @@ void UnitCellRenderer::render(const Camera& camera, const RenderSettings& settin
         jointColors[i * 4 + 3] = 1.0f;
     }
 
-    QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
-    lightDir.normalize();
+    // Light direction: world space → view space for shader
+    QVector3D worldLightDir = settings.lightDirWorld();
+    QVector3D lightDir = (camera.viewMatrix() * QVector4D(worldLightDir, 0.0f)).toVector3D().normalized();
 
     // Draw edge cylinders.
     if (QOpenGLShaderProgram* bondShader = m_shaderManager->bondShader()) {

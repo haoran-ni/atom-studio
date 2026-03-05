@@ -158,9 +158,10 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     uniforms.projectionMatrix = remapDepthToMetal(camera.projectionMatrix());
     uniforms.viewProjectionMatrix = remapDepthToMetal(camera.viewProjectionMatrix());
 
-    QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
-    lightDir.normalize();
-    uniforms.lightDir = simd_make_float3(lightDir.x(), lightDir.y(), lightDir.z());
+    // Light direction: world space → view space for raster shader
+    QVector3D worldLightDir = settings.lightDirWorld();
+    QVector3D viewLightDir = (camera.viewMatrix() * QVector4D(worldLightDir, 0.0f)).toVector3D().normalized();
+    uniforms.lightDir = simd_make_float3(viewLightDir.x(), viewLightDir.y(), viewLightDir.z());
     uniforms.ambient = settings.ambientStrength;
     uniforms.diffuse = settings.diffuseStrength;
     uniforms.specular = settings.specularStrength;

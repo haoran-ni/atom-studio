@@ -41,9 +41,8 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hf(settings.diffuseStrength));
     combine(hf(settings.specularStrength));
     combine(hf(settings.shininess));
-    combine(hf(settings.lightDirX));
-    combine(hf(settings.lightDirY));
-    combine(hf(settings.lightDirZ));
+    combine(hf(settings.lightAzimuth));
+    combine(hf(settings.lightElevation));
     combine(hi(settings.backgroundColor.red()));
     combine(hi(settings.backgroundColor.green()));
     combine(hi(settings.backgroundColor.blue()));

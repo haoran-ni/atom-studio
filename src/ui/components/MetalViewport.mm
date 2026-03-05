@@ -186,9 +186,8 @@ float MetalViewport::ambientStrength() const { return m_ambientStrength; }
 float MetalViewport::diffuseStrength() const { return m_diffuseStrength; }
 float MetalViewport::specularStrength() const { return m_specularStrength; }
 float MetalViewport::shininess() const { return m_shininess; }
-float MetalViewport::lightDirX() const { return m_lightDirX; }
-float MetalViewport::lightDirY() const { return m_lightDirY; }
-float MetalViewport::lightDirZ() const { return m_lightDirZ; }
+float MetalViewport::lightAzimuth() const { return m_lightAzimuth; }
+float MetalViewport::lightElevation() const { return m_lightElevation; }
 float MetalViewport::viewportAxesX() const { return m_viewportAxesX; }
 float MetalViewport::viewportAxesY() const { return m_viewportAxesY; }
 float MetalViewport::viewportAxesScale() const { return m_viewportAxesScale; }
@@ -465,29 +464,20 @@ void MetalViewport::setShininess(float shininess) {
     }
 }
 
-void MetalViewport::setLightDirX(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirX, clamped)) {
-        m_lightDirX = clamped;
-        emit lightDirXChanged();
+void MetalViewport::setLightAzimuth(float value) {
+    const float clamped = std::clamp(value, -180.0f, 180.0f);
+    if (!qFuzzyCompare(m_lightAzimuth, clamped)) {
+        m_lightAzimuth = clamped;
+        emit lightAzimuthChanged();
         update();
     }
 }
 
-void MetalViewport::setLightDirY(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirY, clamped)) {
-        m_lightDirY = clamped;
-        emit lightDirYChanged();
-        update();
-    }
-}
-
-void MetalViewport::setLightDirZ(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirZ, clamped)) {
-        m_lightDirZ = clamped;
-        emit lightDirZChanged();
+void MetalViewport::setLightElevation(float value) {
+    const float clamped = std::clamp(value, -90.0f, 90.0f);
+    if (!qFuzzyCompare(m_lightElevation, clamped)) {
+        m_lightElevation = clamped;
+        emit lightElevationChanged();
         update();
     }
 }
@@ -600,9 +590,8 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.diffuseStrength = m_diffuseStrength;
     m_renderSettings.specularStrength = m_specularStrength;
     m_renderSettings.shininess = m_shininess;
-    m_renderSettings.lightDirX = m_lightDirX;
-    m_renderSettings.lightDirY = m_lightDirY;
-    m_renderSettings.lightDirZ = m_lightDirZ;
+    m_renderSettings.lightAzimuth = m_lightAzimuth;
+    m_renderSettings.lightElevation = m_lightElevation;
     m_renderSettings.showRotationCenter = m_showRotationCenter;
     m_renderSettings.rotationCenterX = m_camera->target().x();
     m_renderSettings.rotationCenterY = m_camera->target().y();

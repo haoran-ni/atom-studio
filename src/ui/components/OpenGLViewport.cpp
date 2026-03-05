@@ -161,9 +161,8 @@ public:
         viewport->m_renderSettings.diffuseStrength = viewport->m_diffuseStrength;
         viewport->m_renderSettings.specularStrength = viewport->m_specularStrength;
         viewport->m_renderSettings.shininess = viewport->m_shininess;
-        viewport->m_renderSettings.lightDirX = viewport->m_lightDirX;
-        viewport->m_renderSettings.lightDirY = viewport->m_lightDirY;
-        viewport->m_renderSettings.lightDirZ = viewport->m_lightDirZ;
+        viewport->m_renderSettings.lightAzimuth = viewport->m_lightAzimuth;
+        viewport->m_renderSettings.lightElevation = viewport->m_lightElevation;
         viewport->m_renderSettings.showViewportAxes = true;
         viewport->m_renderSettings.viewportAxesScreenX = viewport->m_viewportAxesX * static_cast<float>(dpr);
         viewport->m_renderSettings.viewportAxesScreenY = viewport->m_viewportAxesY * static_cast<float>(dpr);
@@ -300,16 +299,12 @@ float OpenGLViewport::shininess() const {
     return m_shininess;
 }
 
-float OpenGLViewport::lightDirX() const {
-    return m_lightDirX;
+float OpenGLViewport::lightAzimuth() const {
+    return m_lightAzimuth;
 }
 
-float OpenGLViewport::lightDirY() const {
-    return m_lightDirY;
-}
-
-float OpenGLViewport::lightDirZ() const {
-    return m_lightDirZ;
+float OpenGLViewport::lightElevation() const {
+    return m_lightElevation;
 }
 
 float OpenGLViewport::viewportAxesX() const {
@@ -593,29 +588,20 @@ void OpenGLViewport::setShininess(float shininess) {
     }
 }
 
-void OpenGLViewport::setLightDirX(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirX, clamped)) {
-        m_lightDirX = clamped;
-        emit lightDirXChanged();
+void OpenGLViewport::setLightAzimuth(float value) {
+    const float clamped = std::clamp(value, -180.0f, 180.0f);
+    if (!qFuzzyCompare(m_lightAzimuth, clamped)) {
+        m_lightAzimuth = clamped;
+        emit lightAzimuthChanged();
         update();
     }
 }
 
-void OpenGLViewport::setLightDirY(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirY, clamped)) {
-        m_lightDirY = clamped;
-        emit lightDirYChanged();
-        update();
-    }
-}
-
-void OpenGLViewport::setLightDirZ(float value) {
-    const float clamped = std::clamp(value, -1.0f, 1.0f);
-    if (!qFuzzyCompare(m_lightDirZ, clamped)) {
-        m_lightDirZ = clamped;
-        emit lightDirZChanged();
+void OpenGLViewport::setLightElevation(float value) {
+    const float clamped = std::clamp(value, -90.0f, 90.0f);
+    if (!qFuzzyCompare(m_lightElevation, clamped)) {
+        m_lightElevation = clamped;
+        emit lightElevationChanged();
         update();
     }
 }

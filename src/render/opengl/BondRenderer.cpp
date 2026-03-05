@@ -215,9 +215,10 @@ void BondRenderer::render(const Camera& camera, const RenderSettings& settings) 
     shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
     shader->setUniformValue("uBondRadius", settings.bondRadius);
 
-    QVector3D lightDir(settings.lightDirX, settings.lightDirY, settings.lightDirZ);
-    lightDir.normalize();
-    shader->setUniformValue("uLightDir", lightDir);
+    // Light direction: world space → view space for shader
+    QVector3D worldLightDir = settings.lightDirWorld();
+    QVector3D viewLightDir = (camera.viewMatrix() * QVector4D(worldLightDir, 0.0f)).toVector3D().normalized();
+    shader->setUniformValue("uLightDir", viewLightDir);
 
     shader->setUniformValue("uAmbient", settings.ambientStrength);
     shader->setUniformValue("uDiffuse", settings.diffuseStrength);

@@ -814,14 +814,8 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uBVHNodeCount", m_bvhNodeCount);
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
 
-    // Light direction sliders are in view space (camera-relative); transform to world space for RT
-    QVector3D viewLightDir(m_settings.lightDirX, m_settings.lightDirY, m_settings.lightDirZ);
-    viewLightDir.normalize();
-    QVector3D worldLightDir = camera.rightVector()      * viewLightDir.x()
-                            + camera.upVector()         * viewLightDir.y()
-                            + (-camera.forwardVector()) * viewLightDir.z();
-    worldLightDir.normalize();
-    m_rtShader->setUniformValue("uLightDir", worldLightDir);
+    // Light direction is already in world space
+    m_rtShader->setUniformValue("uLightDir", m_settings.lightDirWorld());
     m_rtShader->setUniformValue("uAmbient", m_settings.ambientStrength);
     m_rtShader->setUniformValue("uDiffuse", m_settings.diffuseStrength);
     m_rtShader->setUniformValue("uSpecular", m_settings.specularStrength);

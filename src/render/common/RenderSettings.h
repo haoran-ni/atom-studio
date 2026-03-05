@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QColor>
+#include <QVector3D>
+#include <cmath>
 
 namespace atom::render {
 
@@ -37,10 +39,21 @@ struct RenderSettings {
     float specularStrength = 0.0f;
     float shininess = 32.0f;
 
-    // Light direction (in view/camera space: X=right, Y=up, Z=toward viewer)
-    float lightDirX = 0.3f;
-    float lightDirY = 0.8f;
-    float lightDirZ = 0.5f;
+    // Light direction (world space, defined by spherical angles in degrees)
+    // Azimuth: angle in XY plane, 0° = +X, 90° = +Y
+    // Elevation: angle from XY plane toward +Z, 0° = horizontal, 90° = +Z
+    float lightAzimuth = 0.0f;     // degrees
+    float lightElevation = 45.0f;  // degrees
+
+    // Compute world-space light direction unit vector from azimuth/elevation
+    QVector3D lightDirWorld() const {
+        float az = qDegreesToRadians(lightAzimuth);
+        float el = qDegreesToRadians(lightElevation);
+        float cosEl = std::cos(el);
+        return QVector3D(cosEl * std::cos(az),   // X
+                         cosEl * std::sin(az),   // Y
+                         std::sin(el));           // Z
+    }
 
     // Quality
     bool useSmoothShading = true;
