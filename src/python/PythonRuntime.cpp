@@ -3,6 +3,7 @@
 #include <pybind11/embed.h>
 #include <pybind11/pybind11.h>
 
+#include <algorithm>
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
@@ -22,6 +23,51 @@ namespace fs = std::filesystem;
 namespace atom::python {
 
 namespace {
+
+std::string expectedBundledPythonDirName() {
+    return "python" + std::to_string(PY_MAJOR_VERSION) + "." + std::to_string(PY_MINOR_VERSION);
+}
+
+fs::path findMatchingBundledPythonLibDir(const fs::path& libDir) {
+    if (!fs::exists(libDir) || !fs::is_directory(libDir)) {
+        return {};
+    }
+
+    const fs::path expectedDir = libDir / expectedBundledPythonDirName();
+    if (fs::exists(expectedDir) && fs::is_directory(expectedDir)) {
+        return expectedDir;
+    }
+
+    std::vector<std::string> availableVersions;
+    for (const auto& entry : fs::directory_iterator(libDir)) {
+        if (!entry.is_directory()) {
+            continue;
+        }
+
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("python3", 0) == 0) {
+            availableVersions.push_back(name);
+        }
+    }
+
+    std::sort(availableVersions.begin(), availableVersions.end());
+    if (availableVersions.empty()) {
+        std::cout << "[PythonRuntime] No bundled Python directories found in: " << libDir << std::endl;
+    } else {
+        std::cout << "[PythonRuntime] Skipping bundled Python: expected "
+                  << expectedBundledPythonDirName()
+                  << " for the embedded interpreter, found ";
+        for (size_t i = 0; i < availableVersions.size(); ++i) {
+            if (i > 0) {
+                std::cout << ", ";
+            }
+            std::cout << availableVersions[i];
+        }
+        std::cout << std::endl;
+    }
+
+    return {};
+}
 
 /**
  * @brief Get the path to the application executable
@@ -98,19 +144,11 @@ bool configureBundledPython() {
         return false;
     }
 
-    // Find Python version directory (python3.X)
     fs::path libDir = pythonBase / "lib";
-    fs::path pythonLibDir;
-    for (const auto& entry : fs::directory_iterator(libDir)) {
-        std::string name = entry.path().filename().string();
-        if (name.find("python3") == 0 && entry.is_directory()) {
-            pythonLibDir = entry.path();
-            break;
-        }
-    }
+    fs::path pythonLibDir = findMatchingBundledPythonLibDir(libDir);
 
     if (pythonLibDir.empty() || !fs::exists(pythonLibDir)) {
-        std::cout << "[PythonRuntime] Python lib directory not found in: " << libDir << std::endl;
+        std::cout << "[PythonRuntime] Compatible bundled Python not found in: " << libDir << std::endl;
         return false;
     }
 
@@ -163,18 +201,11 @@ bool configureBundledPython() {
         return false;
     }
 
-    // Find Python version directory
     fs::path libDir = pythonBase / "lib";
-    fs::path pythonLibDir;
-    for (const auto& entry : fs::directory_iterator(libDir)) {
-        std::string name = entry.path().filename().string();
-        if (name.find("python3") == 0 && entry.is_directory()) {
-            pythonLibDir = entry.path();
-            break;
-        }
-    }
+    fs::path pythonLibDir = findMatchingBundledPythonLibDir(libDir);
 
     if (pythonLibDir.empty()) {
+        std::cout << "[PythonRuntime] Compatible bundled Python not found in: " << libDir << std::endl;
         return false;
     }
 

@@ -17,10 +17,21 @@
       }
     },
     {
+      "name": "unix-make-base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_MAKE_PROGRAM": {
+          "value": "/usr/bin/make",
+          "type": "FILEPATH"
+        }
+      }
+    },
+    {
       "name": "default",
       "displayName": "Default Config",
-      "description": "Default build using vcpkg toolchain",
-      "inherits": "vcpkg-base",
+      "description": "Default local build using system-installed Qt",
+      "inherits": "unix-make-base",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -30,9 +41,31 @@
     {
       "name": "release",
       "displayName": "Release Config",
+      "description": "Release local build using system-installed Qt",
+      "inherits": "unix-make-base",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "vcpkg-default",
+      "displayName": "vcpkg Debug Config",
+      "description": "Debug build using vcpkg toolchain",
+      "inherits": "vcpkg-base",
+      "binaryDir": "${sourceDir}/build-vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "vcpkg-release",
+      "displayName": "vcpkg Release Config",
       "description": "Release build using vcpkg toolchain",
       "inherits": "vcpkg-base",
-      "binaryDir": "${sourceDir}/build-release",
+      "binaryDir": "${sourceDir}/build-vcpkg-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
@@ -42,6 +75,7 @@
       "name": "system-qt",
       "displayName": "System Qt Config",
       "description": "Build using system-installed Qt (no vcpkg)",
+      "inherits": "unix-make-base",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -52,6 +86,7 @@
       "name": "system-qt-release",
       "displayName": "System Qt Release Config",
       "description": "Release build using system-installed Qt",
+      "inherits": "unix-make-base",
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -67,6 +102,14 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "vcpkg-default",
+      "configurePreset": "vcpkg-default"
+    },
+    {
+      "name": "vcpkg-release",
+      "configurePreset": "vcpkg-release"
     },
     {
       "name": "system-qt",

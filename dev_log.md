@@ -4,6 +4,38 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## IMPORTANT — 2026-03-07: Automatic Bundled Python Synchronization in Normal Builds
+
+### Summary
+Fixed a build/runtime mismatch where the application binary was linked against one embedded Python version while the app bundle still contained an older bundled Python payload from a previous build. The concrete failure seen was `_struct` import failure because the executable was using Python 3.12 while the bundle still had `Resources/python/lib/python3.14`.
+
+### Root Cause
+- `cmake --build build` rebuilt the application binary, but bundled Python was only refreshed by the separate `deploy-python` / `deploy` targets.
+- `PythonRuntime` previously selected the first `python3*` directory it found in the bundle, so stale bundled runtimes could be picked accidentally.
+- This made the app vulnerable to ABI mismatches whenever the selected CMake Python changed or an old bundle was left in place.
+
+### What Changed
+- `bundle-python` is now part of the default build (`ALL`) so normal builds automatically synchronize the bundled Python runtime.
+- `cmake/BundlePython.cmake` now:
+  - records a manifest for the selected interpreter, version, stdlib source, ABI suffix, and platform,
+  - rebuilds the bundled standard library when those inputs change,
+  - synchronizes `site-packages` from the configured Python environment,
+  - validates the result with `import struct, numpy, ase.io`.
+- Added `scripts/sync_python_packages.py` plus `cmake/python-requirements.txt` so bundled Python dependencies are synchronized deterministically from the configured interpreter rather than installed ad hoc during deploy.
+- `PythonRuntime.cpp` now only accepts a bundled `pythonX.Y` directory that exactly matches the embedded interpreter version; otherwise it skips the bundle instead of crashing on startup.
+
+### IMPORTANT Rule Going Forward
+- The user should never need to manage bundled Python manually for normal development builds.
+- `cmake --build build` must always leave the app in a runnable state with a bundled Python runtime that matches the interpreter selected by CMake.
+- Any future Python-related build changes must preserve automatic invalidation/rebuild of stale bundled runtimes.
+
+### Verification
+- `cmake --build build -j4` rebuilt the stale bundled runtime automatically.
+- A second `cmake --build build -j4` run no-op'd cleanly with the bundled runtime reported as up to date.
+- Launching `./build/bin/atom-studio.app/Contents/MacOS/atom-studio -platform offscreen` confirmed the app now uses bundled Python 3.12 and loads ASE successfully.
+
+---
+
 ## 2026-03-07: Bond Ray Tracing (Unified BVH, Metal + OpenGL)
 
 ### Summary

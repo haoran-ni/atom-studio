@@ -34,9 +34,11 @@ A high-performance desktop application for visualization of atomic structures.
 
 3. **Build:**
    ```bash
-   cmake --preset=system-qt
+   cmake --preset=default
    cmake --build build
    ```
+
+   The normal build also synchronizes the bundled Python runtime automatically.
 
 4. **Run:**
    ```bash
@@ -50,8 +52,10 @@ A high-performance desktop application for visualization of atomic structures.
 sudo apt install qt6-base-dev qt6-declarative-dev qt6-quickcontrols2-dev
 
 # Build
-cmake --preset=system-qt
+cmake --preset=default
 cmake --build build
+
+# Bundled Python is synchronized automatically as part of the build
 
 # Run
 ./build/bin/atom-studio
@@ -61,11 +65,13 @@ cmake --build build
 
 ```bash
 # With vcpkg
-cmake --preset=default
-cmake --build build
+cmake --preset=vcpkg-default
+cmake --build build-vcpkg
+
+# Bundled Python is synchronized automatically as part of the build
 
 # Run
-./build/bin/atom-studio.exe
+./build-vcpkg/bin/atom-studio.exe
 ```
 
 ## Creating a Distributable Package

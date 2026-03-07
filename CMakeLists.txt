@@ -47,6 +47,9 @@ message(STATUS "Python version: ${Python3_VERSION}")
 message(STATUS "NumPy include: ${Python3_NumPy_INCLUDE_DIRS}")
 message(STATUS "pybind11 found: ${pybind11_VERSION}")
 
+set(PYTHON_BUNDLE_REQUIREMENTS_FILE "${CMAKE_SOURCE_DIR}/cmake/python-requirements.txt")
+set(PYTHON_PACKAGE_SYNC_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/sync_python_packages.py")
+
 # Platform-specific settings
 if(APPLE)
     set(CMAKE_MACOSX_BUNDLE ON)
@@ -109,6 +112,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
+set(PYTHON_RUNTIME_BUNDLE_ROOT "${CMAKE_BINARY_DIR}/bin")
+
 # macOS bundle settings
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -119,6 +124,7 @@ if(APPLE)
     # Post-build: Copy AGL stub framework into app bundle
     set(APP_BUNDLE_PATH "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}.app")
     set(APP_FRAMEWORKS_DIR "${APP_BUNDLE_PATH}/Contents/Frameworks")
+    set(PYTHON_RUNTIME_BUNDLE_ROOT "${APP_BUNDLE_PATH}")
 
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMENT "Copying AGL stub framework into app bundle..."
@@ -127,27 +133,38 @@ if(APPLE)
             "${CMAKE_BINARY_DIR}/Frameworks/AGL.framework"
             "${APP_FRAMEWORKS_DIR}/AGL.framework"
     )
+endif()
 
-    # Custom target to bundle Python interpreter and packages
-    # Run with: cmake --build build --target deploy-python
-    add_custom_target(deploy-python
-        COMMENT "Bundling Python interpreter and packages..."
-        COMMAND ${CMAKE_COMMAND}
-            -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
-            -DAPP_BUNDLE_PATH=${APP_BUNDLE_PATH}
-            -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
-            -P ${CMAKE_SOURCE_DIR}/cmake/BundlePython.cmake
-        DEPENDS ${PROJECT_NAME}
-    )
+add_custom_target(bundle-python ALL
+    COMMENT "Synchronizing bundled Python runtime..."
+    COMMAND ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+        -DAPP_BUNDLE_PATH=${PYTHON_RUNTIME_BUNDLE_ROOT}
+        -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
+        -DPYTHON_REQUIREMENTS_FILE=${PYTHON_BUNDLE_REQUIREMENTS_FILE}
+        -DPYTHON_PACKAGE_SYNC_SCRIPT=${PYTHON_PACKAGE_SYNC_SCRIPT}
+        -P ${CMAKE_SOURCE_DIR}/cmake/BundlePython.cmake
+    DEPENDS
+        ${PROJECT_NAME}
+        ${PYTHON_BUNDLE_REQUIREMENTS_FILE}
+        ${PYTHON_PACKAGE_SYNC_SCRIPT}
+    VERBATIM
+)
 
+add_custom_target(deploy-python
+    COMMENT "Ensuring bundled Python runtime is up to date..."
+    DEPENDS bundle-python
+)
+
+if(APPLE)
     # Custom target to deploy Qt frameworks into the app bundle
     # Run with: cmake --build build --target deploy
     add_custom_target(deploy
-        COMMENT "Deploying Qt frameworks and Python into app bundle..."
+        COMMENT "Deploying Qt frameworks and bundled Python into app bundle..."
         COMMAND "${QT_BIN_DIR}/macdeployqt" "${APP_BUNDLE_PATH}" -qmldir=${CMAKE_SOURCE_DIR}/src/ui/qml
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_BINARY_DIR}/Frameworks/AGL.framework"
             "${APP_FRAMEWORKS_DIR}/AGL.framework"
-        DEPENDS ${PROJECT_NAME} deploy-python
+        DEPENDS ${PROJECT_NAME} bundle-python
     )
 endif()

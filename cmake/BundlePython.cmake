@@ -1,228 +1,250 @@
 # cmake/BundlePython.cmake
-# Script to bundle Python interpreter and packages into the application
+# Synchronizes a bundled Python runtime next to the application.
 #
-# This script:
-# 1. Copies the Python standard library to the bundle
-# 2. Installs required packages (ASE, NumPy)
-#
-# Usage: Called during 'deploy' target build
+# Required variables:
+# - PYTHON_EXECUTABLE
+# - APP_BUNDLE_PATH
+# - PYTHON_REQUIREMENTS_FILE
+# - PYTHON_PACKAGE_SYNC_SCRIPT
 
-# Configuration (passed from main CMakeLists.txt)
-# PYTHON_EXECUTABLE - Path to Python interpreter
-# APP_BUNDLE_PATH - Path to the app bundle (macOS) or install directory
+cmake_minimum_required(VERSION 3.25)
 
-# Function to bundle Python on macOS
-function(bundle_python_macos)
-    message(STATUS "Bundling Python for macOS...")
+foreach(required_var
+        PYTHON_EXECUTABLE
+        APP_BUNDLE_PATH
+        PYTHON_REQUIREMENTS_FILE
+        PYTHON_PACKAGE_SYNC_SCRIPT)
+    if(NOT DEFINED ${required_var} OR "${${required_var}}" STREQUAL "")
+        message(FATAL_ERROR "BundlePython.cmake requires ${required_var}")
+    endif()
+endforeach()
 
-    set(RESOURCES_DIR "${APP_BUNDLE_PATH}/Contents/Resources")
-    set(PYTHON_BUNDLE_DIR "${RESOURCES_DIR}/python")
-
-    # Get Python prefix (where Python is installed)
+function(query_python output_var code)
     execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.prefix)"
-        OUTPUT_VARIABLE PYTHON_PREFIX
+        COMMAND "${PYTHON_EXECUTABLE}" -c "${code}"
+        RESULT_VARIABLE query_result
+        OUTPUT_VARIABLE query_output
+        ERROR_VARIABLE query_error
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    # Get Python version
-    execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-        OUTPUT_VARIABLE PY_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
+    if(NOT query_result EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to query Python with `${code}`:\n${query_error}")
+    endif()
 
-    message(STATUS "  Python prefix: ${PYTHON_PREFIX}")
-    message(STATUS "  Python version: ${PY_VERSION}")
+    set(${output_var} "${query_output}" PARENT_SCOPE)
+endfunction()
 
-    set(PYTHON_LIB_SRC "${PYTHON_PREFIX}/lib/python${PY_VERSION}")
-    set(PYTHON_LIB_DST "${PYTHON_BUNDLE_DIR}/lib/python${PY_VERSION}")
+function(write_stdlib_manifest manifest_file)
+    file(WRITE "${manifest_file}" [=[
+set(ATOM_STUDIO_BUNDLED_PYTHON_EXECUTABLE "@PYTHON_EXECUTABLE@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_PREFIX "@PYTHON_PREFIX@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_VERSION "@PYTHON_VERSION@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_STDLIB_SRC "@PYTHON_STDLIB_SRC@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_EXT_SUFFIX "@PYTHON_EXT_SUFFIX@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM "@CMAKE_SYSTEM_NAME@")
+]=])
 
-    # Remove old bundle if exists
+    file(READ "${manifest_file}" manifest_contents)
+    string(REPLACE "@PYTHON_EXECUTABLE@" "${PYTHON_EXECUTABLE}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_PREFIX@" "${PYTHON_PREFIX}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_VERSION@" "${PYTHON_VERSION}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_STDLIB_SRC@" "${PYTHON_STDLIB_SRC}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_EXT_SUFFIX@" "${PYTHON_EXT_SUFFIX}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@CMAKE_SYSTEM_NAME@" "${CMAKE_SYSTEM_NAME}" manifest_contents "${manifest_contents}")
+    file(WRITE "${manifest_file}" "${manifest_contents}")
+endfunction()
+
+function(rebuild_standard_library)
+    message(STATUS "  Rebuilding bundled Python standard library")
+
     if(EXISTS "${PYTHON_BUNDLE_DIR}")
         file(REMOVE_RECURSE "${PYTHON_BUNDLE_DIR}")
     endif()
 
-    # Create directory structure
-    file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}/lib")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}")
 
-    message(STATUS "  Copying Python standard library (this may take a moment)...")
-
-    # Copy entire standard library, excluding test directories and large unnecessary items
-    file(COPY "${PYTHON_LIB_SRC}/"
-         DESTINATION "${PYTHON_LIB_DST}"
-         PATTERN "test" EXCLUDE
-         PATTERN "tests" EXCLUDE
-         PATTERN "test_*" EXCLUDE
-         PATTERN "__pycache__" EXCLUDE
-         PATTERN "*.pyc" EXCLUDE
-         PATTERN "*.pyo" EXCLUDE
-         PATTERN "idlelib" EXCLUDE
-         PATTERN "tkinter" EXCLUDE
-         PATTERN "turtledemo" EXCLUDE
-         PATTERN "turtle.py" EXCLUDE
-         PATTERN "ensurepip" EXCLUDE
-         PATTERN "distutils" EXCLUDE
-         PATTERN "lib2to3" EXCLUDE
-         PATTERN "pydoc_data" EXCLUDE
-         PATTERN "site-packages" EXCLUDE
-    )
-
-    # Create empty site-packages directory
-    file(MAKE_DIRECTORY "${PYTHON_LIB_DST}/site-packages")
-
-    # Install packages using pip
-    message(STATUS "  Installing Python packages (ASE, NumPy)...")
-    set(SITE_PACKAGES "${PYTHON_LIB_DST}/site-packages")
-
-    execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -m pip install
-            --target "${SITE_PACKAGES}"
-            --upgrade
-            --no-user
-            ase numpy
-        RESULT_VARIABLE PIP_RESULT
-        OUTPUT_VARIABLE PIP_OUTPUT
-        ERROR_VARIABLE PIP_ERROR
-    )
-
-    if(NOT PIP_RESULT EQUAL 0)
-        message(WARNING "  pip install failed: ${PIP_ERROR}")
-        message(STATUS "  Trying with --break-system-packages...")
-        execute_process(
-            COMMAND ${PYTHON_EXECUTABLE} -m pip install
-                --target "${SITE_PACKAGES}"
-                --upgrade
-                --no-user
-                --break-system-packages
-                ase numpy
-            RESULT_VARIABLE PIP_RESULT2
+        file(COPY "${PYTHON_STDLIB_SRC}/"
+            DESTINATION "${PYTHON_LIB_DST}"
+            PATTERN "test" EXCLUDE
+            PATTERN "tests" EXCLUDE
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.pyo" EXCLUDE
+            PATTERN "idlelib" EXCLUDE
+            PATTERN "tkinter" EXCLUDE
+            PATTERN "turtledemo" EXCLUDE
+            PATTERN "site-packages" EXCLUDE
         )
-        if(NOT PIP_RESULT2 EQUAL 0)
-            message(FATAL_ERROR "Failed to install Python packages")
+
+        if(EXISTS "${PYTHON_PREFIX}/DLLs")
+            file(COPY "${PYTHON_PREFIX}/DLLs" DESTINATION "${PYTHON_BUNDLE_DIR}")
         endif()
+
+        file(GLOB PYTHON_DLLS "${PYTHON_PREFIX}/*.dll")
+        if(PYTHON_DLLS)
+            file(COPY ${PYTHON_DLLS} DESTINATION "${PYTHON_BUNDLE_DIR}")
+        endif()
+    else()
+        file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}/lib")
+        file(COPY "${PYTHON_STDLIB_SRC}/"
+            DESTINATION "${PYTHON_LIB_DST}"
+            PATTERN "test" EXCLUDE
+            PATTERN "tests" EXCLUDE
+            PATTERN "test_*" EXCLUDE
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.pyo" EXCLUDE
+            PATTERN "idlelib" EXCLUDE
+            PATTERN "tkinter" EXCLUDE
+            PATTERN "turtledemo" EXCLUDE
+            PATTERN "turtle.py" EXCLUDE
+            PATTERN "ensurepip" EXCLUDE
+            PATTERN "distutils" EXCLUDE
+            PATTERN "lib2to3" EXCLUDE
+            PATTERN "pydoc_data" EXCLUDE
+            PATTERN "site-packages" EXCLUDE
+        )
     endif()
 
-    # Report bundle size
-    execute_process(
-        COMMAND du -sh "${PYTHON_BUNDLE_DIR}"
-        OUTPUT_VARIABLE BUNDLE_SIZE
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    message(STATUS "  Python bundle size: ${BUNDLE_SIZE}")
-
-    message(STATUS "  Python bundling complete!")
+    file(MAKE_DIRECTORY "${SITE_PACKAGES}")
+    write_stdlib_manifest("${STDLIB_MANIFEST_FILE}")
 endfunction()
 
-# Function to bundle Python on Windows
-function(bundle_python_windows)
-    message(STATUS "Bundling Python for Windows...")
-
-    set(PYTHON_BUNDLE_DIR "${APP_BUNDLE_PATH}/python")
-
-    # Get Python prefix
+function(sync_site_packages)
     execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.prefix)"
-        OUTPUT_VARIABLE PYTHON_PREFIX
+        COMMAND "${PYTHON_EXECUTABLE}" "${PYTHON_PACKAGE_SYNC_SCRIPT}"
+            --requirements-file "${PYTHON_REQUIREMENTS_FILE}"
+            --target-site-packages "${SITE_PACKAGES}"
+            --manifest-file "${PACKAGE_MANIFEST_FILE}"
+        RESULT_VARIABLE sync_result
+        OUTPUT_VARIABLE sync_output
+        ERROR_VARIABLE sync_error
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    # Remove old bundle if exists
-    if(EXISTS "${PYTHON_BUNDLE_DIR}")
-        file(REMOVE_RECURSE "${PYTHON_BUNDLE_DIR}")
+    if(NOT "${sync_output}" STREQUAL "")
+        message(STATUS "  ${sync_output}")
     endif()
 
-    # Create directory
-    file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}")
-
-    # Copy Python DLLs
-    file(GLOB PYTHON_DLLS "${PYTHON_PREFIX}/*.dll")
-    file(COPY ${PYTHON_DLLS} DESTINATION "${PYTHON_BUNDLE_DIR}")
-
-    # Copy Lib directory (excluding tests)
-    file(COPY "${PYTHON_PREFIX}/Lib"
-         DESTINATION "${PYTHON_BUNDLE_DIR}"
-         PATTERN "test" EXCLUDE
-         PATTERN "tests" EXCLUDE
-         PATTERN "__pycache__" EXCLUDE
-         PATTERN "idlelib" EXCLUDE
-         PATTERN "tkinter" EXCLUDE
-         PATTERN "turtledemo" EXCLUDE
-    )
-
-    # Copy DLLs directory
-    if(EXISTS "${PYTHON_PREFIX}/DLLs")
-        file(COPY "${PYTHON_PREFIX}/DLLs" DESTINATION "${PYTHON_BUNDLE_DIR}")
+    if(NOT sync_result EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to synchronize bundled Python packages:\n${sync_error}")
     endif()
-
-    # Install packages
-    set(SITE_PACKAGES "${PYTHON_BUNDLE_DIR}/Lib/site-packages")
-    execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -m pip install
-            --target "${SITE_PACKAGES}"
-            --upgrade
-            ase numpy
-    )
-
-    message(STATUS "  Python bundling complete!")
 endfunction()
 
-# Function to bundle Python on Linux
-function(bundle_python_linux)
-    message(STATUS "Bundling Python for Linux...")
-
-    set(PYTHON_BUNDLE_DIR "${APP_BUNDLE_PATH}/python")
-
-    execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.prefix)"
-        OUTPUT_VARIABLE PYTHON_PREFIX
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-        OUTPUT_VARIABLE PY_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-    # Remove old bundle if exists
-    if(EXISTS "${PYTHON_BUNDLE_DIR}")
-        file(REMOVE_RECURSE "${PYTHON_BUNDLE_DIR}")
+function(validate_bundle output_result output_error)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set(path_separator ";")
+    else()
+        set(path_separator ":")
     endif()
 
-    file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}/lib")
+    set(bundle_python_path "${SITE_PACKAGES}${path_separator}${PYTHON_LIB_DST}")
 
-    # Copy standard library (excluding tests)
-    file(COPY "${PYTHON_PREFIX}/lib/python${PY_VERSION}/"
-         DESTINATION "${PYTHON_BUNDLE_DIR}/lib/python${PY_VERSION}"
-         PATTERN "test" EXCLUDE
-         PATTERN "tests" EXCLUDE
-         PATTERN "__pycache__" EXCLUDE
-         PATTERN "idlelib" EXCLUDE
-         PATTERN "tkinter" EXCLUDE
-         PATTERN "site-packages" EXCLUDE
-    )
-
-    # Create site-packages
-    file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}/lib/python${PY_VERSION}/site-packages")
-
-    # Install packages
-    set(SITE_PACKAGES "${PYTHON_BUNDLE_DIR}/lib/python${PY_VERSION}/site-packages")
     execute_process(
-        COMMAND ${PYTHON_EXECUTABLE} -m pip install
-            --target "${SITE_PACKAGES}"
-            --upgrade
-            ase numpy
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "PYTHONHOME=${PYTHON_BUNDLE_DIR}"
+            "PYTHONPATH=${bundle_python_path}"
+            "PYTHONNOUSERSITE=1"
+            "${PYTHON_EXECUTABLE}" -c "import struct; import numpy; import ase.io"
+        RESULT_VARIABLE validation_result
+        OUTPUT_VARIABLE validation_output
+        ERROR_VARIABLE validation_error
+        OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-    message(STATUS "  Python bundling complete!")
+    if(NOT "${validation_output}" STREQUAL "")
+        message(STATUS "  ${validation_output}")
+    endif()
+
+    set(${output_result} "${validation_result}" PARENT_SCOPE)
+    set(${output_error} "${validation_error}" PARENT_SCOPE)
 endfunction()
 
-# Main bundling logic
+message(STATUS "Synchronizing bundled Python runtime...")
+
+query_python(PYTHON_PREFIX "import sys; print(sys.prefix)")
+query_python(PYTHON_VERSION "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+query_python(PYTHON_STDLIB_SRC "import sysconfig; print(sysconfig.get_path('stdlib'))")
+query_python(PYTHON_EXT_SUFFIX "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')")
+
+file(TO_CMAKE_PATH "${PYTHON_EXECUTABLE}" PYTHON_EXECUTABLE)
+file(TO_CMAKE_PATH "${PYTHON_PREFIX}" PYTHON_PREFIX)
+file(TO_CMAKE_PATH "${PYTHON_STDLIB_SRC}" PYTHON_STDLIB_SRC)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    bundle_python_macos()
+    set(PYTHON_BUNDLE_DIR "${APP_BUNDLE_PATH}/Contents/Resources/python")
+    set(PYTHON_LIB_DST "${PYTHON_BUNDLE_DIR}/lib/python${PYTHON_VERSION}")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    bundle_python_windows()
+    set(PYTHON_BUNDLE_DIR "${APP_BUNDLE_PATH}/python")
+    set(PYTHON_LIB_DST "${PYTHON_BUNDLE_DIR}/Lib")
 else()
-    bundle_python_linux()
+    set(PYTHON_BUNDLE_DIR "${APP_BUNDLE_PATH}/python")
+    set(PYTHON_LIB_DST "${PYTHON_BUNDLE_DIR}/lib/python${PYTHON_VERSION}")
 endif()
+
+set(SITE_PACKAGES "${PYTHON_LIB_DST}/site-packages")
+set(STDLIB_MANIFEST_FILE "${PYTHON_BUNDLE_DIR}/.atom-studio-stdlib-manifest.cmake")
+set(PACKAGE_MANIFEST_FILE "${PYTHON_BUNDLE_DIR}/.atom-studio-package-manifest.json")
+
+set(rebuild_stdlib FALSE)
+set(rebuild_reason "")
+
+if(NOT EXISTS "${STDLIB_MANIFEST_FILE}")
+    set(rebuild_stdlib TRUE)
+    set(rebuild_reason "missing manifest")
+elseif(NOT EXISTS "${PYTHON_LIB_DST}")
+    set(rebuild_stdlib TRUE)
+    set(rebuild_reason "missing standard library directory")
+else()
+    include("${STDLIB_MANIFEST_FILE}")
+
+    if(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_EXECUTABLE}" STREQUAL "${PYTHON_EXECUTABLE}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python executable changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_PREFIX}" STREQUAL "${PYTHON_PREFIX}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python prefix changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_VERSION}" STREQUAL "${PYTHON_VERSION}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python version changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_STDLIB_SRC}" STREQUAL "${PYTHON_STDLIB_SRC}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python stdlib source changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_EXT_SUFFIX}" STREQUAL "${PYTHON_EXT_SUFFIX}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python ABI suffix changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM}" STREQUAL "${CMAKE_SYSTEM_NAME}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "platform changed")
+    endif()
+endif()
+
+if(rebuild_stdlib)
+    message(STATUS "  Bundled Python standard library is out of date: ${rebuild_reason}")
+    rebuild_standard_library()
+else()
+    message(STATUS "  Bundled Python standard library is up to date")
+endif()
+
+file(MAKE_DIRECTORY "${SITE_PACKAGES}")
+sync_site_packages()
+
+validate_bundle(validation_result validation_error)
+if(NOT validation_result EQUAL 0)
+    message(WARNING
+        "  Bundled Python validation failed. Rebuilding from scratch.\n${validation_error}")
+    rebuild_standard_library()
+    sync_site_packages()
+    validate_bundle(validation_result validation_error)
+    if(NOT validation_result EQUAL 0)
+        message(FATAL_ERROR
+            "Bundled Python validation failed after rebuild:\n${validation_error}")
+    endif()
+endif()
+
+write_stdlib_manifest("${STDLIB_MANIFEST_FILE}")
+message(STATUS "  Bundled Python runtime is ready")
