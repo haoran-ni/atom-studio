@@ -627,15 +627,20 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
 
     // 7. Get the output texture
     void* mtlTexture = nullptr;
+    bool needsMoreFrames = false;
     if (m_impl->currentMode == 1 && m_impl->rtRenderer) {
         m_sampleCount = m_impl->rtRenderer->sampleCount();
         emit sampleCountChanged();
+        needsMoreFrames = m_impl->rtRenderer->needsMoreFrames();
         mtlTexture = m_impl->rtRenderer->outputTexture();
     } else {
         mtlTexture = m_impl->rasterRenderer->colorTexture();
     }
 
     if (!mtlTexture) {
+        if (needsMoreFrames || m_impl->currentMode != 1) {
+            update();
+        }
         return oldNode;
     }
 
@@ -679,7 +684,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
 
     // 10. Request next frame
     if (m_impl->currentMode == 1 && m_impl->rtRenderer) {
-        if (!m_impl->rtRenderer->isConverged()) {
+        if (needsMoreFrames) {
             update();
         }
     } else {

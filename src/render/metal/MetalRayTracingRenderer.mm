@@ -9,13 +9,17 @@
 #include "../../data/BondList.h"
 #include <QDebug>
 #include <QMatrix4x4>
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 namespace atom::render::metal {
 
 static constexpr NSUInteger kPreferredOverlaySampleCount = 4;
+static constexpr int kOutputSlotCount = 3;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,26 +31,49 @@ static simd_float4x4 qMatToSimd(const QMatrix4x4& m) {
     return result;
 }
 
+enum class OutputSlotState : uint8_t {
+    Free = 0,
+    InFlight = 1,
+    Ready = 2
+};
+
+struct AsyncFrameState {
+    std::atomic<uint64_t> generation{1};
+    std::atomic<int> inFlightSlot{-1};
+    std::atomic<int> latestReadySlot{-1};
+    std::atomic<int> latestReadySampleCount{0};
+    std::array<std::atomic<uint8_t>, kOutputSlotCount> slotStates{};
+
+    AsyncFrameState() {
+        for (auto& state : slotStates) {
+            state.store(static_cast<uint8_t>(OutputSlotState::Free));
+        }
+    }
+};
+
 // ---------------------------------------------------------------------------
 // PIMPL
 // ---------------------------------------------------------------------------
 
 struct MetalRayTracingRenderer::Impl {
+    struct OutputSlot {
+        id<MTLTexture> msaaOutputTexture = nil;
+        id<MTLTexture> outputTexture = nil;
+        id<MTLTexture> msaaOverlayDepthTexture = nil;
+        id<MTLTexture> overlayDepthTexture = nil;
+    };
+
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
     NSUInteger overlaySampleCount = 1;
+    std::array<OutputSlot, kOutputSlotCount> outputSlots{};
+    std::shared_ptr<AsyncFrameState> asyncState = std::make_shared<AsyncFrameState>();
 
     // Full-screen quad (6 × float2)
     id<MTLBuffer> quadVertexBuffer = nil;
 
     // Accumulation texture (RGBA32Float)
     id<MTLTexture> accumTexture = nil;
-
-    // Display output texture (BGRA8Unorm) — what the viewport shows
-    id<MTLTexture> msaaOutputTexture = nil;
-    id<MTLTexture> outputTexture = nil;
-    id<MTLTexture> msaaOverlayDepthTexture = nil;
-    id<MTLTexture> overlayDepthTexture = nil;
 
     // Atom data buffers
     id<MTLBuffer> atomPositionBuffer = nil;  // float4(x,y,z,radius) per atom
@@ -161,12 +188,22 @@ void MetalRayTracingRenderer::cleanup() {
     m_viewportAxesRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
+    m_impl->asyncState->generation.fetch_add(1, std::memory_order_relaxed);
+    m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
+    m_impl->asyncState->latestReadySlot.store(-1, std::memory_order_relaxed);
+    m_impl->asyncState->latestReadySampleCount.store(0, std::memory_order_relaxed);
+    for (auto& state : m_impl->asyncState->slotStates) {
+        state.store(static_cast<uint8_t>(OutputSlotState::Free), std::memory_order_relaxed);
+    }
+
     m_impl->quadVertexBuffer = nil;
     m_impl->accumTexture = nil;
-    m_impl->msaaOutputTexture = nil;
-    m_impl->outputTexture = nil;
-    m_impl->msaaOverlayDepthTexture = nil;
-    m_impl->overlayDepthTexture = nil;
+    for (auto& slot : m_impl->outputSlots) {
+        slot.msaaOutputTexture = nil;
+        slot.outputTexture = nil;
+        slot.msaaOverlayDepthTexture = nil;
+        slot.overlayDepthTexture = nil;
+    }
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
     m_impl->bvhNodeMinBuffer = nil;
@@ -193,6 +230,9 @@ void MetalRayTracingRenderer::cleanup() {
     m_unitCellJointCount = 0;
     m_unitCellCylinderIndexCount = 0;
     m_unitCellSphereIndexCount = 0;
+    m_lastStateHash = 0;
+    m_outputGeneration = m_impl->asyncState->generation.load(std::memory_order_relaxed);
+    m_lastPresentedSlot = -1;
     m_initialized = false;
 }
 
@@ -228,11 +268,24 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     }
 
     // Ensure render targets exist
-    if (!m_impl->accumTexture || !m_impl->outputTexture || !m_impl->overlayDepthTexture ||
+    if (!m_impl->accumTexture || !m_impl->outputSlots[0].outputTexture ||
+        !m_impl->outputSlots[0].overlayDepthTexture ||
         (m_impl->overlaySampleCount > 1 &&
-         (!m_impl->msaaOutputTexture || !m_impl->msaaOverlayDepthTexture))) {
+         (!m_impl->outputSlots[0].msaaOutputTexture ||
+          !m_impl->outputSlots[0].msaaOverlayDepthTexture))) {
         createRenderTargets();
         resetAccumulation();
+    }
+
+    // Submit at most one GPU frame at a time. Once that frame completes, the
+    // viewport will schedule the next progressive sample.
+    if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
+        return;
+    }
+
+    const int outputSlotIndex = acquireOutputSlot();
+    if (outputSlotIndex < 0) {
+        return;
     }
 
     // Single command buffer for the entire frame — sub-passes encode into it
@@ -246,11 +299,11 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             hasUnitCellOverlay || m_settings.showViewportAxes || m_settings.showRotationCenter;
 
         if (hasAnyOverlay) {
-            renderUnitCellOverlay(camera, (__bridge void*)cmdBuffer);
-        } else if (m_impl->outputTexture) {
+            renderUnitCellOverlay(camera, (__bridge void*)cmdBuffer, outputSlotIndex);
+        } else if (m_impl->outputSlots[outputSlotIndex].outputTexture) {
             // Clear output to background
             MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-            pass.colorAttachments[0].texture = m_impl->outputTexture;
+            pass.colorAttachments[0].texture = m_impl->outputSlots[outputSlotIndex].outputTexture;
             pass.colorAttachments[0].loadAction = MTLLoadActionClear;
             pass.colorAttachments[0].storeAction = MTLStoreActionStore;
             const auto& bg = m_settings.backgroundColor;
@@ -259,8 +312,8 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             id<MTLRenderCommandEncoder> enc = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
             [enc endEncoding];
         }
+        trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, 0, m_outputGeneration);
         [cmdBuffer commit];
-        [cmdBuffer waitUntilCompleted];
         return;
     }
 
@@ -278,10 +331,10 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
         renderRTPass(camera, (__bridge void*)cmdBuffer);
     }
 
-    renderDisplayPass(camera, (__bridge void*)cmdBuffer);
+    renderDisplayPass(camera, (__bridge void*)cmdBuffer, outputSlotIndex);
 
+    trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, m_sampleCount, m_outputGeneration);
     [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
 }
 
 void MetalRayTracingRenderer::invalidateAtomData() {
@@ -294,13 +347,27 @@ void MetalRayTracingRenderer::invalidateBondData() {
     resetAccumulation();
 }
 
+bool MetalRayTracingRenderer::needsMoreFrames() const {
+    if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
+        return true;
+    }
+    return m_atomCount > 0 && !isConverged();
+}
+
 void MetalRayTracingRenderer::resetAccumulation() {
     m_sampleCount = 0;
     m_accumNeedsClear = true;
+    m_outputGeneration = m_impl->asyncState->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
 }
 
-void* MetalRayTracingRenderer::outputTexture() const {
-    return (__bridge void*)m_impl->outputTexture;
+void* MetalRayTracingRenderer::outputTexture() {
+    const int readySlot = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
+    if (readySlot < 0 || readySlot >= kOutputSlotCount) {
+        return nullptr;
+    }
+
+    m_lastPresentedSlot = readySlot;
+    return (__bridge void*)m_impl->outputSlots[readySlot].outputTexture;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,51 +385,61 @@ void MetalRayTracingRenderer::createRenderTargets() {
     accumDesc.storageMode = MTLStorageModePrivate;
     m_impl->accumTexture = [m_impl->device newTextureWithDescriptor:accumDesc];
 
-    // Display output: BGRA8Unorm
-    MTLTextureDescriptor* outputDesc = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                    width:m_width
-                                   height:m_height
-                                mipmapped:NO];
-    outputDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    outputDesc.storageMode = MTLStorageModePrivate;
-    m_impl->outputTexture = [m_impl->device newTextureWithDescriptor:outputDesc];
-
-    if (m_impl->overlaySampleCount > 1) {
-        MTLTextureDescriptor* msaaOutputDesc = [MTLTextureDescriptor
+    for (auto& slot : m_impl->outputSlots) {
+        // Display output: BGRA8Unorm
+        MTLTextureDescriptor* outputDesc = [MTLTextureDescriptor
             texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                         width:m_width
                                        height:m_height
                                     mipmapped:NO];
-        msaaOutputDesc.textureType = MTLTextureType2DMultisample;
-        msaaOutputDesc.sampleCount = m_impl->overlaySampleCount;
-        msaaOutputDesc.usage = MTLTextureUsageRenderTarget;
-        msaaOutputDesc.storageMode = MTLStorageModePrivate;
-        m_impl->msaaOutputTexture = [m_impl->device newTextureWithDescriptor:msaaOutputDesc];
+        outputDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        outputDesc.storageMode = MTLStorageModePrivate;
+        slot.outputTexture = [m_impl->device newTextureWithDescriptor:outputDesc];
 
-        MTLTextureDescriptor* msaaDepthDesc = [MTLTextureDescriptor
+        if (m_impl->overlaySampleCount > 1) {
+            MTLTextureDescriptor* msaaOutputDesc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                            width:m_width
+                                           height:m_height
+                                        mipmapped:NO];
+            msaaOutputDesc.textureType = MTLTextureType2DMultisample;
+            msaaOutputDesc.sampleCount = m_impl->overlaySampleCount;
+            msaaOutputDesc.usage = MTLTextureUsageRenderTarget;
+            msaaOutputDesc.storageMode = MTLStorageModePrivate;
+            slot.msaaOutputTexture = [m_impl->device newTextureWithDescriptor:msaaOutputDesc];
+
+            MTLTextureDescriptor* msaaDepthDesc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                            width:m_width
+                                           height:m_height
+                                        mipmapped:NO];
+            msaaDepthDesc.textureType = MTLTextureType2DMultisample;
+            msaaDepthDesc.sampleCount = m_impl->overlaySampleCount;
+            msaaDepthDesc.usage = MTLTextureUsageRenderTarget;
+            msaaDepthDesc.storageMode = MTLStorageModePrivate;
+            slot.msaaOverlayDepthTexture = [m_impl->device newTextureWithDescriptor:msaaDepthDesc];
+        } else {
+            slot.msaaOutputTexture = nil;
+            slot.msaaOverlayDepthTexture = nil;
+        }
+
+        MTLTextureDescriptor* overlayDepthDesc = [MTLTextureDescriptor
             texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
                                         width:m_width
                                        height:m_height
                                     mipmapped:NO];
-        msaaDepthDesc.textureType = MTLTextureType2DMultisample;
-        msaaDepthDesc.sampleCount = m_impl->overlaySampleCount;
-        msaaDepthDesc.usage = MTLTextureUsageRenderTarget;
-        msaaDepthDesc.storageMode = MTLStorageModePrivate;
-        m_impl->msaaOverlayDepthTexture = [m_impl->device newTextureWithDescriptor:msaaDepthDesc];
-    } else {
-        m_impl->msaaOutputTexture = nil;
-        m_impl->msaaOverlayDepthTexture = nil;
+        overlayDepthDesc.usage = MTLTextureUsageRenderTarget;
+        overlayDepthDesc.storageMode = MTLStorageModePrivate;
+        slot.overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
     }
 
-    MTLTextureDescriptor* overlayDepthDesc = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
-                                    width:m_width
-                                   height:m_height
-                                mipmapped:NO];
-    overlayDepthDesc.usage = MTLTextureUsageRenderTarget;
-    overlayDepthDesc.storageMode = MTLStorageModePrivate;
-    m_impl->overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
+    m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
+    m_impl->asyncState->latestReadySlot.store(-1, std::memory_order_relaxed);
+    m_impl->asyncState->latestReadySampleCount.store(0, std::memory_order_relaxed);
+    for (auto& state : m_impl->asyncState->slotStates) {
+        state.store(static_cast<uint8_t>(OutputSlotState::Free), std::memory_order_relaxed);
+    }
+    m_lastPresentedSlot = -1;
 }
 
 void MetalRayTracingRenderer::uploadSceneData() {
@@ -663,24 +740,27 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     [encoder endEncoding];
 }
 
-void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdBuf) {
+void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
+                                                void* cmdBuf,
+                                                int outputSlotIndex) {
     DisplayUniforms disp{};
     disp.sampleCount = static_cast<float>(m_sampleCount);
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
+    const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-    if (m_impl->msaaOutputTexture) {
-        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
-        pass.colorAttachments[0].resolveTexture = m_impl->outputTexture;
+    if (outputSlot.msaaOutputTexture) {
+        pass.colorAttachments[0].texture = outputSlot.msaaOutputTexture;
+        pass.colorAttachments[0].resolveTexture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
     } else {
-        pass.colorAttachments[0].texture = m_impl->outputTexture;
+        pass.colorAttachments[0].texture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
-    pass.depthAttachment.texture = m_impl->msaaOutputTexture ? m_impl->msaaOverlayDepthTexture
-                                                             : m_impl->overlayDepthTexture;
+    pass.depthAttachment.texture = outputSlot.msaaOutputTexture ? outputSlot.msaaOverlayDepthTexture
+                                                                : outputSlot.overlayDepthTexture;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1.0;
@@ -731,8 +811,11 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera, void* cmdB
     [encoder endEncoding];
 }
 
-void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* cmdBuf) {
-    if (!m_impl->outputTexture) {
+void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
+                                                    void* cmdBuf,
+                                                    int outputSlotIndex) {
+    const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];
+    if (!outputSlot.outputTexture) {
         return;
     }
 
@@ -751,16 +834,16 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera, void* 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    if (m_impl->msaaOutputTexture) {
-        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
-        pass.colorAttachments[0].resolveTexture = m_impl->outputTexture;
+    if (outputSlot.msaaOutputTexture) {
+        pass.colorAttachments[0].texture = outputSlot.msaaOutputTexture;
+        pass.colorAttachments[0].resolveTexture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
     } else {
-        pass.colorAttachments[0].texture = m_impl->outputTexture;
+        pass.colorAttachments[0].texture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
-    pass.depthAttachment.texture = m_impl->msaaOutputTexture ? m_impl->msaaOverlayDepthTexture
-                                                             : m_impl->overlayDepthTexture;
+    pass.depthAttachment.texture = outputSlot.msaaOutputTexture ? outputSlot.msaaOverlayDepthTexture
+                                                                : outputSlot.overlayDepthTexture;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1.0;
@@ -861,6 +944,68 @@ void MetalRayTracingRenderer::encodeUnitCellOverlayDraws(
                      indexBufferOffset:0
                          instanceCount:m_unitCellJointCount];
     }
+}
+
+int MetalRayTracingRenderer::acquireOutputSlot() const {
+    const int inFlightSlot = m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire);
+    if (inFlightSlot >= 0) {
+        return -1;
+    }
+
+    const int latestReadySlot =
+        m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
+    const auto isReusable = [&](int slotIndex) {
+        return slotIndex != latestReadySlot && slotIndex != m_lastPresentedSlot;
+    };
+
+    for (int slotIndex = 0; slotIndex < kOutputSlotCount; ++slotIndex) {
+        const auto state = static_cast<OutputSlotState>(
+            m_impl->asyncState->slotStates[static_cast<size_t>(slotIndex)].load(std::memory_order_acquire));
+        if (state == OutputSlotState::Free && isReusable(slotIndex)) {
+            return slotIndex;
+        }
+    }
+
+    for (int slotIndex = 0; slotIndex < kOutputSlotCount; ++slotIndex) {
+        const auto state = static_cast<OutputSlotState>(
+            m_impl->asyncState->slotStates[static_cast<size_t>(slotIndex)].load(std::memory_order_acquire));
+        if (state == OutputSlotState::Ready && isReusable(slotIndex)) {
+            return slotIndex;
+        }
+    }
+
+    return -1;
+}
+
+void MetalRayTracingRenderer::trackSubmittedFrame(void* cmdBuf,
+                                                  int outputSlotIndex,
+                                                  int submittedSampleCount,
+                                                  uint64_t generation) {
+    auto asyncState = m_impl->asyncState;
+    asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+        static_cast<uint8_t>(OutputSlotState::InFlight), std::memory_order_release);
+    asyncState->inFlightSlot.store(outputSlotIndex, std::memory_order_release);
+
+    id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
+    [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
+        const auto freeState = static_cast<uint8_t>(OutputSlotState::Free);
+        const auto readyState = static_cast<uint8_t>(OutputSlotState::Ready);
+
+        int expectedSlot = outputSlotIndex;
+        asyncState->inFlightSlot.compare_exchange_strong(expectedSlot, -1, std::memory_order_acq_rel);
+
+        if (completedBuffer.status != MTLCommandBufferStatusCompleted ||
+            asyncState->generation.load(std::memory_order_acquire) != generation) {
+            asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+                freeState, std::memory_order_release);
+            return;
+        }
+
+        asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+            readyState, std::memory_order_release);
+        asyncState->latestReadySampleCount.store(submittedSampleCount, std::memory_order_release);
+        asyncState->latestReadySlot.store(outputSlotIndex, std::memory_order_release);
+    }];
 }
 
 } // namespace atom::render::metal

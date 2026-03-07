@@ -34,20 +34,26 @@ public:
     // Progressive rendering state
     int sampleCount() const { return m_sampleCount; }
     bool isConverged() const { return m_sampleCount >= m_settings.maxRTSamples; }
+    bool needsMoreFrames() const;
     void resetAccumulation();
 
     /// Returns the display-ready output texture (id<MTLTexture> as void*).
-    void* outputTexture() const;
+    void* outputTexture();
 
 private:
     void createRenderTargets();
     void uploadSceneData();
     void uploadUnitCellData();
     void renderRTPass(const Camera& camera, void* cmdBuffer);
-    void renderDisplayPass(const Camera& camera, void* cmdBuffer);
-    void renderUnitCellOverlay(const Camera& camera, void* cmdBuffer);
+    void renderDisplayPass(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
+    void renderUnitCellOverlay(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
     bool hasUnitCellOverlayData() const;
     void encodeUnitCellOverlayDraws(void* encoder, const RTUnitCellUniforms& unitCell);
+    int acquireOutputSlot() const;
+    void trackSubmittedFrame(void* cmdBuffer,
+                             int outputSlotIndex,
+                             int submittedSampleCount,
+                             uint64_t generation);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -74,6 +80,8 @@ private:
     int m_unitCellCylinderIndexCount = 0;
     int m_unitCellSphereIndexCount = 0;
     uint64_t m_lastStateHash = 0;
+    uint64_t m_outputGeneration = 1;
+    int m_lastPresentedSlot = -1;
 };
 
 } // namespace atom::render::metal

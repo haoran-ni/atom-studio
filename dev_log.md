@@ -4,6 +4,43 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-07: RT-001 Metal Ray Tracing Without Per-Frame CPU Blocking
+
+### Summary
+Removed the Metal ray tracing renderer's per-frame `waitUntilCompleted()` stall from the normal render path. The renderer now submits work asynchronously, keeps multiple output textures in a small ring, and lets the viewport present the latest completed frame when it becomes available.
+
+### Root Cause
+- The Metal RT path previously blocked on the command buffer every frame.
+- That forced CPU and GPU work into lockstep, preventing overlap between progressive sample submission and GPU execution.
+- As scene cost increased, the render thread paid the full GPU latency on every sample.
+
+### What Changed
+- `MetalRayTracingRenderer` now tracks asynchronous output-slot state with a small buffered texture ring.
+- Normal-frame submission no longer calls `waitUntilCompleted()` after RT and display passes.
+- Command buffer completion handlers mark output slots ready once the GPU finishes rendering them.
+- `outputTexture()` now returns the latest completed slot instead of assuming the just-submitted frame is immediately displayable.
+- Added `needsMoreFrames()` so the viewport can keep scheduling progressive frames while GPU work is still in flight.
+- `MetalViewport` now tolerates `outputTexture()` returning `nullptr` temporarily and keeps requesting frames until a completed RT texture is ready.
+
+### Key Design Decisions
+- Keep at most one RT frame in flight at a time, but avoid blocking the CPU while that frame executes.
+- Use buffered output textures so the viewport never needs to read from the same texture currently being rendered.
+- Preserve the existing progressive accumulation model and overlay composition flow.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalRayTracingRenderer.h` | Added async frame/output-slot helpers and `needsMoreFrames()` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Replaced blocking waits with async submission, buffered output textures, and completion-handler state tracking |
+| `src/ui/components/MetalViewport.mm` | Continue scheduling RT frames until a completed Metal output texture is ready |
+| `renderer_improvement_plan.md` | Marked RT-001 fixed and recorded verification notes |
+
+### Verification
+- Build: `cmake --build build --target atom-render -j4` — success.
+- Runtime validation: the Metal RT path now compiles and the viewport-side scheduling logic handles frames whose output texture is not ready yet without stalling the render thread.
+
+---
+
 ## IMPORTANT — 2026-03-07: Automatic Bundled Python Synchronization in Normal Builds
 
 ### Summary
