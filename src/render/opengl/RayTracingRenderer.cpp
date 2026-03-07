@@ -3,6 +3,7 @@
 #include "../common/BVH.h"
 #include "../common/RenderStateHash.h"
 #include "../../data/Structure.h"
+#include "../../data/BondList.h"
 #include <QDebug>
 #include <cassert>
 
@@ -64,6 +65,14 @@ uniform vec3 uBackgroundColor;
 // Progressive rendering
 uniform uint uFrameCount;
 
+// Bond data (texture buffer objects)
+uniform samplerBuffer uBondStartPositions; // vec4(x, y, z, 0)
+uniform samplerBuffer uBondEndPositions;   // vec4(x, y, z, 0)
+uniform samplerBuffer uBondColors;         // vec4(r, g, b, a)
+uniform int uBondCount;
+uniform float uBondRadius;
+uniform bool uShowBonds;
+
 // Feature toggles
 uniform bool uEnableShadows;
 uniform bool uEnableAO;
@@ -103,6 +112,40 @@ float intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius) {
     if (t > 0.001) return t;
     t = -b + sqrtDisc;
     if (t > 0.001) return t;
+    return -1.0;
+}
+
+// ---------- Ray-cylinder intersection ----------
+
+// Finite cylinder from pa to pb with given radius. Returns t or -1.
+float intersectCylinder(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float radius) {
+    vec3 ba = pb - pa;
+    float baba = dot(ba, ba);
+    if (baba < 1e-8) return -1.0;
+
+    vec3 oc = ro - pa;
+    float bard = dot(ba, rd);
+    float baoc = dot(ba, oc);
+
+    float k2 = baba - bard * bard;
+    float k1 = baba * dot(oc, rd) - baoc * bard;
+    float k0 = baba * dot(oc, oc) - baoc * baoc - radius * radius * baba;
+
+    float disc = k1 * k1 - k2 * k0;
+    if (disc < 0.0) return -1.0;
+
+    float sqrtDisc = sqrt(disc);
+
+    // Front hit
+    float t = (-k1 - sqrtDisc) / k2;
+    float y = baoc + t * bard;
+    if (y > 0.0 && y < baba && t > 0.001) return t;
+
+    // Back hit
+    t = (-k1 + sqrtDisc) / k2;
+    y = baoc + t * bard;
+    if (y > 0.0 && y < baba && t > 0.001) return t;
+
     return -1.0;
 }
 
@@ -149,15 +192,28 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
         uint primCount = meta.w;
         if (primCount > 0u) {
             uint first = meta.z;
+            int totalPrims = uAtomCount + uBondCount;
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
-                if (primIndex >= uint(uAtomCount)) continue;
-                vec4 atom = texelFetch(uAtomPositions, int(primIndex));
-                float r = atom.w * uAtomScale;
-                float t = intersectSphere(ro, rd, atom.xyz, r);
-                if (t > 0.0 && t < hitT) {
-                    hitT = t;
-                    hitIndex = int(primIndex);
+                if (primIndex >= uint(totalPrims)) continue;
+
+                if (primIndex < uint(uAtomCount)) {
+                    vec4 atom = texelFetch(uAtomPositions, int(primIndex));
+                    float r = atom.w * uAtomScale;
+                    float t = intersectSphere(ro, rd, atom.xyz, r);
+                    if (t > 0.0 && t < hitT) {
+                        hitT = t;
+                        hitIndex = int(primIndex);
+                    }
+                } else if (uShowBonds) {
+                    int bondIdx = int(primIndex) - uAtomCount;
+                    vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
+                    vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
+                    float t = intersectCylinder(ro, rd, pa, pb, uBondRadius);
+                    if (t > 0.0 && t < hitT) {
+                        hitT = t;
+                        hitIndex = int(primIndex);
+                    }
                 }
             }
             continue;
@@ -207,20 +263,30 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
         uint primCount = meta.w;
         if (primCount > 0u) {
             uint first = meta.z;
+            int totalPrims = uAtomCount + uBondCount;
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
-                if (primIndex >= uint(uAtomCount)) continue;
-                vec4 atom = texelFetch(uAtomPositions, int(primIndex));
-                float r = atom.w * uAtomScale;
-                vec3 oc = ro - atom.xyz;
-                float b = dot(oc, rd);
-                float c = dot(oc, oc) - r * r;
-                float disc = b * b - c;
-                if (disc >= 0.0) {
-                    float sqrtDisc = sqrt(disc);
-                    float t = -b - sqrtDisc;
-                    if (t > 0.001 && t < maxDist) return true;
-                    t = -b + sqrtDisc;
+                if (primIndex >= uint(totalPrims)) continue;
+
+                if (primIndex < uint(uAtomCount)) {
+                    vec4 atom = texelFetch(uAtomPositions, int(primIndex));
+                    float r = atom.w * uAtomScale;
+                    vec3 oc = ro - atom.xyz;
+                    float b = dot(oc, rd);
+                    float c = dot(oc, oc) - r * r;
+                    float disc = b * b - c;
+                    if (disc >= 0.0) {
+                        float sqrtDisc = sqrt(disc);
+                        float t = -b - sqrtDisc;
+                        if (t > 0.001 && t < maxDist) return true;
+                        t = -b + sqrtDisc;
+                        if (t > 0.001 && t < maxDist) return true;
+                    }
+                } else if (uShowBonds) {
+                    int bondIdx = int(primIndex) - uAtomCount;
+                    vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
+                    vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
+                    float t = intersectCylinder(ro, rd, pa, pb, uBondRadius);
                     if (t > 0.001 && t < maxDist) return true;
                 }
             }
@@ -301,12 +367,30 @@ void main() {
     }
 
     // Shading
-    vec4 atomData = texelFetch(uAtomPositions, hitIndex);
-    vec4 atomColor = texelFetch(uAtomColors, hitIndex);
-    float atomRadius = atomData.w * uAtomScale;
-
     vec3 hitPos = rayOrigin + rayDir * hitT;
-    vec3 normal = normalize(hitPos - atomData.xyz);
+    vec3 normal;
+    vec3 surfaceColor;
+    float biasRadius;
+
+    if (hitIndex < uAtomCount) {
+        // Sphere hit
+        vec4 atomData = texelFetch(uAtomPositions, hitIndex);
+        vec4 atomColor = texelFetch(uAtomColors, hitIndex);
+        normal = normalize(hitPos - atomData.xyz);
+        surfaceColor = atomColor.rgb;
+        biasRadius = atomData.w * uAtomScale;
+    } else {
+        // Cylinder hit
+        int bondIdx = hitIndex - uAtomCount;
+        vec4 bondColor = texelFetch(uBondColors, bondIdx);
+        vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
+        vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
+        vec3 ba = pb - pa;
+        float h = dot(hitPos - pa, ba) / dot(ba, ba);
+        normal = normalize(hitPos - pa - h * ba);
+        surfaceColor = bondColor.rgb;
+        biasRadius = uBondRadius;
+    }
 
     // Light direction (world space, normalized)
     vec3 lightDir = normalize(uLightDir);
@@ -317,12 +401,12 @@ void main() {
     vec3 halfDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(normal, halfDir), 0.0), uShininess);
 
-    vec3 ambient  = uAmbient  * atomColor.rgb;
-    vec3 diffuse  = uDiffuse  * NdotL * atomColor.rgb;
+    vec3 ambient  = uAmbient  * surfaceColor;
+    vec3 diffuse  = uDiffuse  * NdotL * surfaceColor;
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     // Bias origin along normal to avoid self-intersection (scale with radius)
-    float bias = max(atomRadius * 0.01, 0.05);
+    float bias = max(biasRadius * 0.01, 0.05);
     vec3 biasedOrigin = hitPos + normal * bias;
 
     // Shadow
@@ -434,6 +518,14 @@ bool RayTracingRenderer::initialize() {
     glGenBuffers(1, &m_bvhPrimBuf);
     glGenTextures(1, &m_bvhPrimTex);
 
+    // Bond TBOs
+    glGenBuffers(1, &m_bondStartBuf);
+    glGenTextures(1, &m_bondStartTex);
+    glGenBuffers(1, &m_bondEndBuf);
+    glGenTextures(1, &m_bondEndTex);
+    glGenBuffers(1, &m_bondColorBuf);
+    glGenTextures(1, &m_bondColorTex);
+
     m_initialized = true;
     return true;
 }
@@ -462,9 +554,16 @@ void RayTracingRenderer::cleanup() {
     if (m_bvhNodeMetaTex) { glDeleteTextures(1, &m_bvhNodeMetaTex); m_bvhNodeMetaTex = 0; }
     if (m_bvhPrimBuf) { glDeleteBuffers(1, &m_bvhPrimBuf); m_bvhPrimBuf = 0; }
     if (m_bvhPrimTex) { glDeleteTextures(1, &m_bvhPrimTex); m_bvhPrimTex = 0; }
+    if (m_bondStartBuf) { glDeleteBuffers(1, &m_bondStartBuf); m_bondStartBuf = 0; }
+    if (m_bondStartTex) { glDeleteTextures(1, &m_bondStartTex); m_bondStartTex = 0; }
+    if (m_bondEndBuf) { glDeleteBuffers(1, &m_bondEndBuf); m_bondEndBuf = 0; }
+    if (m_bondEndTex) { glDeleteTextures(1, &m_bondEndTex); m_bondEndTex = 0; }
+    if (m_bondColorBuf) { glDeleteBuffers(1, &m_bondColorBuf); m_bondColorBuf = 0; }
+    if (m_bondColorTex) { glDeleteTextures(1, &m_bondColorTex); m_bondColorTex = 0; }
 
     m_structure = nullptr;
     m_bvhNodeCount = 0;
+    m_bondCount = 0;
     m_initialized = false;
 }
 
@@ -481,6 +580,7 @@ void RayTracingRenderer::resize(int width, int height) {
 void RayTracingRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;
+    m_bondDataDirty = true;
     resetAccumulation();
 }
 
@@ -490,9 +590,9 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
     // Store settings for isConverged() and state hashing.
     m_settings = settings;
 
-    // Upload atom data if dirty
-    if (m_atomDataDirty) {
-        uploadAtomData();
+    // Upload scene data if dirty
+    if (m_atomDataDirty || m_bondDataDirty) {
+        uploadSceneData();
     }
 
     if (m_atomCount == 0) {
@@ -541,8 +641,7 @@ void RayTracingRenderer::invalidateAtomData() {
 }
 
 void RayTracingRenderer::invalidateBondData() {
-    // Bonds not rendered in RT mode yet — but reset accumulation
-    // in case we add bond rendering later
+    m_bondDataDirty = true;
     resetAccumulation();
 }
 
@@ -664,15 +763,19 @@ void RayTracingRenderer::createAccumulationFBO() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void RayTracingRenderer::uploadAtomData() {
+void RayTracingRenderer::uploadSceneData() {
     if (!m_structure || m_structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_bondCount = 0;
         m_bvhNodeCount = 0;
         m_atomDataDirty = false;
+        m_bondDataDirty = false;
         return;
     }
 
     m_atomCount = static_cast<int>(m_structure->atomCount());
+
+    // ── Atom TBOs ──────────────────────────────────────────────
 
     // Pack positions + radii: vec4(x, y, z, radius) per atom
     auto posData = m_structure->packPositionsAndRadii();
@@ -698,14 +801,126 @@ void RayTracingRenderer::uploadAtomData() {
     glBindTexture(GL_TEXTURE_BUFFER, m_atomColorTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomColorBuf);
 
-    // Build and upload BVH
-    BVHData bvh = buildSphereBVH(m_structure->positionsX(),
-                                 m_structure->positionsY(),
-                                 m_structure->positionsZ(),
-                                 m_structure->radii(),
-                                 m_structure->atomCount());
+    // ── Bond TBOs ──────────────────────────────────────────────
+
+    const auto& bonds = m_structure->bonds();
+    m_bondCount = static_cast<int>(bonds.bondCount());
+
+    // Temporary arrays for bond positions (also used for BVH)
+    std::vector<float> bondStartData;
+    std::vector<float> bondEndData;
+
+    if (m_bondCount > 0) {
+        bondStartData.resize(static_cast<size_t>(m_bondCount) * 4);
+        bondEndData.resize(static_cast<size_t>(m_bondCount) * 4);
+        std::vector<float> bondColorData(static_cast<size_t>(m_bondCount) * 4);
+
+        const float* px = m_structure->positionsX();
+        const float* py = m_structure->positionsY();
+        const float* pz = m_structure->positionsZ();
+        const float* cr = m_structure->colorsR();
+        const float* cg = m_structure->colorsG();
+        const float* cb = m_structure->colorsB();
+        const auto& lattice = m_structure->lattice();
+        const auto& mat = lattice.matrix;
+
+        for (int i = 0; i < m_bondCount; ++i) {
+            const auto& bond = bonds.bond(static_cast<size_t>(i));
+            uint32_t a1 = bond.atomIndex1;
+            uint32_t a2 = bond.atomIndex2;
+            size_t idx = static_cast<size_t>(i);
+
+            bondStartData[idx * 4 + 0] = px[a1];
+            bondStartData[idx * 4 + 1] = py[a1];
+            bondStartData[idx * 4 + 2] = pz[a1];
+            bondStartData[idx * 4 + 3] = 0.0f;
+
+            float ex = px[a2];
+            float ey = py[a2];
+            float ez = pz[a2];
+            if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
+                ex += static_cast<float>(bond.imageX * mat[0][0] + bond.imageY * mat[1][0] + bond.imageZ * mat[2][0]);
+                ey += static_cast<float>(bond.imageX * mat[0][1] + bond.imageY * mat[1][1] + bond.imageZ * mat[2][1]);
+                ez += static_cast<float>(bond.imageX * mat[0][2] + bond.imageY * mat[1][2] + bond.imageZ * mat[2][2]);
+            }
+            bondEndData[idx * 4 + 0] = ex;
+            bondEndData[idx * 4 + 1] = ey;
+            bondEndData[idx * 4 + 2] = ez;
+            bondEndData[idx * 4 + 3] = 0.0f;
+
+            bondColorData[idx * 4 + 0] = (cr[a1] + cr[a2]) * 0.5f;
+            bondColorData[idx * 4 + 1] = (cg[a1] + cg[a2]) * 0.5f;
+            bondColorData[idx * 4 + 2] = (cb[a1] + cb[a2]) * 0.5f;
+            bondColorData[idx * 4 + 3] = 1.0f;
+        }
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(bondStartData.size() * sizeof(float)),
+                     bondStartData.data(), GL_STATIC_DRAW);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondStartTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondStartBuf);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(bondEndData.size() * sizeof(float)),
+                     bondEndData.data(), GL_STATIC_DRAW);
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondEndTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndBuf);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondColorBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(bondColorData.size() * sizeof(float)),
+                     bondColorData.data(), GL_STATIC_DRAW);
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondColorTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondColorBuf);
+    }
+
+    // ── Unified BVH (atoms + bonds) ───────────────────────────
+
+    size_t totalPrims = static_cast<size_t>(m_atomCount) + static_cast<size_t>(m_bondCount);
+    std::vector<PrimitiveBounds> primBounds(totalPrims);
+
+    // Atom bounds
+    const float* ax = m_structure->positionsX();
+    const float* ay = m_structure->positionsY();
+    const float* az = m_structure->positionsZ();
+    const float* ar = m_structure->radii();
+    for (size_t i = 0; i < static_cast<size_t>(m_atomCount); ++i) {
+        float r = ar[i];
+        primBounds[i] = {
+            ax[i] - r, ay[i] - r, az[i] - r,
+            ax[i] + r, ay[i] + r, az[i] + r,
+            ax[i], ay[i], az[i],
+            r
+        };
+    }
+
+    // Bond bounds (capsule AABB; maxRadius = 0 since bondRadius is baked in)
+    float bondR = m_settings.bondRadius;
+    for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
+        float sx = bondStartData[i * 4 + 0];
+        float sy = bondStartData[i * 4 + 1];
+        float sz = bondStartData[i * 4 + 2];
+        float ex = bondEndData[i * 4 + 0];
+        float ey = bondEndData[i * 4 + 1];
+        float ez = bondEndData[i * 4 + 2];
+        size_t pi = static_cast<size_t>(m_atomCount) + i;
+        primBounds[pi] = {
+            std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
+            std::max(sx, ex) + bondR, std::max(sy, ey) + bondR, std::max(sz, ez) + bondR,
+            (sx + ex) * 0.5f, (sy + ey) * 0.5f, (sz + ez) * 0.5f,
+            0.0f
+        };
+    }
+
+    BVHData bvh = buildBVH(primBounds.data(), totalPrims);
     assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
     assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
+
 
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
@@ -759,6 +974,7 @@ void RayTracingRenderer::uploadAtomData() {
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, m_bvhPrimBuf);
 
     m_atomDataDirty = false;
+    m_bondDataDirty = false;
 }
 
 void RayTracingRenderer::renderRTPass(const Camera& camera) {
@@ -810,9 +1026,25 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhPrimTex);
     m_rtShader->setUniformValue("uBVHPrimIndices", 5);
 
+    // Bond data TBOs
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondStartTex);
+    m_rtShader->setUniformValue("uBondStartPositions", 6);
+
+    glActiveTexture(GL_TEXTURE7);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondEndTex);
+    m_rtShader->setUniformValue("uBondEndPositions", 7);
+
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondColorTex);
+    m_rtShader->setUniformValue("uBondColors", 8);
+
     m_rtShader->setUniformValue("uAtomCount", m_atomCount);
+    m_rtShader->setUniformValue("uBondCount", m_bondCount);
     m_rtShader->setUniformValue("uBVHNodeCount", m_bvhNodeCount);
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
+    m_rtShader->setUniformValue("uBondRadius", m_settings.bondRadius);
+    m_rtShader->setUniformValue("uShowBonds", m_settings.showBonds);
 
     // Light direction is already in world space
     m_rtShader->setUniformValue("uLightDir", m_settings.lightDirWorld());

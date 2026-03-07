@@ -37,19 +37,20 @@ The application consists of a header bar for app options, a side bar showing inf
 ### Graphics API: Backend-Based Architecture
 The rendering system is organized by **graphics backend**, not by OS. Shared abstractions live in `src/render/common/`, and each backend has its own subfolder.
 
-- **OpenGL backend** (`src/render/opengl/`): Current default on all platforms
+- **OpenGL backend** (`src/render/opengl/`): Fallback on all platforms
   - Raster renderer: instanced impostor spheres
   - Fragment-shader ray tracing with progressive accumulation
 - **Vulkan backend** (`src/render/vulkan/`): Future — primary for Windows/Linux
   - Hardware-accelerated ray tracing (BLAS/TLAS)
   - Ray tracing pipeline and ray queries
-- **Metal backend** (`src/render/metal/`): Future — primary for macOS
-  - Metal RT for hardware ray tracing on Apple Silicon
+- **Metal backend** (`src/render/metal/`): Current primary for macOS
+  - Raster renderer: instanced impostor spheres
+  - Fragment-shader ray tracing with progressive accumulation (unified BVH for atoms + bonds)
 
 ### Platform Strategy
-- **macOS**: OpenGL 4.1 (current), Metal RT (future primary)
-- **Windows**: OpenGL (current fallback), Vulkan + RT (future primary)
-- **Linux**: OpenGL (current fallback), Vulkan + RT (future primary)
+- **macOS**: Metal (current primary), OpenGL 4.1 (fallback)
+- **Windows**: OpenGL (current), Vulkan + RT (future primary)
+- **Linux**: OpenGL (current), Vulkan + RT (future primary)
 - CMake detects the platform and builds only the relevant backends
 
 ### Build System: CMake
@@ -74,7 +75,7 @@ src/
     common/           # Shared abstractions (Renderer base, Camera, RenderSettings)
     opengl/           # OpenGL backend (raster + fragment-shader RT)
     vulkan/           # Vulkan backend (future)
-    metal/            # Metal backend (future)
+    metal/            # Metal backend (macOS primary)
   platform/           # OS-specific glue (future)
     macos/
     windows/

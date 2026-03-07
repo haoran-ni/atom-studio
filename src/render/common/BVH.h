@@ -34,10 +34,33 @@ struct BVHData {
 };
 
 /**
+ * @brief Precomputed AABB + centroid for a single primitive (sphere, cylinder, etc.).
+ *
+ * maxRadius is stored per-node in the BVH for runtime AABB expansion
+ * (e.g. atom scale > 1). Set to 0 for primitives that don't need expansion.
+ */
+struct PrimitiveBounds {
+    float minX, minY, minZ;
+    float maxX, maxY, maxZ;
+    float centroidX, centroidY, centroidZ;
+    float maxRadius;
+};
+
+/**
+ * @brief Build a BVH from precomputed primitive bounds.
+ *
+ * Generic entry point — works for any primitive type as long as the caller
+ * provides AABBs, centroids, and maxRadius per primitive.
+ */
+BVHData buildBVH(const PrimitiveBounds* primitives, size_t count,
+                 const BVHBuildOptions& options = {});
+
+/**
  * @brief Build a sphere BVH from SoA atom data.
  *
- * Radii are assumed unscaled (base radii). Runtime atom scale should be
- * handled during traversal by conservatively expanding node AABBs.
+ * Convenience wrapper around buildBVH. Radii are assumed unscaled (base
+ * radii). Runtime atom scale should be handled during traversal by
+ * conservatively expanding node AABBs.
  */
 BVHData buildSphereBVH(const float* posX,
                        const float* posY,

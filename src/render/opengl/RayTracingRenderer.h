@@ -40,7 +40,7 @@ private:
     bool compileShaders();
     void createFullScreenQuad();
     void createAccumulationFBO();
-    void uploadAtomData();
+    void uploadSceneData();
 
     // Render passes
     void renderRTPass(const Camera& camera);
@@ -68,6 +68,14 @@ private:
     GLuint m_atomColorBuf = 0;    // Buffer: vec4(r, g, b, a) per atom
     GLuint m_atomColorTex = 0;    // Texture view (RGBA32F)
 
+    // Bond data via Texture Buffer Objects
+    GLuint m_bondStartBuf = 0;    // Buffer: vec4(x, y, z, 0) per bond
+    GLuint m_bondStartTex = 0;    // Texture view (RGBA32F)
+    GLuint m_bondEndBuf = 0;      // Buffer: vec4(x, y, z, 0) per bond
+    GLuint m_bondEndTex = 0;      // Texture view (RGBA32F)
+    GLuint m_bondColorBuf = 0;    // Buffer: vec4(r, g, b, a) per bond
+    GLuint m_bondColorTex = 0;    // Texture view (RGBA32F)
+
     // BVH data via Texture Buffer Objects
     GLuint m_bvhNodeMinBuf = 0;   // Buffer: vec4(min.xyz, maxRadius) per node
     GLuint m_bvhNodeMinTex = 0;   // Texture view (RGBA32F)
@@ -84,10 +92,12 @@ private:
     int m_width = 0;
     int m_height = 0;
     int m_atomCount = 0;
+    int m_bondCount = 0;
     int m_bvhNodeCount = 0;
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
+    bool m_bondDataDirty = true;
     uint64_t m_lastStateHash = 0;
 };
 

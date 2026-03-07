@@ -4,6 +4,38 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-07: Bond Ray Tracing (Unified BVH, Metal + OpenGL)
+
+### Summary
+Added bond (cylinder) rendering to the ray tracing renderer. Bonds now appear in RT mode with full Blinn-Phong shading, shadows, and ambient occlusion — matching the raster renderer's bond visualization. Uses a unified BVH containing both atom (sphere) and bond (cylinder) primitives for single-traversal efficiency.
+
+### Architecture
+- **Unified BVH**: Both atom and bond primitives share one acceleration structure. Primitive indices `[0, atomCount)` are spheres; `[atomCount, atomCount+bondCount)` are cylinders. One BVH traversal per ray covers both primitive types.
+- **Generic BVH builder**: Refactored `BVH.h/cpp` to accept precomputed `PrimitiveBounds` (AABB + centroid + maxRadius). `buildSphereBVH` is now a thin wrapper. Bond AABBs bake in `bondRadius` with `maxRadius=0` (no runtime expansion needed).
+- **Ray-cylinder intersection**: Standard Iq finite-cylinder formula with height bounds checking.
+- **Bond data pipeline**: Bond world positions computed from atom positions + periodic image shifts (same logic as raster `BondRenderer`). Colors are averaged from the two bonded atoms.
+
+### What Changed
+
+| File | Change |
+|------|--------|
+| `src/render/common/BVH.h` | Added `PrimitiveBounds` struct and generic `buildBVH()` entry point |
+| `src/render/common/BVH.cpp` | Refactored internals to AABB-based builder; `buildSphereBVH` wraps `buildBVH` |
+| `src/render/common/RenderStateHash.cpp` | Added `bondRadius`, `showBonds` to hash |
+| `src/render/metal/MetalTypes.h` | Added `bondCount`, `bondRadius`, `showBonds` to `RTUniforms` |
+| `src/render/metal/MetalRayTracingRenderer.h` | Added bond buffer members, `m_bondCount`, `m_bondDataDirty`; renamed `uploadAtomData` → `uploadSceneData` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Bond data upload (start/end/color buffers), unified BVH build, bond buffer binding at indices 7-9, `invalidateBondData` sets dirty flag |
+| `src/render/metal/MetalShaderLibrary.mm` | Added `intersectCylinder` MSL function; updated `traceClosest`/`traceAnyHit` for unified traversal; `rt_fragment` branches shading on sphere vs cylinder hits |
+| `src/render/opengl/RayTracingRenderer.h` | Added bond TBO members, `m_bondCount`, `m_bondDataDirty`; renamed `uploadAtomData` → `uploadSceneData` |
+| `src/render/opengl/RayTracingRenderer.cpp` | Bond TBO upload, unified BVH build, GLSL `intersectCylinder`, unified leaf traversal + cylinder shading |
+
+### Key Design Decisions
+- **Unified BVH over dual BVH**: Single traversal per ray avoids redundant node tests. Bond primitives in shared leaf nodes are skipped when `showBonds=false`.
+- **maxRadius=0 for bonds**: Bond cylinder AABBs already include `bondRadius`, so no runtime AABB expansion is needed. Only atom nodes expand when `atomScale > 1`.
+- **Unit cell overlay compatibility**: The unit cell occlusion shader calls `traceAnyHit` with `bondCount=0, showBonds=false` — bond primitives in the unified BVH are safely skipped.
+
+---
+
 ## 2026-03-05: World-Space Light Direction with Azimuth/Elevation Controls
 
 ### Summary

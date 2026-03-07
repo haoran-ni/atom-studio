@@ -41,7 +41,7 @@ public:
 
 private:
     void createRenderTargets();
-    void uploadAtomData();
+    void uploadSceneData();
     void uploadUnitCellData();
     void renderRTPass(const Camera& camera, void* cmdBuffer);
     void renderDisplayPass(const Camera& camera, void* cmdBuffer);
@@ -61,10 +61,12 @@ private:
     int m_width = 0;
     int m_height = 0;
     int m_atomCount = 0;
+    int m_bondCount = 0;
     int m_bvhNodeCount = 0;
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
+    bool m_bondDataDirty = true;
     bool m_accumNeedsClear = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;

@@ -29,10 +29,7 @@ struct NodeBuildStats {
 };
 
 struct BuildContext {
-    const float* posX = nullptr;
-    const float* posY = nullptr;
-    const float* posZ = nullptr;
-    const float* radii = nullptr;
+    const PrimitiveBounds* primitives = nullptr;
     BVHBuildOptions options;
     std::vector<uint32_t> workingIndices;
     BVHData result;
@@ -42,36 +39,33 @@ NodeBuildStats computeStats(const BuildContext& ctx, size_t begin, size_t end) {
     NodeBuildStats stats;
 
     for (size_t i = begin; i < end; ++i) {
-        const uint32_t atomIndex = ctx.workingIndices[i];
-        const float cx = ctx.posX[atomIndex];
-        const float cy = ctx.posY[atomIndex];
-        const float cz = ctx.posZ[atomIndex];
-        const float r = ctx.radii[atomIndex];
+        const uint32_t idx = ctx.workingIndices[i];
+        const auto& p = ctx.primitives[idx];
 
-        stats.minX = std::min(stats.minX, cx - r);
-        stats.minY = std::min(stats.minY, cy - r);
-        stats.minZ = std::min(stats.minZ, cz - r);
-        stats.maxX = std::max(stats.maxX, cx + r);
-        stats.maxY = std::max(stats.maxY, cy + r);
-        stats.maxZ = std::max(stats.maxZ, cz + r);
-        stats.maxRadius = std::max(stats.maxRadius, r);
+        stats.minX = std::min(stats.minX, p.minX);
+        stats.minY = std::min(stats.minY, p.minY);
+        stats.minZ = std::min(stats.minZ, p.minZ);
+        stats.maxX = std::max(stats.maxX, p.maxX);
+        stats.maxY = std::max(stats.maxY, p.maxY);
+        stats.maxZ = std::max(stats.maxZ, p.maxZ);
+        stats.maxRadius = std::max(stats.maxRadius, p.maxRadius);
 
-        stats.centroidMinX = std::min(stats.centroidMinX, cx);
-        stats.centroidMinY = std::min(stats.centroidMinY, cy);
-        stats.centroidMinZ = std::min(stats.centroidMinZ, cz);
-        stats.centroidMaxX = std::max(stats.centroidMaxX, cx);
-        stats.centroidMaxY = std::max(stats.centroidMaxY, cy);
-        stats.centroidMaxZ = std::max(stats.centroidMaxZ, cz);
+        stats.centroidMinX = std::min(stats.centroidMinX, p.centroidX);
+        stats.centroidMinY = std::min(stats.centroidMinY, p.centroidY);
+        stats.centroidMinZ = std::min(stats.centroidMinZ, p.centroidZ);
+        stats.centroidMaxX = std::max(stats.centroidMaxX, p.centroidX);
+        stats.centroidMaxY = std::max(stats.centroidMaxY, p.centroidY);
+        stats.centroidMaxZ = std::max(stats.centroidMaxZ, p.centroidZ);
     }
 
     return stats;
 }
 
-float centroidValue(const BuildContext& ctx, uint32_t atomIndex, int axis) {
+float centroidValue(const BuildContext& ctx, uint32_t idx, int axis) {
     switch (axis) {
-    case 1: return ctx.posY[atomIndex];
-    case 2: return ctx.posZ[atomIndex];
-    default: return ctx.posX[atomIndex];
+    case 1: return ctx.primitives[idx].centroidY;
+    case 2: return ctx.primitives[idx].centroidZ;
+    default: return ctx.primitives[idx].centroidX;
     }
 }
 
@@ -137,34 +131,45 @@ uint32_t buildNode(BuildContext& ctx, size_t begin, size_t end) {
 
 } // namespace
 
+BVHData buildBVH(const PrimitiveBounds* primitives, size_t count,
+                 const BVHBuildOptions& options) {
+    BVHData data;
+    if (!primitives || count == 0) return data;
+    if (count > std::numeric_limits<uint32_t>::max()) return data;
+
+    BuildContext ctx;
+    ctx.primitives = primitives;
+    ctx.options = options;
+    ctx.workingIndices.resize(count);
+    std::iota(ctx.workingIndices.begin(), ctx.workingIndices.end(), 0u);
+    ctx.result.nodes.reserve(count * 2);
+    ctx.result.primitiveIndices.reserve(count);
+
+    buildNode(ctx, 0, count);
+    return std::move(ctx.result);
+}
+
 BVHData buildSphereBVH(const float* posX,
                        const float* posY,
                        const float* posZ,
                        const float* radii,
                        size_t atomCount,
                        const BVHBuildOptions& options) {
-    BVHData data;
     if (!posX || !posY || !posZ || !radii || atomCount == 0) {
-        return data;
+        return {};
     }
 
-    if (atomCount > std::numeric_limits<uint32_t>::max()) {
-        return data;
+    std::vector<PrimitiveBounds> bounds(atomCount);
+    for (size_t i = 0; i < atomCount; ++i) {
+        float r = radii[i];
+        bounds[i] = {
+            posX[i] - r, posY[i] - r, posZ[i] - r,
+            posX[i] + r, posY[i] + r, posZ[i] + r,
+            posX[i], posY[i], posZ[i],
+            r
+        };
     }
-
-    BuildContext ctx;
-    ctx.posX = posX;
-    ctx.posY = posY;
-    ctx.posZ = posZ;
-    ctx.radii = radii;
-    ctx.options = options;
-    ctx.workingIndices.resize(atomCount);
-    std::iota(ctx.workingIndices.begin(), ctx.workingIndices.end(), 0u);
-    ctx.result.nodes.reserve(atomCount * 2);
-    ctx.result.primitiveIndices.reserve(atomCount);
-
-    buildNode(ctx, 0, atomCount);
-    return std::move(ctx.result);
+    return buildBVH(bounds.data(), atomCount, options);
 }
 
 } // namespace atom::render

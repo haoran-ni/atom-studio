@@ -6,6 +6,7 @@
 #include "../common/BVH.h"
 #include "../common/RenderStateHash.h"
 #include "../../data/Structure.h"
+#include "../../data/BondList.h"
 #include <QDebug>
 #include <QMatrix4x4>
 #include <cassert>
@@ -54,6 +55,11 @@ struct MetalRayTracingRenderer::Impl {
     id<MTLBuffer> bvhNodeMaxBuffer = nil;    // float4(max.xyz, pad) per node
     id<MTLBuffer> bvhNodeMetaBuffer = nil;   // uint4(left,right,first,count) per node
     id<MTLBuffer> bvhPrimIndexBuffer = nil;  // uint primitive indices
+
+    // Bond data buffers
+    id<MTLBuffer> bondStartBuffer = nil;     // float4(x,y,z,0) per bond
+    id<MTLBuffer> bondEndBuffer = nil;       // float4(x,y,z,0) per bond
+    id<MTLBuffer> bondColorBuffer = nil;     // float4(r,g,b,a) per bond
 
     // Unit-cell overlay geometry + instance buffers
     id<MTLBuffer> unitCellCylinderVertexBuffer = nil;   // unit cylinder mesh (packed_float3)
@@ -167,6 +173,9 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->bvhNodeMaxBuffer = nil;
     m_impl->bvhNodeMetaBuffer = nil;
     m_impl->bvhPrimIndexBuffer = nil;
+    m_impl->bondStartBuffer = nil;
+    m_impl->bondEndBuffer = nil;
+    m_impl->bondColorBuffer = nil;
     m_impl->unitCellCylinderVertexBuffer = nil;
     m_impl->unitCellCylinderIndexBuffer = nil;
     m_impl->unitCellEdgeInstanceBuffer = nil;
@@ -178,6 +187,7 @@ void MetalRayTracingRenderer::cleanup() {
 
     m_structure = nullptr;
     m_atomCount = 0;
+    m_bondCount = 0;
     m_bvhNodeCount = 0;
     m_unitCellEdgeCount = 0;
     m_unitCellJointCount = 0;
@@ -199,6 +209,7 @@ void MetalRayTracingRenderer::resize(int width, int height) {
 void MetalRayTracingRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;
+    m_bondDataDirty = true;
     m_unitCellDataDirty = true;
     resetAccumulation();
 }
@@ -209,8 +220,8 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     // Store settings for isConverged() and state hashing.
     m_settings = settings;
 
-    if (m_atomDataDirty) {
-        uploadAtomData();
+    if (m_atomDataDirty || m_bondDataDirty) {
+        uploadSceneData();
     }
     if (m_unitCellDataDirty) {
         uploadUnitCellData();
@@ -279,6 +290,7 @@ void MetalRayTracingRenderer::invalidateAtomData() {
 }
 
 void MetalRayTracingRenderer::invalidateBondData() {
+    m_bondDataDirty = true;
     resetAccumulation();
 }
 
@@ -353,9 +365,10 @@ void MetalRayTracingRenderer::createRenderTargets() {
     m_impl->overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
 }
 
-void MetalRayTracingRenderer::uploadAtomData() {
+void MetalRayTracingRenderer::uploadSceneData() {
     if (!m_structure || m_structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_bondCount = 0;
         m_bvhNodeCount = 0;
         m_impl->atomPositionBuffer = nil;
         m_impl->atomColorBuffer = nil;
@@ -363,11 +376,17 @@ void MetalRayTracingRenderer::uploadAtomData() {
         m_impl->bvhNodeMaxBuffer = nil;
         m_impl->bvhNodeMetaBuffer = nil;
         m_impl->bvhPrimIndexBuffer = nil;
+        m_impl->bondStartBuffer = nil;
+        m_impl->bondEndBuffer = nil;
+        m_impl->bondColorBuffer = nil;
         m_atomDataDirty = false;
+        m_bondDataDirty = false;
         return;
     }
 
     m_atomCount = static_cast<int>(m_structure->atomCount());
+
+    // ── Atom buffers ──────────────────────────────────────────
 
     auto posData = m_structure->packPositionsAndRadii();
     m_impl->atomPositionBuffer = [m_impl->device
@@ -381,11 +400,113 @@ void MetalRayTracingRenderer::uploadAtomData() {
                     length:colorData.size() * sizeof(float)
                    options:MTLResourceStorageModeShared];
 
-    BVHData bvh = buildSphereBVH(m_structure->positionsX(),
-                                 m_structure->positionsY(),
-                                 m_structure->positionsZ(),
-                                 m_structure->radii(),
-                                 m_structure->atomCount());
+    // ── Bond buffers ──────────────────────────────────────────
+
+    const auto& bonds = m_structure->bonds();
+    m_bondCount = static_cast<int>(bonds.bondCount());
+
+    std::vector<float> bondStartData;
+    std::vector<float> bondEndData;
+
+    if (m_bondCount > 0) {
+        bondStartData.resize(static_cast<size_t>(m_bondCount) * 4);
+        bondEndData.resize(static_cast<size_t>(m_bondCount) * 4);
+        std::vector<float> bondColorData(static_cast<size_t>(m_bondCount) * 4);
+
+        const float* px = m_structure->positionsX();
+        const float* py = m_structure->positionsY();
+        const float* pz = m_structure->positionsZ();
+        const float* cr = m_structure->colorsR();
+        const float* cg = m_structure->colorsG();
+        const float* cb = m_structure->colorsB();
+        const auto& lattice = m_structure->lattice();
+        const auto& mat = lattice.matrix;
+
+        for (int i = 0; i < m_bondCount; ++i) {
+            const auto& bond = bonds.bond(static_cast<size_t>(i));
+            uint32_t a1 = bond.atomIndex1;
+            uint32_t a2 = bond.atomIndex2;
+            size_t idx = static_cast<size_t>(i);
+
+            bondStartData[idx * 4 + 0] = px[a1];
+            bondStartData[idx * 4 + 1] = py[a1];
+            bondStartData[idx * 4 + 2] = pz[a1];
+            bondStartData[idx * 4 + 3] = 0.0f;
+
+            float ex = px[a2];
+            float ey = py[a2];
+            float ez = pz[a2];
+            if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
+                ex += static_cast<float>(bond.imageX * mat[0][0] + bond.imageY * mat[1][0] + bond.imageZ * mat[2][0]);
+                ey += static_cast<float>(bond.imageX * mat[0][1] + bond.imageY * mat[1][1] + bond.imageZ * mat[2][1]);
+                ez += static_cast<float>(bond.imageX * mat[0][2] + bond.imageY * mat[1][2] + bond.imageZ * mat[2][2]);
+            }
+            bondEndData[idx * 4 + 0] = ex;
+            bondEndData[idx * 4 + 1] = ey;
+            bondEndData[idx * 4 + 2] = ez;
+            bondEndData[idx * 4 + 3] = 0.0f;
+
+            bondColorData[idx * 4 + 0] = (cr[a1] + cr[a2]) * 0.5f;
+            bondColorData[idx * 4 + 1] = (cg[a1] + cg[a2]) * 0.5f;
+            bondColorData[idx * 4 + 2] = (cb[a1] + cb[a2]) * 0.5f;
+            bondColorData[idx * 4 + 3] = 1.0f;
+        }
+
+        m_impl->bondStartBuffer = [m_impl->device
+            newBufferWithBytes:bondStartData.data()
+                        length:bondStartData.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
+        m_impl->bondEndBuffer = [m_impl->device
+            newBufferWithBytes:bondEndData.data()
+                        length:bondEndData.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
+        m_impl->bondColorBuffer = [m_impl->device
+            newBufferWithBytes:bondColorData.data()
+                        length:bondColorData.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
+    } else {
+        m_impl->bondStartBuffer = nil;
+        m_impl->bondEndBuffer = nil;
+        m_impl->bondColorBuffer = nil;
+    }
+
+    // ── Unified BVH (atoms + bonds) ──────────────────────────
+
+    size_t totalPrims = static_cast<size_t>(m_atomCount) + static_cast<size_t>(m_bondCount);
+    std::vector<PrimitiveBounds> primBounds(totalPrims);
+
+    const float* ax = m_structure->positionsX();
+    const float* ay = m_structure->positionsY();
+    const float* az = m_structure->positionsZ();
+    const float* ar = m_structure->radii();
+    for (size_t i = 0; i < static_cast<size_t>(m_atomCount); ++i) {
+        float r = ar[i];
+        primBounds[i] = {
+            ax[i] - r, ay[i] - r, az[i] - r,
+            ax[i] + r, ay[i] + r, az[i] + r,
+            ax[i], ay[i], az[i],
+            r
+        };
+    }
+
+    float bondR = m_settings.bondRadius;
+    for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
+        float sx = bondStartData[i * 4 + 0];
+        float sy = bondStartData[i * 4 + 1];
+        float sz = bondStartData[i * 4 + 2];
+        float ex = bondEndData[i * 4 + 0];
+        float ey = bondEndData[i * 4 + 1];
+        float ez = bondEndData[i * 4 + 2];
+        size_t pi = static_cast<size_t>(m_atomCount) + i;
+        primBounds[pi] = {
+            std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
+            std::max(sx, ex) + bondR, std::max(sy, ey) + bondR, std::max(sz, ez) + bondR,
+            (sx + ex) * 0.5f, (sy + ey) * 0.5f, (sz + ez) * 0.5f,
+            0.0f
+        };
+    }
+
+    BVHData bvh = buildBVH(primBounds.data(), totalPrims);
     assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
     assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
@@ -427,6 +548,7 @@ void MetalRayTracingRenderer::uploadAtomData() {
                    options:MTLResourceStorageModeShared];
 
     m_atomDataDirty = false;
+    m_bondDataDirty = false;
 }
 
 void MetalRayTracingRenderer::uploadUnitCellData() {
@@ -485,6 +607,9 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.aoRadius = m_settings.aoRadius;
     rt.maxSamples = m_settings.maxRTSamples;
     rt.bvhNodeCount = m_bvhNodeCount;
+    rt.bondCount = m_bondCount;
+    rt.bondRadius = m_settings.bondRadius;
+    rt.showBonds = m_settings.showBonds ? 1 : 0;
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
@@ -519,13 +644,20 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     // buffer(0): RT uniforms (fragment stage)
     [encoder setFragmentBytes:&rt length:sizeof(RTUniforms) atIndex:0];
 
-    // buffer(1),(2): atom data (fragment stage)
+    // buffer(1)-(6): atom + BVH data (fragment stage)
     [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
     [encoder setFragmentBuffer:m_impl->atomColorBuffer offset:0 atIndex:2];
     [encoder setFragmentBuffer:m_impl->bvhNodeMinBuffer offset:0 atIndex:3];
     [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
     [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
     [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
+
+    // buffer(7)-(9): bond data (fragment stage)
+    if (m_impl->bondStartBuffer) {
+        [encoder setFragmentBuffer:m_impl->bondStartBuffer offset:0 atIndex:7];
+        [encoder setFragmentBuffer:m_impl->bondEndBuffer offset:0 atIndex:8];
+        [encoder setFragmentBuffer:m_impl->bondColorBuffer offset:0 atIndex:9];
+    }
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
     [encoder endEncoding];
