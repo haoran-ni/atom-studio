@@ -4,6 +4,30 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-08: Fix RT-001 Resize Race and Wasted In-Flight Scene Upload
+
+### Summary
+Fixed two follow-up issues in the RT-001 async Metal RT submission introduced on 2026-03-07.
+
+### Issue 1: Resize race on `inFlightSlot`
+- `createRenderTargets()` forcibly reset `inFlightSlot` to -1 even when an old completion handler was still pending on the GPU.
+- If the old handler fired after a new frame had been submitted, its CAS would incorrectly clear the new frame's `inFlightSlot`, breaking the one-in-flight invariant and potentially allowing concurrent writes to the single accumulation texture.
+- **Fix:** removed the `inFlightSlot.store(-1)` from `createRenderTargets()`. The old completion handler now drains it naturally via CAS, and the generation check prevents it from marking stale slots as Ready.
+
+### Issue 2: Wasted CPU work during in-flight frames
+- The in-flight early-return check ran after `uploadSceneData()` and `uploadUnitCellData()`, so scene packing, BVH build, and buffer allocation were performed even when no frame could be submitted.
+- **Fix:** moved the in-flight check to before the uploads. Dirty flags remain set and are processed once the in-flight frame drains.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalRayTracingRenderer.mm` | Removed `inFlightSlot` reset from `createRenderTargets()`; moved in-flight check before scene uploads in `render()` |
+
+### Verification
+- Build: `cmake --build build --target atom-render -j4` — success.
+
+---
+
 ## 2026-03-07: RT-001 Metal Ray Tracing Without Per-Frame CPU Blocking
 
 ### Summary

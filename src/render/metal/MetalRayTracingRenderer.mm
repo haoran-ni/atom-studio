@@ -260,6 +260,13 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     // Store settings for isConverged() and state hashing.
     m_settings = settings;
 
+    // Submit at most one GPU frame at a time. Skip all CPU-side work
+    // (scene packing, BVH build, buffer allocation) while a frame is
+    // in-flight — dirty flags stay set and are processed once it drains.
+    if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
+        return;
+    }
+
     if (m_atomDataDirty || m_bondDataDirty) {
         uploadSceneData();
     }
@@ -275,12 +282,6 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
           !m_impl->outputSlots[0].msaaOverlayDepthTexture))) {
         createRenderTargets();
         resetAccumulation();
-    }
-
-    // Submit at most one GPU frame at a time. Once that frame completes, the
-    // viewport will schedule the next progressive sample.
-    if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
-        return;
     }
 
     const int outputSlotIndex = acquireOutputSlot();
@@ -433,7 +434,10 @@ void MetalRayTracingRenderer::createRenderTargets() {
         slot.overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
     }
 
-    m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
+    // Do NOT reset inFlightSlot here — let the old completion handler drain
+    // it naturally.  Forcing it to -1 would allow render() to submit a new
+    // frame before the old handler fires, and the old handler's CAS would
+    // then incorrectly clear the *new* submission's inFlightSlot.
     m_impl->asyncState->latestReadySlot.store(-1, std::memory_order_relaxed);
     m_impl->asyncState->latestReadySampleCount.store(0, std::memory_order_relaxed);
     for (auto& state : m_impl->asyncState->slotStates) {

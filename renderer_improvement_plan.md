@@ -308,39 +308,6 @@ Current status:
 
 - Not fixed.
 
-### RT-008: Vulkan ray tracing backend is still missing
-
-Problem:
-
-- There is no Vulkan renderer implementation yet.
-- The Vulkan viewport is only a placeholder and does not provide real rendering.
-
-Why it matters:
-
-- Windows and Linux currently depend on the OpenGL fallback path.
-- Planned platform strategy says Vulkan should become the primary backend there,
-  but the current codebase has no implementation.
-
-Proposed solution:
-
-- Implement a real Vulkan renderer path with the same scene abstraction used by
-  OpenGL and Metal.
-- Reuse shared CPU scene packing and BVH infrastructure where possible.
-
-Minimum acceptable interim step:
-
-- If Vulkan is not going to be implemented soon, explicitly disable the
-  placeholder UI path so users are not presented with a non-functional backend.
-
-Relevant files:
-
-- `src/render/CMakeLists.txt`
-- `src/ui/components/VulkanViewport.h`
-- `src/ui/components/VulkanViewport.cpp`
-
-Current status:
-
-- Not fixed.
 
 ### RT-009: Bond data is duplicated more than necessary
 
@@ -429,7 +396,6 @@ Recommended implementation order:
 7. RT-007: replace hardcoded shadow distance
 8. RT-009: reduce bond data duplication
 9. RT-010: improve BVH build quality and scalability
-10. RT-008: implement or explicitly disable Vulkan placeholder path
 
 ## Update Instructions
 
