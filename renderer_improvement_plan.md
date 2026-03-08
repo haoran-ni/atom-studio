@@ -96,14 +96,12 @@ Problem:
 
 Why it matters:
 
-- This creates visible hitches when loading files, recomputing bonds, or
-  updating structures.
+- This creates visible hitches when loading files, recomputing bonds, or updating structures.
 - Both OpenGL and Metal ray tracing backends currently pay this cost.
 
 Proposed solution:
 
-- Introduce an immutable "RT scene snapshot" that contains packed atom data,
-  packed bond data, and BVH data.
+- Introduce an immutable "RT scene snapshot" that contains packed atom data, packed bond data, and BVH data.
 - Build that snapshot off the render thread.
 - Upload or swap the finished snapshot on the render thread once ready.
 
