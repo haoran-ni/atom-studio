@@ -19,7 +19,6 @@ Current backend status:
 | ID | Status | Summary |
 | --- | --- | --- |
 | RT-001 | Fixed | Remove Metal per-frame GPU blocking. |
-| RT-002 | Not fixed | Move scene packing and BVH building off the render thread. |
 | RT-003 | Not fixed | Split dirty tracking so bond-only updates do not repack atom data. |
 | RT-004 | Not fixed | Avoid traversing hidden bonds when `showBonds` is disabled. |
 | RT-005 | Not fixed | Keep bond BVH bounds correct when bond radius changes. |
@@ -85,41 +84,6 @@ Verification notes:
   - `src/ui/components/MetalViewport.mm`
 - Full renderer build verification now also passed:
   - `cmake --build build --target atom-render -j4`
-
-### RT-002: Scene packing and BVH building run on the render thread
-
-Problem:
-
-- Atom packing, bond endpoint packing, and BVH construction are performed
-  synchronously during `render()` after dirty flags are detected.
-- Large structures or bond recomputes will therefore stall rendering.
-
-Why it matters:
-
-- This creates visible hitches when loading files, recomputing bonds, or updating structures.
-- Both OpenGL and Metal ray tracing backends currently pay this cost.
-
-Proposed solution:
-
-- Introduce an immutable "RT scene snapshot" that contains packed atom data, packed bond data, and BVH data.
-- Build that snapshot off the render thread.
-- Upload or swap the finished snapshot on the render thread once ready.
-
-Suggested implementation notes:
-
-- Build CPU-side arrays in a worker thread.
-- Keep render-thread work limited to resource creation and pointer swaps.
-- Make scene snapshots versioned so stale worker results can be dropped safely.
-
-Relevant files:
-
-- `src/render/opengl/RayTracingRenderer.cpp`
-- `src/render/metal/MetalRayTracingRenderer.mm`
-- `src/render/common/BVH.cpp`
-
-Current status:
-
-- Not fixed.
 
 ### RT-003: Dirty tracking is too coarse
 
@@ -386,14 +350,13 @@ Current status:
 Recommended implementation order:
 
 1. RT-001: remove Metal blocking waits
-2. RT-002: move scene packing and BVH building off the render thread
-3. RT-003: split dirty tracking
-4. RT-004: split atom and bond acceleration structures
-5. RT-006: add OpenGL large-scene guards
-6. RT-005: clean bond-radius invalidation or runtime expansion
-7. RT-007: replace hardcoded shadow distance
-8. RT-009: reduce bond data duplication
-9. RT-010: improve BVH build quality and scalability
+2. RT-003: split dirty tracking
+3. RT-004: split atom and bond acceleration structures
+4. RT-006: add OpenGL large-scene guards
+5. RT-005: clean bond-radius invalidation or runtime expansion
+6. RT-007: replace hardcoded shadow distance
+7. RT-009: reduce bond data duplication
+8. RT-010: improve BVH build quality and scalability
 
 ## Update Instructions
 
