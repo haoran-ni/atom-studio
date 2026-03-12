@@ -168,6 +168,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     uniforms.shininess = settings.shininess;
     uniforms.atomScale = settings.atomScale;
     uniforms.bondRadius = settings.bondRadius;
+    uniforms.isPerspective = camera.isPerspective() ? 1 : 0;
 
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];

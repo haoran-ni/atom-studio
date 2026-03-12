@@ -79,6 +79,7 @@ uniform bool uEnableAO;
 uniform float uShadowOpacity;
 uniform int uAOSamples;
 uniform float uAORadius;
+uniform int uIsPerspective;
 
 // ---------- PCG random number generator ----------
 
@@ -353,8 +354,17 @@ void main() {
     vec4 ndc = vec4(uv * 2.0 - 1.0, -1.0, 1.0);
     vec4 viewTarget = uInvProjection * ndc;
     viewTarget.xyz /= viewTarget.w;
-    vec3 rayDir = normalize((uInvView * vec4(viewTarget.xyz, 0.0)).xyz);
-    vec3 rayOrigin = uCameraPos;
+
+    vec3 rayDir;
+    vec3 rayOrigin;
+    if (uIsPerspective != 0) {
+        rayDir = normalize((uInvView * vec4(viewTarget.xyz, 0.0)).xyz);
+        rayOrigin = uCameraPos;
+    } else {
+        // Orthographic: origin varies per pixel, direction is constant
+        rayOrigin = (uInvView * vec4(viewTarget.xyz, 1.0)).xyz;
+        rayDir = normalize((uInvView * vec4(0.0, 0.0, -1.0, 0.0)).xyz);
+    }
 
     // Trace primary ray
     float hitT;
@@ -394,7 +404,7 @@ void main() {
 
     // Light direction (world space, normalized)
     vec3 lightDir = normalize(uLightDir);
-    vec3 viewDir = normalize(uCameraPos - hitPos);
+    vec3 viewDir = -rayDir;
 
     // Blinn-Phong shading
     float NdotL = max(dot(normal, lightDir), 0.0);
@@ -996,6 +1006,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uInvView", invView);
     m_rtShader->setUniformValue("uInvProjection", invProj);
     m_rtShader->setUniformValue("uCameraPos", camPos);
+    m_rtShader->setUniformValue("uIsPerspective", camera.isPerspective() ? 1 : 0);
 
     // Viewport
     m_rtShader->setUniformValue("uWidth", m_width);

@@ -21,7 +21,8 @@ struct SceneUniforms {
     float         shininess;
     float         atomScale;
     float         bondRadius;
-    float         _pad[2];
+    int32_t       isPerspective;
+    float         _pad;
 };
 
 // Per-instance sphere data — [[buffer(2)]] in sphere shader
@@ -72,6 +73,7 @@ struct RTUniforms {
     int32_t       bondCount;
     float         bondRadius;
     int32_t       showBonds;
+    int32_t       isPerspective;
 };
 
 // Unit-cell object overlay uniforms for RT output compositing
@@ -84,6 +86,10 @@ struct RTUnitCellUniforms {
     float         occlusionBias;
     float         unitCellRadius;
     simd_float4   unitCellColor;
+    int32_t       isPerspective;
+    float         cameraForwardX;
+    float         cameraForwardY;
+    float         cameraForwardZ;
 };
 
 // Display pass uniforms — [[buffer(0)]] for display shader

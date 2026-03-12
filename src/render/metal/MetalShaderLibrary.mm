@@ -27,7 +27,8 @@ struct SceneUniforms {
     float    shininess;
     float    atomScale;
     float    bondRadius;
-    float    _pad[2];
+    int      isPerspective;
+    float    _pad;
 };
 
 struct SphereInstance {
@@ -74,6 +75,7 @@ struct RTUniforms {
     int      bondCount;
     float    bondRadius;
     int      showBonds;
+    int      isPerspective;
 };
 
 struct DisplayUniforms {
@@ -90,6 +92,10 @@ struct RTUnitCellUniforms {
     float    occlusionBias;
     float    unitCellRadius;
     float4   unitCellColor;
+    int      isPerspective;
+    float    cameraForwardX;
+    float    cameraForwardY;
+    float    cameraForwardZ;
 };
 
 // -------------------------------------------------------
@@ -121,14 +127,20 @@ vertex SphereVertexOut sphere_vertex(
     float4 viewCenter = scene.viewMatrix * float4(inst.positionAndRadius.xyz, 1.0);
     out.viewCenter = viewCenter.xyz;
 
-    // Perspective-correct billboard size
-    float dist = -viewCenter.z;
+    // Billboard size
     float R = out.radius;
     float billboardR;
-    if (dist > R * 1.01) {
-        billboardR = R * dist / sqrt(dist * dist - R * R);
+    if (scene.isPerspective) {
+        // Perspective-correct: projected silhouette grows as sphere nears camera
+        float dist = -viewCenter.z;
+        if (dist > R * 1.01) {
+            billboardR = R * dist / sqrt(dist * dist - R * R);
+        } else {
+            billboardR = dist * 100.0;
+        }
     } else {
-        billboardR = dist * 100.0;
+        // Orthographic: constant billboard size (no foreshortening)
+        billboardR = R;
     }
     billboardR *= 1.05;
 
@@ -154,28 +166,46 @@ fragment SphereFragmentOut sphere_fragment(
 {
     SphereFragmentOut out;
 
-    // Perspective ray-sphere intersection in view space
-    float3 rayDir = normalize(in.viewPosOnQuad);
     float3 C = in.viewCenter;
     float R = in.radius;
+    float3 hitPos;
+    float3 normal;
 
-    float b = dot(rayDir, C);
-    float c = dot(C, C) - R * R;
-    float disc = b * b - c;
+    if (scene.isPerspective) {
+        // Perspective ray-sphere intersection in view space
+        float3 rayDir = normalize(in.viewPosOnQuad);
 
-    if (disc < 0.0) discard_fragment();
+        float b = dot(rayDir, C);
+        float c = dot(C, C) - R * R;
+        float disc = b * b - c;
 
-    float sqrtDisc = sqrt(disc);
-    float t = b - sqrtDisc;
-    if (t < 0.0) t = b + sqrtDisc;
-    if (t < 0.0) discard_fragment();
+        if (disc < 0.0) discard_fragment();
 
-    float3 hitPos = t * rayDir;
-    float3 normal = normalize(hitPos - C);
+        float sqrtDisc = sqrt(disc);
+        float t = b - sqrtDisc;
+        if (t < 0.0) t = b + sqrtDisc;
+        if (t < 0.0) discard_fragment();
+
+        hitPos = t * rayDir;
+    } else {
+        // Orthographic ray-sphere intersection in view space
+        // Ray: origin = (quad.x, quad.y, 0), direction = (0, 0, -1)
+        float dx = in.viewPosOnQuad.x - C.x;
+        float dy = in.viewPosOnQuad.y - C.y;
+        float disc = R * R - dx * dx - dy * dy;
+
+        if (disc < 0.0) discard_fragment();
+
+        float sqrtDisc = sqrt(disc);
+        // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z)
+        hitPos = float3(in.viewPosOnQuad.xy, C.z + sqrtDisc);
+    }
+
+    normal = normalize(hitPos - C);
 
     // Blinn-Phong lighting — light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
-    float3 viewDir = normalize(-hitPos);
+    float3 viewDir = scene.isPerspective ? normalize(-hitPos) : float3(0.0, 0.0, 1.0);
 
     float3 ambient = scene.ambient * in.color.rgb;
     float diff = max(dot(normal, lightDir), 0.0);
@@ -409,18 +439,31 @@ fragment float4 rt_unit_cell_fragment(
     device const uint4* bvhNodeMeta [[buffer(5)]],
     device const uint* bvhPrimIndices [[buffer(6)]])
 {
-    // Cast a ray from camera to the unit-cell fragment and hide it if an atom
+    // Cast a ray from camera toward the unit-cell fragment and hide it if an atom
     // is intersected first. This keeps atom-only occlusion while unit cell
     // remains outside RT accumulation.
-    float3 ro = unitCell.cameraPosition;
-    float3 toPoint = in.worldPos - ro;
-    float pointDist = length(toPoint);
+    if (unitCell.atomCount > 0 && unitCell.bvhNodeCount > 0) {
+        float3 ro, rd;
+        float maxT;
 
-    if (unitCell.atomCount > 0 &&
-        unitCell.bvhNodeCount > 0 &&
-        pointDist > 1e-6) {
-        float3 rd = toPoint / pointDist;
-        float maxT = max(pointDist - unitCell.occlusionBias, 0.0);
+        if (unitCell.isPerspective) {
+            // Perspective: ray from camera position to fragment
+            ro = unitCell.cameraPosition;
+            float3 toPoint = in.worldPos - ro;
+            float pointDist = length(toPoint);
+            if (pointDist < 1e-6) return unitCell.unitCellColor;
+            rd = toPoint / pointDist;
+            maxT = max(pointDist - unitCell.occlusionBias, 0.0);
+        } else {
+            // Orthographic: parallel ray from fragment toward camera
+            float3 cameraFwd = float3(unitCell.cameraForwardX,
+                                      unitCell.cameraForwardY,
+                                      unitCell.cameraForwardZ);
+            ro = in.worldPos - cameraFwd * unitCell.occlusionBias;
+            rd = -cameraFwd;
+            maxT = max(dot(in.worldPos - unitCell.cameraPosition, cameraFwd)
+                       - unitCell.occlusionBias, 0.0);
+        }
 
         if (maxT > 0.0 &&
             traceAnyHit(ro, rd, maxT,
@@ -756,8 +799,17 @@ fragment float4 rt_fragment(
     float4 ndc = float4(uv * 2.0 - 1.0, -1.0, 1.0);
     float4 viewTarget = rt.invProjection * ndc;
     viewTarget.xyz /= viewTarget.w;
-    float3 rayDir = normalize((rt.invView * float4(viewTarget.xyz, 0.0)).xyz);
-    float3 rayOrigin = rt.cameraPosition;
+
+    float3 rayDir;
+    float3 rayOrigin;
+    if (rt.isPerspective) {
+        rayDir = normalize((rt.invView * float4(viewTarget.xyz, 0.0)).xyz);
+        rayOrigin = rt.cameraPosition;
+    } else {
+        // Orthographic: origin varies per pixel, direction is constant
+        rayOrigin = (rt.invView * float4(viewTarget.xyz, 1.0)).xyz;
+        rayDir = normalize((rt.invView * float4(0.0, 0.0, -1.0, 0.0)).xyz);
+    }
 
     bool showBonds = rt.showBonds != 0;
 
@@ -802,7 +854,7 @@ fragment float4 rt_fragment(
     }
 
     float3 lightDir = normalize(rt.lightDir);
-    float3 viewDir = normalize(rt.cameraPosition - hitPos);
+    float3 viewDir = -rayDir;
 
     float NdotL = max(dot(normal, lightDir), 0.0);
     float3 halfDir = normalize(lightDir + viewDir);

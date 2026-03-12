@@ -319,6 +319,9 @@ float OpenGLViewport::viewportAxesScale() const {
     return m_viewportAxesScale;
 }
 
+bool OpenGLViewport::isPerspective() const { return m_camera->isPerspective(); }
+float OpenGLViewport::fieldOfView() const { return m_camera->fieldOfView(); }
+
 QVariantList OpenGLViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
     return {
@@ -630,6 +633,22 @@ void OpenGLViewport::setViewportAxesScale(float value) {
     if (!qFuzzyCompare(m_viewportAxesScale, clamped)) {
         m_viewportAxesScale = clamped;
         emit viewportAxesScaleChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setIsPerspective(bool perspective) {
+    if (m_camera->isPerspective() != perspective) {
+        m_camera->setProjection(perspective);
+        emit projectionChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setFieldOfView(float fov) {
+    if (!qFuzzyCompare(m_camera->fieldOfView(), fov)) {
+        m_camera->setFieldOfView(fov);
+        emit projectionChanged();
         update();
     }
 }

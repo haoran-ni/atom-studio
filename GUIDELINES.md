@@ -108,6 +108,7 @@ src/
 ### Rendering Techniques
 - **Interactive mode**: Instanced billboard/impostor spheres (ray-sphere in fragment shader)
 - **Ray tracing mode**: Procedural primitives or low-poly proxy geometry with normal reconstruction
+- **Projection modes**: Both perspective and orthographic projection are supported across all renderers. Sphere impostors, RT ray generation, and unit cell occlusion all branch on `isPerspective` at the shader level. The Camera class handles both projection matrices, and `RenderStateHash` includes projection state for RT accumulation reset.
 
 ### Acceleration Structure Strategy (for trajectories)
 - TLAS rebuild per frame (typical for dynamic atoms)

@@ -691,6 +691,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.bondCount = m_bondCount;
     rt.bondRadius = m_settings.bondRadius;
     rt.showBonds = m_settings.showBonds ? 1 : 0;
+    rt.isPerspective = camera.isPerspective() ? 1 : 0;
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
@@ -802,6 +803,7 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
         gizmoUniforms.viewMatrix = qMatToSimd(camera.viewMatrix());
         gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
         gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
+        gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
         float len = camera.distance() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,
@@ -878,6 +880,7 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
         gizmoUniforms.viewMatrix = qMatToSimd(camera.viewMatrix());
         gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
         gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
+        gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
         float len = camera.distance() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,

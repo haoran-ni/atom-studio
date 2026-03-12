@@ -191,6 +191,8 @@ float MetalViewport::lightElevation() const { return m_lightElevation; }
 float MetalViewport::viewportAxesX() const { return m_viewportAxesX; }
 float MetalViewport::viewportAxesY() const { return m_viewportAxesY; }
 float MetalViewport::viewportAxesScale() const { return m_viewportAxesScale; }
+bool MetalViewport::isPerspective() const { return m_camera->isPerspective(); }
+float MetalViewport::fieldOfView() const { return m_camera->fieldOfView(); }
 
 QVariantList MetalViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
@@ -506,6 +508,22 @@ void MetalViewport::setViewportAxesScale(float value) {
     if (!qFuzzyCompare(m_viewportAxesScale, clamped)) {
         m_viewportAxesScale = clamped;
         emit viewportAxesScaleChanged();
+        update();
+    }
+}
+
+void MetalViewport::setIsPerspective(bool perspective) {
+    if (m_camera->isPerspective() != perspective) {
+        m_camera->setProjection(perspective);
+        emit projectionChanged();
+        update();
+    }
+}
+
+void MetalViewport::setFieldOfView(float fov) {
+    if (!qFuzzyCompare(m_camera->fieldOfView(), fov)) {
+        m_camera->setFieldOfView(fov);
+        emit projectionChanged();
         update();
     }
 }

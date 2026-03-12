@@ -191,6 +191,13 @@ RTUnitCellUniforms makeRTUnitCellUniforms(const Camera& camera,
     const UnitCellStyle style = makeUnitCellStyle(settings);
     unitCell.unitCellRadius = style.radius;
     unitCell.unitCellColor = style.color;
+
+    unitCell.isPerspective = camera.isPerspective() ? 1 : 0;
+    const QVector3D fwd = camera.forwardVector();
+    unitCell.cameraForwardX = fwd.x();
+    unitCell.cameraForwardY = fwd.y();
+    unitCell.cameraForwardZ = fwd.z();
+
     return unitCell;
 }
 

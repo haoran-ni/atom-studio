@@ -4,6 +4,94 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## IMPORTANT — 2026-03-12: Orthographic View Implementation (All Renderers)
+
+### Summary
+Implemented orthographic projection rendering across all backends (Metal raster, Metal RT, OpenGL raster, OpenGL RT). The Camera class already supported orthographic projection matrices, zoom, and fit-to-view, but all shader code assumed perspective projection and the QML sidebar controls were disconnected. This change wires the existing QML controls to the camera, then fixes every perspective-dependent shader path so orthographic rendering is correct without breaking perspective mode.
+
+### What Changed
+
+**1. GPU Uniform Structs (`MetalTypes.h`)**
+Added `int32_t isPerspective` to three structs:
+- `SceneUniforms`: for raster sphere impostor shaders
+- `RTUniforms`: for ray tracing fragment shader
+- `RTUnitCellUniforms`: for RT unit cell occlusion shader (also added `float cameraForwardX/Y/Z` for orthographic occlusion ray direction)
+
+**2. Metal Sphere Impostor (Raster) — `MetalShaderLibrary.mm`**
+- **Vertex shader (`sphere_vertex`)**: Orthographic billboard sizing uses constant `R * 1.05` (no perspective foreshortening) vs the perspective formula `R * dist / sqrt(dist² - R²)`.
+- **Fragment shader (`sphere_fragment`)**: Orthographic ray-sphere intersection uses parallel rays along -Z with origin at the billboard fragment position, instead of rays from the camera origin through the fragment. View direction for shading is constant `float3(0,0,1)` in ortho mode.
+
+**3. Metal RT Ray Generation — `MetalShaderLibrary.mm`**
+- Orthographic: ray origins vary per pixel (unprojected near-plane points in world space), ray direction is constant (camera forward). Perspective: single origin (camera position), varying directions.
+- Changed `viewDir = normalize(cameraPos - hitPos)` to `viewDir = -rayDir` — correct for both projection modes.
+
+**4. Metal RT Unit Cell Occlusion — `MetalShaderLibrary.mm`**
+- Orthographic: traces backward parallel ray from fragment toward camera (using `cameraForward` direction), limited by distance from fragment to camera plane.
+- Perspective: traces ray from camera position toward fragment (existing behavior).
+
+**5. Metal Raster Uniform Upload**
+- `MetalRenderer.mm`: uploads `isPerspective` to `SceneUniforms`.
+- `MetalRayTracingRenderer.mm`: uploads `isPerspective` to `RTUniforms` and gizmo `SceneUniforms`.
+- `MetalUnitCellShared.cpp`: uploads `isPerspective` and `cameraForward` vector to `RTUnitCellUniforms`.
+
+**6. OpenGL Sphere Impostor (Raster) — `ShaderManager.cpp`**
+- Same orthographic billboard sizing and ray-sphere intersection logic as Metal, using `uniform int uIsPerspective`.
+- `SphereRenderer.cpp` and `UnitCellRenderer.cpp`: upload the new uniform.
+
+**7. OpenGL RT Ray Generation — `RayTracingRenderer.cpp`**
+- Same orthographic ray generation logic as Metal RT (varying origins, constant direction).
+- Changed `viewDir = normalize(uCameraPos - hitPos)` to `viewDir = -rayDir`.
+- Uploads `uIsPerspective` uniform.
+
+**8. Viewport Q_PROPERTYs — `MetalViewport.h/.mm`, `OpenGLViewport.h/.cpp`**
+- Added `isPerspective` (bool) and `fieldOfView` (float) Q_PROPERTYs with `projectionChanged` signal.
+- Getters/setters delegate to `Camera` class.
+
+**9. QML Sidebar Wiring — `Sidebar.qml`**
+- Wired the existing but disconnected Perspective/Orthographic ComboBox to `sidebar.viewport.isPerspective`.
+- Wired the existing FOV slider to `sidebar.viewport.fieldOfView`.
+- FOV slider hides when orthographic is selected (not relevant in ortho mode).
+- FOV range expanded to 10–120 to match Camera's valid range.
+
+### What Is NOT Changed
+- **Bond cylinder shaders**: use standard MVP transforms — correct with orthographic projection matrix as-is.
+- **Line shaders / unit cell wireframe (raster)**: use `viewProjectionMatrix` directly — correct for both projections.
+- **Viewport axes overlay**: uses its own ortho projection — unaffected.
+- **RenderStateHash**: already included `isPerspective` and `orthoScale` — no changes needed.
+- **Camera class**: already fully supported orthographic — no changes needed.
+- **Rotation center gizmo**: uses cylinder shader with MVP — works correctly with orthographic.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/metal/MetalTypes.h` | Added `isPerspective` to `SceneUniforms`, `RTUniforms`, `RTUnitCellUniforms`; added `cameraForwardX/Y/Z` to `RTUnitCellUniforms` |
+| `src/render/metal/MetalShaderLibrary.mm` | Updated MSL struct mirrors; ortho billboard sizing in sphere vertex; ortho ray-sphere in sphere fragment; ortho RT ray generation; ortho unit cell occlusion |
+| `src/render/metal/MetalRenderer.mm` | Upload `isPerspective` to raster `SceneUniforms` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Upload `isPerspective` to `RTUniforms` and gizmo `SceneUniforms` |
+| `src/render/metal/MetalUnitCellShared.cpp` | Upload `isPerspective` and `cameraForward` to `RTUnitCellUniforms` |
+| `src/render/opengl/ShaderManager.cpp` | Added `uIsPerspective` uniform; ortho billboard sizing and ray-sphere intersection in GLSL |
+| `src/render/opengl/SphereRenderer.cpp` | Upload `uIsPerspective` uniform |
+| `src/render/opengl/UnitCellRenderer.cpp` | Upload `uIsPerspective` uniform for unit cell corner spheres |
+| `src/render/opengl/RayTracingRenderer.cpp` | Added `uIsPerspective` to RT shader; ortho ray generation; upload uniform |
+| `src/ui/components/MetalViewport.h` | Added `isPerspective`/`fieldOfView` Q_PROPERTYs, getters, setters, signal |
+| `src/ui/components/MetalViewport.mm` | Implemented `isPerspective`/`fieldOfView` getters and setters |
+| `src/ui/components/OpenGLViewport.h` | Added `isPerspective`/`fieldOfView` Q_PROPERTYs, getters, setters, signal |
+| `src/ui/components/OpenGLViewport.cpp` | Implemented `isPerspective`/`fieldOfView` getters and setters |
+| `src/ui/qml/Sidebar.qml` | Wired projection ComboBox and FOV slider to viewport properties |
+
+### Key Design Decisions
+- **Billboard sizing**: Orthographic uses constant radius (no foreshortening) since all objects are at effectively infinite distance. The `1.05×` margin prevents edge clipping.
+- **Ray-sphere intersection**: Orthographic parallel rays along -Z with per-fragment origins, vs perspective rays from camera origin. Both write depth via the same `projectionMatrix * hitPos` path — `clipPos.w = 1.0` under ortho, so depth works correctly without special handling.
+- **RT ray generation**: Orthographic origins are computed by unprojecting each pixel's NDC through `invProjection` then transforming to world space with `invView`. Direction is constant camera forward vector.
+- **viewDir = -rayDir**: Replaces the previous `normalize(cameraPos - hitPos)` which was only correct for perspective. Using `-rayDir` is correct for both modes.
+- **Unit cell occlusion**: Orthographic occlusion uses backward parallel rays from the fragment, limited by the signed distance from the fragment to the camera plane. This correctly tests whether atoms occlude unit cell lines from the viewer's direction.
+- **cameraForward as scalar floats**: Used `float cameraForwardX/Y/Z` instead of `simd_float3` in `RTUnitCellUniforms` to avoid SIMD alignment complexity in the struct layout.
+
+### Verification
+- Build: `cmake --build build` — success (no errors, only pre-existing OpenGL deprecation warnings on macOS).
+
+---
+
 ## 2026-03-08: Fix RT-001 Resize Race and Wasted In-Flight Scene Upload
 
 ### Summary

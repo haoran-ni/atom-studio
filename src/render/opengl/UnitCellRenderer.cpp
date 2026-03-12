@@ -347,6 +347,7 @@ void UnitCellRenderer::render(const Camera& camera, const RenderSettings& settin
         sphereShader->setUniformValue("uViewMatrix", camera.viewMatrix());
         sphereShader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
         sphereShader->setUniformValue("uAtomScale", radius);
+        sphereShader->setUniformValue("uIsPerspective", camera.isPerspective() ? 1 : 0);
         sphereShader->setUniformValue("uLightDir", lightDir);
 
         // Flat, unlit color for unit-cell object.

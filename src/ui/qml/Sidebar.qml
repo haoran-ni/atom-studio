@@ -481,17 +481,28 @@ Rectangle {
                         ComboBox {
                             Layout.fillWidth: true
                             model: ["Perspective", "Orthographic"]
-                            currentIndex: 0
+                            currentIndex: sidebar.viewport ? (sidebar.viewport.isPerspective ? 0 : 1) : 0
+                            onActivated: function(index) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.isPerspective = (index === 0)
+                                }
+                            }
                         }
 
                         NumericSliderControl {
                             title: qsTr("Field of View")
+                            visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
                             integer: true
-                            from: 30
+                            from: 10
                             to: 120
                             stepSize: 1
                             defaultValue: 45
-                            sourceValue: 45
+                            sourceValue: sidebar.viewport ? sidebar.viewport.fieldOfView : 45
+                            onValueApplied: function(newValue) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.fieldOfView = newValue
+                                }
+                            }
                         }
 
                         Button {

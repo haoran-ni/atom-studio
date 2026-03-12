@@ -16,6 +16,7 @@ layout(location = 2) in vec4 aInstanceColor;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform float uAtomScale;
+uniform int uIsPerspective;
 
 out vec3 vViewCenter;    // Sphere center in view space
 out float vRadius;
@@ -30,18 +31,20 @@ void main() {
     vec4 viewCenter = uViewMatrix * vec4(aInstancePos.xyz, 1.0);
     vViewCenter = viewCenter.xyz;
 
-    // Perspective-correct billboard size.
-    // The projected silhouette of a sphere at distance d is:
-    //   R_proj = R * d / sqrt(d^2 - R^2)
-    // which is always >= R and grows as the sphere gets closer.
-    float dist = -viewCenter.z;  // positive distance along view axis
+    // Billboard size
     float R = vRadius;
     float billboardR;
-    if (dist > R * 1.01) {
-        billboardR = R * dist / sqrt(dist * dist - R * R);
+    if (uIsPerspective != 0) {
+        // Perspective-correct: projected silhouette grows as sphere nears camera
+        float dist = -viewCenter.z;
+        if (dist > R * 1.01) {
+            billboardR = R * dist / sqrt(dist * dist - R * R);
+        } else {
+            billboardR = dist * 100.0;
+        }
     } else {
-        // Sphere very close to or engulfing camera
-        billboardR = dist * 100.0;
+        // Orthographic: constant billboard size (no foreshortening)
+        billboardR = R;
     }
     billboardR *= 1.05; // small margin for numerical safety
 
@@ -71,41 +74,51 @@ uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
 uniform float uShininess;
+uniform int uIsPerspective;
 
 out vec4 fragColor;
 
 void main() {
-    // Perspective ray-sphere intersection in view space.
-    // Ray from eye (0,0,0) through this fragment's view-space position on the billboard.
-    vec3 rayDir = normalize(vViewPosOnQuad);
-
-    // Sphere: |P - C|^2 = R^2,  Ray: P(t) = t * rayDir
-    // Expanding: t^2 - 2t(rayDir . C) + |C|^2 - R^2 = 0
     vec3 C = vViewCenter;
     float R = vRadius;
+    vec3 hitPos;
+    vec3 normal;
 
-    float b = dot(rayDir, C);
-    float c = dot(C, C) - R * R;
-    float disc = b * b - c;
+    if (uIsPerspective != 0) {
+        // Perspective ray-sphere intersection in view space
+        vec3 rayDir = normalize(vViewPosOnQuad);
 
-    if (disc < 0.0) {
-        discard;
+        float b = dot(rayDir, C);
+        float c = dot(C, C) - R * R;
+        float disc = b * b - c;
+
+        if (disc < 0.0) discard;
+
+        float sqrtDisc = sqrt(disc);
+        float t = b - sqrtDisc;
+        if (t < 0.0) t = b + sqrtDisc;
+        if (t < 0.0) discard;
+
+        hitPos = t * rayDir;
+    } else {
+        // Orthographic ray-sphere intersection in view space
+        // Ray: origin = (quad.x, quad.y, 0), direction = (0, 0, -1)
+        float dx = vViewPosOnQuad.x - C.x;
+        float dy = vViewPosOnQuad.y - C.y;
+        float disc = R * R - dx * dx - dy * dy;
+
+        if (disc < 0.0) discard;
+
+        float sqrtDisc = sqrt(disc);
+        // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z)
+        hitPos = vec3(vViewPosOnQuad.xy, C.z + sqrtDisc);
     }
 
-    float sqrtDisc = sqrt(disc);
-    float t = b - sqrtDisc; // front intersection
-
-    // If t < 0, camera is inside the sphere — use back intersection
-    if (t < 0.0) t = b + sqrtDisc;
-    if (t < 0.0) discard;
-
-    // Hit position and normal in view space
-    vec3 hitPos = t * rayDir;
-    vec3 normal = normalize(hitPos - C);
+    normal = normalize(hitPos - C);
 
     // Lighting calculation — light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
-    vec3 viewDir = normalize(-hitPos);
+    vec3 viewDir = (uIsPerspective != 0) ? normalize(-hitPos) : vec3(0.0, 0.0, 1.0);
 
     // Ambient
     vec3 ambient = uAmbient * vColor.rgb;

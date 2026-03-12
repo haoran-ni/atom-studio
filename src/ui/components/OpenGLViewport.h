@@ -60,6 +60,8 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float viewportAxesX READ viewportAxesX WRITE setViewportAxesX NOTIFY viewportAxesXChanged)
     Q_PROPERTY(float viewportAxesY READ viewportAxesY WRITE setViewportAxesY NOTIFY viewportAxesYChanged)
     Q_PROPERTY(float viewportAxesScale READ viewportAxesScale WRITE setViewportAxesScale NOTIFY viewportAxesScaleChanged)
+    Q_PROPERTY(bool isPerspective READ isPerspective WRITE setIsPerspective NOTIFY projectionChanged)
+    Q_PROPERTY(float fieldOfView READ fieldOfView WRITE setFieldOfView NOTIFY projectionChanged)
 
 public:
     explicit OpenGLViewport(QQuickItem* parent = nullptr);
@@ -95,6 +97,8 @@ public:
     float viewportAxesX() const;
     float viewportAxesY() const;
     float viewportAxesScale() const;
+    bool isPerspective() const;
+    float fieldOfView() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
 
@@ -125,6 +129,8 @@ public slots:
     void setViewportAxesX(float value);
     void setViewportAxesY(float value);
     void setViewportAxesScale(float value);
+    void setIsPerspective(bool perspective);
+    void setFieldOfView(float fov);
 
 signals:
     void atomCountChanged();
@@ -154,6 +160,7 @@ signals:
     void viewportAxesXChanged();
     void viewportAxesYChanged();
     void viewportAxesScaleChanged();
+    void projectionChanged();
     void cameraChanged();
 
 protected:
