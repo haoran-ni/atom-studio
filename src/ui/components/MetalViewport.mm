@@ -243,6 +243,13 @@ void MetalViewport::resetCamera() {
     update();
 }
 
+void MetalViewport::setViewDirection(int direction) {
+    if (direction < 0 || direction > 5) return;
+    m_camera->setPresetView(static_cast<render::ViewDirection>(direction));
+    emit cameraChanged();
+    update();
+}
+
 void MetalViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;

@@ -27,6 +27,20 @@ void Camera::reset() {
     m_projDirty = true;
 }
 
+void Camera::setPresetView(ViewDirection dir) {
+    QVector3D forward, up;
+    switch (dir) {
+        case ViewDirection::PlusX:  forward = { 1, 0, 0}; up = {0, 0, 1}; break;
+        case ViewDirection::MinusX: forward = {-1, 0, 0}; up = {0, 0, 1}; break;
+        case ViewDirection::PlusY:  forward = { 0, 1, 0}; up = {0, 0, 1}; break;
+        case ViewDirection::MinusY: forward = { 0,-1, 0}; up = {0, 0, 1}; break;
+        case ViewDirection::PlusZ:  forward = { 0, 0, 1}; up = {0, 1, 0}; break;
+        case ViewDirection::MinusZ: forward = { 0, 0,-1}; up = {0, 1, 0}; break;
+    }
+    m_orientation = QQuaternion::fromDirection(forward, up).normalized();
+    m_viewDirty = true;
+}
+
 void Camera::orbit(float deltaAzimuth, float deltaElevation) {
     // Horizontal: rotate around camera's current up axis (true trackball feel)
     QVector3D cameraUp = m_orientation.rotatedVector(QVector3D(0, 1, 0));

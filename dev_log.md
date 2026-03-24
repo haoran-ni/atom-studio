@@ -4,6 +4,45 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-24: Preset View Directions (+X, -X, +Y, -Y, +Z, -Z)
+
+### Summary
+Added six preset view direction buttons to the Camera tab in the sidebar, allowing users to quickly snap the camera to axis-aligned views. Works with both perspective and orthographic projection since only the camera orientation quaternion is changed — projection mode, distance, target, and ortho scale are all preserved.
+
+### What Changed
+
+**1. Camera Preset View Logic — `Camera.h`, `Camera.cpp`**
+- Added `enum class ViewDirection { PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ }` in the `atom::render` namespace.
+- Added `Camera::setPresetView(ViewDirection dir)` which uses `QQuaternion::fromDirection(forward, up)` to compute the orientation quaternion for each axis-aligned view.
+- Z-up convention: X/Y views use `up = (0,0,1)`; Z views use `up = (0,1,0)`.
+- "+X" means the positive X axis points toward the user (camera positioned on the +X side of the target).
+
+**2. Viewport Slots — `MetalViewport.h/.mm`, `OpenGLViewport.h/.cpp`**
+- Added `Q_INVOKABLE void setViewDirection(int direction)` to both viewport classes.
+- Validates input range (0–5), casts to `ViewDirection`, delegates to `Camera::setPresetView()`, emits `cameraChanged()`, and triggers a repaint.
+
+**3. QML Sidebar UI — `Sidebar.qml`**
+- Added a "View Direction" label and a 3×2 `GridLayout` of buttons (+X, −X, +Y, −Y, +Z, −Z) in the Camera section, positioned between the FOV slider and the Reset Camera button.
+- Each button calls `sidebar.viewport.setViewDirection(index)` where the index maps directly to the `ViewDirection` enum.
+
+### What Is NOT Changed
+- **Camera class core**: No changes to orbit, pan, zoom, projection, or matrix computation.
+- **Renderers/shaders**: No shader changes — preset views only set the orientation quaternion.
+- **RenderStateHash**: Already includes orientation via the view matrix — RT accumulation resets correctly on view change.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/render/common/Camera.h` | Added `ViewDirection` enum and `setPresetView()` declaration |
+| `src/render/common/Camera.cpp` | Implemented `setPresetView()` using `QQuaternion::fromDirection()` |
+| `src/ui/components/MetalViewport.h` | Added `Q_INVOKABLE setViewDirection(int)` |
+| `src/ui/components/MetalViewport.mm` | Implemented `setViewDirection()` slot |
+| `src/ui/components/OpenGLViewport.h` | Added `Q_INVOKABLE setViewDirection(int)` |
+| `src/ui/components/OpenGLViewport.cpp` | Implemented `setViewDirection()` slot |
+| `src/ui/qml/Sidebar.qml` | Added view direction label and 3×2 button grid in Camera section |
+
+---
+
 ## IMPORTANT — 2026-03-12: Orthographic View Implementation (All Renderers)
 
 ### Summary

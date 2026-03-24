@@ -101,6 +101,7 @@ public:
     float fieldOfView() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
+    Q_INVOKABLE void setViewDirection(int direction);
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);

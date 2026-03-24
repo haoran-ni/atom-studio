@@ -505,6 +505,32 @@ Rectangle {
                             }
                         }
 
+                        Label {
+                            text: qsTr("View Direction")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 4
+                            rowSpacing: 4
+
+                            Repeater {
+                                model: ["+X", "−X", "+Y", "−Y", "+Z", "−Z"]
+                                Button {
+                                    text: modelData
+                                    Layout.fillWidth: true
+                                    onClicked: {
+                                        if (sidebar.viewport) {
+                                            sidebar.viewport.setViewDirection(index)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Button {
                             text: qsTr("Reset Camera")
                             Layout.fillWidth: true

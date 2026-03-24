@@ -6,6 +6,8 @@
 
 namespace atom::render {
 
+enum class ViewDirection { PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ };
+
 /**
  * @brief Orbit camera for 3D visualization
  *
@@ -25,6 +27,9 @@ public:
     void pan(float deltaX, float deltaY);
     void zoom(float factor);
     void setDistance(float distance);
+
+    // Preset views
+    void setPresetView(ViewDirection dir);
 
     // Reset
     void reset();

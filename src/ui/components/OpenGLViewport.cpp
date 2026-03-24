@@ -438,6 +438,13 @@ void OpenGLViewport::resetCamera() {
     update();
 }
 
+void OpenGLViewport::setViewDirection(int direction) {
+    if (direction < 0 || direction > 5) return;
+    m_camera->setPresetView(static_cast<render::ViewDirection>(direction));
+    emit cameraChanged();
+    update();
+}
+
 void OpenGLViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
