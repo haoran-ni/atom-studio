@@ -266,6 +266,10 @@ public:
     };
 
     BoundingBox computeBoundingBox() const;
+    BoundingBox computeUnitCellBoundingBox() const;
+    BoundingBox computeViewBoundingBox() const;
+    std::array<float, 3> geometricCenter() const;
+    std::array<float, 3> unitCellCenter() const;
     std::array<float, 3> centerOfMass() const;
 
     // ========== GPU data packing ==========

@@ -419,8 +419,11 @@ void OpenGLViewport::onBondsReady() {
 void OpenGLViewport::fitToView() {
     if (!m_structure || m_structure->atomCount() == 0) return;
 
-    auto bbox = m_structure->computeBoundingBox();
-    QVector3D center(bbox.centerX(), bbox.centerY(), bbox.centerZ());
+    const auto bbox = m_structure->computeViewBoundingBox();
+    const auto centerData = m_structure->hasLattice()
+        ? m_structure->unitCellCenter()
+        : m_structure->geometricCenter();
+    QVector3D center(centerData[0], centerData[1], centerData[2]);
     float extent = bbox.maxExtent();
 
     m_camera->fitToView(center, extent > 0 ? extent : 10.0f);

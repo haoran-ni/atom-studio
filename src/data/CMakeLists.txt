@@ -33,4 +33,10 @@ if(BUILD_TESTING)
     )
     target_link_libraries(atom-data-structureops-test PRIVATE atom-data)
     add_test(NAME atom-data-structureops COMMAND atom-data-structureops-test)
+
+    add_executable(atom-data-structure-test
+        tests/StructureTest.cpp
+    )
+    target_link_libraries(atom-data-structure-test PRIVATE atom-data)
+    add_test(NAME atom-data-structure COMMAND atom-data-structure-test)
 endif()

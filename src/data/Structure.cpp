@@ -430,6 +430,90 @@ Structure::BoundingBox Structure::computeBoundingBox() const {
     return box;
 }
 
+Structure::BoundingBox Structure::computeUnitCellBoundingBox() const {
+    BoundingBox box;
+    if (!hasLattice()) return box;
+
+    const auto& lattice = m_lattice;
+    const auto& m = lattice.matrix;
+
+    const std::array<std::array<float, 3>, 8> corners = {{
+        {{0.0f, 0.0f, 0.0f}},
+        {{static_cast<float>(m[0][0]), static_cast<float>(m[0][1]), static_cast<float>(m[0][2])}},
+        {{static_cast<float>(m[1][0]), static_cast<float>(m[1][1]), static_cast<float>(m[1][2])}},
+        {{static_cast<float>(m[2][0]), static_cast<float>(m[2][1]), static_cast<float>(m[2][2])}},
+        {{static_cast<float>(m[0][0] + m[1][0]), static_cast<float>(m[0][1] + m[1][1]), static_cast<float>(m[0][2] + m[1][2])}},
+        {{static_cast<float>(m[0][0] + m[2][0]), static_cast<float>(m[0][1] + m[2][1]), static_cast<float>(m[0][2] + m[2][2])}},
+        {{static_cast<float>(m[1][0] + m[2][0]), static_cast<float>(m[1][1] + m[2][1]), static_cast<float>(m[1][2] + m[2][2])}},
+        {{static_cast<float>(m[0][0] + m[1][0] + m[2][0]),
+          static_cast<float>(m[0][1] + m[1][1] + m[2][1]),
+          static_cast<float>(m[0][2] + m[1][2] + m[2][2])}},
+    }};
+
+    box.minX = box.maxX = corners[0][0];
+    box.minY = box.maxY = corners[0][1];
+    box.minZ = box.maxZ = corners[0][2];
+
+    for (size_t i = 1; i < corners.size(); ++i) {
+        box.minX = std::min(box.minX, corners[i][0]);
+        box.maxX = std::max(box.maxX, corners[i][0]);
+        box.minY = std::min(box.minY, corners[i][1]);
+        box.maxY = std::max(box.maxY, corners[i][1]);
+        box.minZ = std::min(box.minZ, corners[i][2]);
+        box.maxZ = std::max(box.maxZ, corners[i][2]);
+    }
+
+    return box;
+}
+
+Structure::BoundingBox Structure::computeViewBoundingBox() const {
+    BoundingBox box = computeBoundingBox();
+    if (!hasLattice()) return box;
+
+    BoundingBox cellBox = computeUnitCellBoundingBox();
+    if (m_atomCount == 0) return cellBox;
+
+    box.minX = std::min(box.minX, cellBox.minX);
+    box.maxX = std::max(box.maxX, cellBox.maxX);
+    box.minY = std::min(box.minY, cellBox.minY);
+    box.maxY = std::max(box.maxY, cellBox.maxY);
+    box.minZ = std::min(box.minZ, cellBox.minZ);
+    box.maxZ = std::max(box.maxZ, cellBox.maxZ);
+    return box;
+}
+
+std::array<float, 3> Structure::geometricCenter() const {
+    if (m_atomCount == 0) return {0.0f, 0.0f, 0.0f};
+
+    double cx = 0.0;
+    double cy = 0.0;
+    double cz = 0.0;
+
+    for (size_t i = 0; i < m_atomCount; ++i) {
+        cx += m_posX[i];
+        cy += m_posY[i];
+        cz += m_posZ[i];
+    }
+
+    const double invCount = 1.0 / static_cast<double>(m_atomCount);
+    return {
+        static_cast<float>(cx * invCount),
+        static_cast<float>(cy * invCount),
+        static_cast<float>(cz * invCount),
+    };
+}
+
+std::array<float, 3> Structure::unitCellCenter() const {
+    if (!hasLattice()) return {0.0f, 0.0f, 0.0f};
+
+    const auto center = m_lattice.fractionalToCartesian(0.5, 0.5, 0.5);
+    return {
+        static_cast<float>(center[0]),
+        static_cast<float>(center[1]),
+        static_cast<float>(center[2]),
+    };
+}
+
 std::array<float, 3> Structure::centerOfMass() const {
     if (m_atomCount == 0) return {0, 0, 0};
 

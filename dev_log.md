@@ -4,6 +4,58 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-25: Initial Viewport Rotation Center from Unit Cell or Geometry Center
+
+### Summary
+Changed the initial viewport rotation center used by `fitToView()` and camera reset. Periodic structures now initialize the camera target at the unit-cell center, while non-periodic structures initialize it at the geometric center of the atom positions. The framing extent now uses a combined view bounding box so periodic scenes still fit both the unit cell and the atoms.
+
+### What Changed
+
+**1. Structure Geometry Helpers — `Structure.h`, `Structure.cpp`**
+- Added `geometricCenter()` to compute the arithmetic mean of all atom positions.
+- Added `unitCellCenter()` to compute the Cartesian position of fractional coordinate `(0.5, 0.5, 0.5)`.
+- Added `computeUnitCellBoundingBox()` to enclose all eight unit-cell corners in Cartesian space.
+- Added `computeViewBoundingBox()` to return the union of the atom bounding box and the unit-cell bounding box when a lattice exists.
+
+**2. Viewport Fit Logic — `OpenGLViewport.cpp`, `MetalViewport.mm`**
+- Updated `fitToView()` in both viewport backends to choose the initial camera target by structure type:
+  - `hasLattice() == true` → use `unitCellCenter()`
+  - `hasLattice() == false` → use `geometricCenter()`
+- Replaced the old fit extent source (`computeBoundingBox()`) with `computeViewBoundingBox()` so centering on the unit cell does not under-estimate the required framing size.
+
+**3. Tests — `src/data/tests/StructureTest.cpp`, `src/data/CMakeLists.txt`**
+- Added a dedicated data-layer test target covering:
+  - geometric center for non-periodic structures,
+  - unit-cell center for periodic structures,
+  - merged view bounds that cover both atoms and the unit cell.
+
+### What Is NOT Changed
+- **Orbit behavior after initialization**: rotation still happens around `camera.target()`, and pan / zoom-to-cursor can still move that target afterward.
+- **Center of mass logic**: `centerOfMass()` remains unchanged and is still separate from the viewport initialization policy.
+- **Renderer behavior**: no shader or renderer-side rotation logic changed; only the initial camera target and fit extent inputs changed.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/data/Structure.h` | Declared `geometricCenter()`, `unitCellCenter()`, `computeUnitCellBoundingBox()`, and `computeViewBoundingBox()` |
+| `src/data/Structure.cpp` | Implemented the new center and bounding-box helpers |
+| `src/ui/components/OpenGLViewport.cpp` | Updated `fitToView()` to use unit-cell center or geometric center and the merged view bounds |
+| `src/ui/components/MetalViewport.mm` | Updated `fitToView()` to use unit-cell center or geometric center and the merged view bounds |
+| `src/data/tests/StructureTest.cpp` | Added geometry helper coverage |
+| `src/data/CMakeLists.txt` | Added `atom-data-structure-test` target |
+
+### Key Design Decisions
+- **Unit-cell center for periodic inputs**: uses crystallographic context as the initial rotation pivot instead of the atom-cloud enclosure center.
+- **Geometric center for non-periodic inputs**: uses the mean atom position rather than the atom bounding-box center, matching the requested “geometry center” behavior.
+- **Merged fit bounds for periodic inputs**: keeps framing robust when atoms extend outside the nominal cell or when the unit-cell overlay is larger than the atom cloud in some directions.
+
+### Verification
+- `cmake -S . -B build` — success.
+- `cmake --build build --target atom-data-structure-test atom-ui` — success.
+- `ctest --test-dir build --output-on-failure -R "atom-data-(structure|neighborlist|structureops)"` — 3/3 tests passed.
+
+---
+
 ## 2026-03-24: Preset View Directions (+X, -X, +Y, -Y, +Z, -Z)
 
 ### Summary
