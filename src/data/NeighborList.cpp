@@ -98,158 +98,287 @@ void NeighborList::buildCellList(
     const int*   /*atomicNumbers*/, size_t atomCount,
     const Lattice& lattice, float globalCutoff,
     const std::vector<uint32_t>& activeAtoms,
-    const std::vector<float>&    covRadii)
+    const std::vector<float>&    /*covRadii*/)
 {
     const bool hasPBC = lattice.defined &&
                         (lattice.pbc[0] || lattice.pbc[1] || lattice.pbc[2]);
 
-    // ── Grid dimensions ──────────────────────────────────────────────────────
-    // For PBC directions use the lattice vector lengths; for non-PBC use the
-    // Cartesian bounding box of active atom positions.
-
-    float xmin, ymin, zmin, xmax, ymax, zmax;
-
-    if (hasPBC && lattice.pbc[0] && lattice.pbc[1] && lattice.pbc[2]) {
-        // Full PBC: use lattice origin (0,0,0) and lattice vector extents
-        xmin = ymin = zmin = 0.0f;
-        // Approximate Cartesian extents of the parallelepiped
-        xmax = static_cast<float>(std::abs(lattice.matrix[0][0]) +
-                                   std::abs(lattice.matrix[1][0]) +
-                                   std::abs(lattice.matrix[2][0]));
-        ymax = static_cast<float>(std::abs(lattice.matrix[0][1]) +
-                                   std::abs(lattice.matrix[1][1]) +
-                                   std::abs(lattice.matrix[2][1]));
-        zmax = static_cast<float>(std::abs(lattice.matrix[0][2]) +
-                                   std::abs(lattice.matrix[1][2]) +
-                                   std::abs(lattice.matrix[2][2]));
-    } else {
-        // Non-PBC or partial PBC: use bounding box of active atoms
-        xmin = ymin = zmin =  std::numeric_limits<float>::max();
-        xmax = ymax = zmax = -std::numeric_limits<float>::max();
-        for (uint32_t idx : activeAtoms) {
-            if (posX[idx] < xmin) xmin = posX[idx];
-            if (posY[idx] < ymin) ymin = posY[idx];
-            if (posZ[idx] < zmin) zmin = posZ[idx];
-            if (posX[idx] > xmax) xmax = posX[idx];
-            if (posY[idx] > ymax) ymax = posY[idx];
-            if (posZ[idx] > zmax) zmax = posZ[idx];
-        }
-        // Pad by cutoff so edge atoms are covered
-        xmin -= globalCutoff; ymin -= globalCutoff; zmin -= globalCutoff;
-        xmax += globalCutoff; ymax += globalCutoff; zmax += globalCutoff;
-    }
-
-    float boxX = xmax - xmin;
-    float boxY = ymax - ymin;
-    float boxZ = zmax - zmin;
-
-    int nx = std::max(1, static_cast<int>(boxX / globalCutoff));
-    int ny = std::max(1, static_cast<int>(boxY / globalCutoff));
-    int nz = std::max(1, static_cast<int>(boxZ / globalCutoff));
-
-    float csX = boxX / static_cast<float>(nx);
-    float csY = boxY / static_cast<float>(ny);
-    float csZ = boxZ / static_cast<float>(nz);
-
-    // ── Bin active atoms into cells ──────────────────────────────────────────
-    const int nCells = nx * ny * nz;
-    std::vector<std::vector<uint32_t>> cellAtoms(nCells);
-
-    auto cellOf = [&](float x, float y, float z) -> int {
-        int ix = std::clamp(static_cast<int>((x - xmin) / csX), 0, nx - 1);
-        int iy = std::clamp(static_cast<int>((y - ymin) / csY), 0, ny - 1);
-        int iz = std::clamp(static_cast<int>((z - zmin) / csZ), 0, nz - 1);
-        return ix + iy * nx + iz * nx * ny;
+    struct ImageAtom {
+        uint32_t index;
+        float    x;
+        float    y;
+        float    z;
+        int8_t   imageX;
+        int8_t   imageY;
+        int8_t   imageZ;
     };
 
-    for (uint32_t idx : activeAtoms) {
-        int c = cellOf(posX[idx], posY[idx], posZ[idx]);
-        cellAtoms[c].push_back(idx);
-    }
+    auto expandDegenerateBounds = [&](float& lo, float& hi) {
+        if (hi <= lo) {
+            lo -= 0.5f * globalCutoff;
+            hi += 0.5f * globalCutoff;
+        }
+    };
 
     // ── Build per-atom neighbor lists (temporary) ───────────────────────────
     // We accumulate into per-atom vectors, then pack into CSR.
     std::vector<std::vector<NeighborEntry>> perAtom(atomCount);
-
     const float cutoff2 = globalCutoff * globalCutoff;
 
-    for (uint32_t i : activeAtoms) {
-        float xi = posX[i], yi = posY[i], zi = posZ[i];
-        int iCell = cellOf(xi, yi, zi);
+    if (!hasPBC) {
+        float xmin =  std::numeric_limits<float>::max();
+        float ymin =  std::numeric_limits<float>::max();
+        float zmin =  std::numeric_limits<float>::max();
+        float xmax = -std::numeric_limits<float>::max();
+        float ymax = -std::numeric_limits<float>::max();
+        float zmax = -std::numeric_limits<float>::max();
 
-        int ix = iCell % nx;
-        int iy = (iCell / nx) % ny;
-        int iz = iCell / (nx * ny);
+        for (uint32_t idx : activeAtoms) {
+            xmin = std::min(xmin, posX[idx]);
+            ymin = std::min(ymin, posY[idx]);
+            zmin = std::min(zmin, posZ[idx]);
+            xmax = std::max(xmax, posX[idx]);
+            ymax = std::max(ymax, posY[idx]);
+            zmax = std::max(zmax, posZ[idx]);
+        }
 
-        for (int dz = -1; dz <= 1; ++dz) {
-            int jz_raw = iz + dz;
-            int imgZ_base = 0;
-            int jz;
-            if (hasPBC && lattice.pbc[2]) {
-                if      (jz_raw < 0)  { jz = jz_raw + nz; imgZ_base = -1; }
-                else if (jz_raw >= nz){ jz = jz_raw - nz; imgZ_base = +1; }
-                else                  { jz = jz_raw; }
-            } else {
-                if (jz_raw < 0 || jz_raw >= nz) continue;
-                jz = jz_raw;
+        xmin -= globalCutoff; ymin -= globalCutoff; zmin -= globalCutoff;
+        xmax += globalCutoff; ymax += globalCutoff; zmax += globalCutoff;
+        expandDegenerateBounds(xmin, xmax);
+        expandDegenerateBounds(ymin, ymax);
+        expandDegenerateBounds(zmin, zmax);
+
+        const float boxX = xmax - xmin;
+        const float boxY = ymax - ymin;
+        const float boxZ = zmax - zmin;
+
+        const int nx = std::max(1, static_cast<int>(boxX / globalCutoff));
+        const int ny = std::max(1, static_cast<int>(boxY / globalCutoff));
+        const int nz = std::max(1, static_cast<int>(boxZ / globalCutoff));
+
+        const float csX = boxX / static_cast<float>(nx);
+        const float csY = boxY / static_cast<float>(ny);
+        const float csZ = boxZ / static_cast<float>(nz);
+
+        const int nCells = nx * ny * nz;
+        std::vector<std::vector<uint32_t>> cellAtoms(nCells);
+
+        auto cellOf = [&](float x, float y, float z) -> int {
+            int ix = std::clamp(static_cast<int>((x - xmin) / csX), 0, nx - 1);
+            int iy = std::clamp(static_cast<int>((y - ymin) / csY), 0, ny - 1);
+            int iz = std::clamp(static_cast<int>((z - zmin) / csZ), 0, nz - 1);
+            return ix + iy * nx + iz * nx * ny;
+        };
+
+        for (uint32_t idx : activeAtoms) {
+            cellAtoms[cellOf(posX[idx], posY[idx], posZ[idx])].push_back(idx);
+        }
+
+        for (uint32_t i : activeAtoms) {
+            const float xi = posX[i];
+            const float yi = posY[i];
+            const float zi = posZ[i];
+            const int iCell = cellOf(xi, yi, zi);
+            const int ix = iCell % nx;
+            const int iy = (iCell / nx) % ny;
+            const int iz = iCell / (nx * ny);
+
+            for (int dz = -1; dz <= 1; ++dz) {
+                const int jz = iz + dz;
+                if (jz < 0 || jz >= nz) continue;
+
+                for (int dy = -1; dy <= 1; ++dy) {
+                    const int jy = iy + dy;
+                    if (jy < 0 || jy >= ny) continue;
+
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int jx = ix + dx;
+                        if (jx < 0 || jx >= nx) continue;
+
+                        const int jCell = jx + jy * nx + jz * nx * ny;
+                        for (uint32_t j : cellAtoms[jCell]) {
+                            if (j == i) continue;
+
+                            const float fdx = posX[j] - xi;
+                            const float fdy = posY[j] - yi;
+                            const float fdz = posZ[j] - zi;
+                            const float d2 = fdx * fdx + fdy * fdy + fdz * fdz;
+                            if (d2 < cutoff2 && d2 > 0.0f) {
+                                perAtom[i].push_back({j, 0, 0, 0});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        const auto& pbc = lattice.pbc;
+        const auto& m = lattice.matrix;
+
+        std::vector<float> principalX(atomCount, 0.0f);
+        std::vector<float> principalY(atomCount, 0.0f);
+        std::vector<float> principalZ(atomCount, 0.0f);
+        std::vector<int> wrapX(atomCount, 0);
+        std::vector<int> wrapY(atomCount, 0);
+        std::vector<int> wrapZ(atomCount, 0);
+
+        std::vector<ImageAtom> imageAtoms;
+        const int copiesX = pbc[0] ? 3 : 1;
+        const int copiesY = pbc[1] ? 3 : 1;
+        const int copiesZ = pbc[2] ? 3 : 1;
+        imageAtoms.reserve(activeAtoms.size() * static_cast<size_t>(copiesX * copiesY * copiesZ));
+
+        float xmin =  std::numeric_limits<float>::max();
+        float ymin =  std::numeric_limits<float>::max();
+        float zmin =  std::numeric_limits<float>::max();
+        float xmax = -std::numeric_limits<float>::max();
+        float ymax = -std::numeric_limits<float>::max();
+        float zmax = -std::numeric_limits<float>::max();
+
+        for (uint32_t idx : activeAtoms) {
+            auto frac = lattice.cartesianToFractional(
+                static_cast<double>(posX[idx]),
+                static_cast<double>(posY[idx]),
+                static_cast<double>(posZ[idx]));
+
+            std::array<double, 3> wrappedFrac = frac;
+            if (pbc[0]) {
+                const double base = std::floor(frac[0]);
+                wrapX[idx] = static_cast<int>(base);
+                wrappedFrac[0] = frac[0] - base;
+            }
+            if (pbc[1]) {
+                const double base = std::floor(frac[1]);
+                wrapY[idx] = static_cast<int>(base);
+                wrappedFrac[1] = frac[1] - base;
+            }
+            if (pbc[2]) {
+                const double base = std::floor(frac[2]);
+                wrapZ[idx] = static_cast<int>(base);
+                wrappedFrac[2] = frac[2] - base;
             }
 
-            for (int dy = -1; dy <= 1; ++dy) {
-                int jy_raw = iy + dy;
-                int imgY_base = 0;
-                int jy;
-                if (hasPBC && lattice.pbc[1]) {
-                    if      (jy_raw < 0)  { jy = jy_raw + ny; imgY_base = -1; }
-                    else if (jy_raw >= ny){ jy = jy_raw - ny; imgY_base = +1; }
-                    else                  { jy = jy_raw; }
-                } else {
-                    if (jy_raw < 0 || jy_raw >= ny) continue;
-                    jy = jy_raw;
-                }
+            const auto principal = lattice.fractionalToCartesian(
+                wrappedFrac[0], wrappedFrac[1], wrappedFrac[2]);
+            principalX[idx] = static_cast<float>(principal[0]);
+            principalY[idx] = static_cast<float>(principal[1]);
+            principalZ[idx] = static_cast<float>(principal[2]);
 
-                for (int dx = -1; dx <= 1; ++dx) {
-                    int jx_raw = ix + dx;
-                    int imgX_base = 0;
-                    int jx;
-                    if (hasPBC && lattice.pbc[0]) {
-                        if      (jx_raw < 0)  { jx = jx_raw + nx; imgX_base = -1; }
-                        else if (jx_raw >= nx){ jx = jx_raw - nx; imgX_base = +1; }
-                        else                  { jx = jx_raw; }
-                    } else {
-                        if (jx_raw < 0 || jx_raw >= nx) continue;
-                        jx = jx_raw;
+            // Enumerate the principal atom and its immediate lattice images.
+            // Candidate generation then becomes an ordinary Cartesian cell-list
+            // query over real-space image positions, which is robust for
+            // triclinic/skewed cells.
+            const int minImgX = pbc[0] ? -1 : 0;
+            const int maxImgX = pbc[0] ?  1 : 0;
+            const int minImgY = pbc[1] ? -1 : 0;
+            const int maxImgY = pbc[1] ?  1 : 0;
+            const int minImgZ = pbc[2] ? -1 : 0;
+            const int maxImgZ = pbc[2] ?  1 : 0;
+
+            for (int imgZ = minImgZ; imgZ <= maxImgZ; ++imgZ) {
+                for (int imgY = minImgY; imgY <= maxImgY; ++imgY) {
+                    for (int imgX = minImgX; imgX <= maxImgX; ++imgX) {
+                        const float rx = principalX[idx] + static_cast<float>(
+                            imgX * m[0][0] + imgY * m[1][0] + imgZ * m[2][0]);
+                        const float ry = principalY[idx] + static_cast<float>(
+                            imgX * m[0][1] + imgY * m[1][1] + imgZ * m[2][1]);
+                        const float rz = principalZ[idx] + static_cast<float>(
+                            imgX * m[0][2] + imgY * m[1][2] + imgZ * m[2][2]);
+
+                        xmin = std::min(xmin, rx);
+                        ymin = std::min(ymin, ry);
+                        zmin = std::min(zmin, rz);
+                        xmax = std::max(xmax, rx);
+                        ymax = std::max(ymax, ry);
+                        zmax = std::max(zmax, rz);
+
+                        imageAtoms.push_back({
+                            idx,
+                            rx, ry, rz,
+                            static_cast<int8_t>(imgX),
+                            static_cast<int8_t>(imgY),
+                            static_cast<int8_t>(imgZ)
+                        });
                     }
+                }
+            }
+        }
 
-                    int jCell = jx + jy * nx + jz * nx * ny;
+        expandDegenerateBounds(xmin, xmax);
+        expandDegenerateBounds(ymin, ymax);
+        expandDegenerateBounds(zmin, zmax);
 
-                    for (uint32_t j : cellAtoms[jCell]) {
-                        if (j == i) continue;
+        const float boxX = xmax - xmin;
+        const float boxY = ymax - ymin;
+        const float boxZ = zmax - zmin;
 
-                        float fdx = posX[j] - xi;
-                        float fdy = posY[j] - yi;
-                        float fdz = posZ[j] - zi;
+        const int nx = std::max(1, static_cast<int>(boxX / globalCutoff));
+        const int ny = std::max(1, static_cast<int>(boxY / globalCutoff));
+        const int nz = std::max(1, static_cast<int>(boxZ / globalCutoff));
 
-                        int8_t imgX = static_cast<int8_t>(imgX_base);
-                        int8_t imgY = static_cast<int8_t>(imgY_base);
-                        int8_t imgZ = static_cast<int8_t>(imgZ_base);
+        const float csX = boxX / static_cast<float>(nx);
+        const float csY = boxY / static_cast<float>(ny);
+        const float csZ = boxZ / static_cast<float>(nz);
 
-                        // Add lattice image displacement
-                        if (imgX_base != 0 || imgY_base != 0 || imgZ_base != 0) {
-                            const auto& m = lattice.matrix;
-                            fdx += static_cast<float>(imgX_base * m[0][0] + imgY_base * m[1][0] + imgZ_base * m[2][0]);
-                            fdy += static_cast<float>(imgX_base * m[0][1] + imgY_base * m[1][1] + imgZ_base * m[2][1]);
-                            fdz += static_cast<float>(imgX_base * m[0][2] + imgY_base * m[1][2] + imgZ_base * m[2][2]);
-                        }
+        const int nCells = nx * ny * nz;
+        std::vector<std::vector<uint32_t>> cellImages(nCells);
 
-                        // Apply MIC for PBC to ensure nearest image
-                        if (hasPBC) {
-                            applyMIC(fdx, fdy, fdz, imgX, imgY, imgZ, lattice, lattice.pbc);
-                        }
+        auto cellOf = [&](float x, float y, float z) -> int {
+            int ix = std::clamp(static_cast<int>((x - xmin) / csX), 0, nx - 1);
+            int iy = std::clamp(static_cast<int>((y - ymin) / csY), 0, ny - 1);
+            int iz = std::clamp(static_cast<int>((z - zmin) / csZ), 0, nz - 1);
+            return ix + iy * nx + iz * nx * ny;
+        };
 
-                        float d2 = fdx * fdx + fdy * fdy + fdz * fdz;
-                        if (d2 < cutoff2 && d2 > 0.0f) {
-                            // j is from cellAtoms which contains only active atoms (defined covalent radius).
-                            perAtom[i].push_back({j, imgX, imgY, imgZ});
+        for (size_t imageIdx = 0; imageIdx < imageAtoms.size(); ++imageIdx) {
+            const auto& image = imageAtoms[imageIdx];
+            cellImages[cellOf(image.x, image.y, image.z)].push_back(
+                static_cast<uint32_t>(imageIdx));
+        }
+
+        for (uint32_t i : activeAtoms) {
+            const float xi = principalX[i];
+            const float yi = principalY[i];
+            const float zi = principalZ[i];
+            const int iCell = cellOf(xi, yi, zi);
+            const int ix = iCell % nx;
+            const int iy = (iCell / nx) % ny;
+            const int iz = iCell / (nx * ny);
+
+            for (int dz = -1; dz <= 1; ++dz) {
+                const int jz = iz + dz;
+                if (jz < 0 || jz >= nz) continue;
+
+                for (int dy = -1; dy <= 1; ++dy) {
+                    const int jy = iy + dy;
+                    if (jy < 0 || jy >= ny) continue;
+
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int jx = ix + dx;
+                        if (jx < 0 || jx >= nx) continue;
+
+                        const int jCell = jx + jy * nx + jz * nx * ny;
+                        for (uint32_t imageIdx : cellImages[jCell]) {
+                            const ImageAtom& image = imageAtoms[imageIdx];
+                            if (image.index == i) continue;
+
+                            float fdx = image.x - xi;
+                            float fdy = image.y - yi;
+                            float fdz = image.z - zi;
+
+                            int8_t imgX = static_cast<int8_t>(
+                                static_cast<int>(image.imageX) + wrapX[i] - wrapX[image.index]);
+                            int8_t imgY = static_cast<int8_t>(
+                                static_cast<int>(image.imageY) + wrapY[i] - wrapY[image.index]);
+                            int8_t imgZ = static_cast<int8_t>(
+                                static_cast<int>(image.imageZ) + wrapZ[i] - wrapZ[image.index]);
+
+                            applyMIC(fdx, fdy, fdz, imgX, imgY, imgZ, lattice, pbc);
+
+                            const float d2 = fdx * fdx + fdy * fdy + fdz * fdz;
+                            if (d2 < cutoff2 && d2 > 0.0f) {
+                                perAtom[i].push_back({image.index, imgX, imgY, imgZ});
+                            }
                         }
                     }
                 }

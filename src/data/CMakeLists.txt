@@ -20,3 +20,11 @@ target_include_directories(atom-data PUBLIC
 
 # No external dependencies for data layer
 # Uses only standard C++ library
+
+if(BUILD_TESTING)
+    add_executable(atom-data-neighborlist-test
+        tests/NeighborListTest.cpp
+    )
+    target_link_libraries(atom-data-neighborlist-test PRIVATE atom-data)
+    add_test(NAME atom-data-neighborlist COMMAND atom-data-neighborlist-test)
+endif()

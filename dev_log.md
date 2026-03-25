@@ -2060,3 +2060,73 @@ Run the app and open various file formats:
 Supported formats include: XYZ, CIF, LAMMPS dump/data, VASP POSCAR/CONTCAR, PDB, Gaussian, Quantum ESPRESSO, ASE traj/json/db, and 60+ more.
 
 ---
+
+## 2026-03-25: Fix Neighbor List Candidate Generation for Skewed Periodic Cells
+
+### Summary
+Fixed neighbor-list candidate generation for periodic skewed/triclinic unit cells. The previous PBC path used an approximate Cartesian bounding box of the cell and cell-index wrapping, which could miss valid near-neighbor candidates near periodic boundaries in skewed cells. The new implementation wraps atoms into a principal cell, replicates immediate lattice images in periodic directions, and performs Cartesian cell-list search over those real-space image positions. Bond detection semantics and `imageX/Y/Z` storage remain unchanged.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/data/NeighborList.cpp` | Reworked PBC candidate generation to use wrapped principal-cell atoms plus neighboring lattice-image replicas |
+| `src/data/NeighborList.h` | Updated helper documentation to describe the new skew-cell-safe PBC search |
+| `src/data/CMakeLists.txt` | Added data-layer neighbor-list regression test target |
+| `CMakeLists.txt` | Enabled CTest integration |
+
+### Files Created
+| File | Purpose |
+|------|---------|
+| `src/data/tests/NeighborListTest.cpp` | Brute-force regression test for skewed full-PBC and partial-PBC neighbor/bond detection |
+
+### Architecture Decisions
+
+#### 1. Keep MIC/Bond Semantics, Replace Only Candidate Generation
+- Left `NeighborList::applyMIC()` unchanged
+- Left `BondList` image-shift meaning unchanged
+- Changed only the PBC candidate search stage, since the bug was in candidate pruning rather than final distance evaluation
+
+#### 2. Principal-Cell Wrapping Before Replication
+- For each active atom, convert Cartesian position to fractional coordinates
+- Wrap periodic fractional components into `[0, 1)`
+- Convert that wrapped position back to Cartesian as the principal-cell representative
+- Track the integer wrap offsets so recovered `imageX/Y/Z` values still refer to the original stored atom positions
+
+#### 3. Search Over Real-Space Neighboring Lattice Images
+- For periodic axes, generate image replicas with shifts in `{-1, 0, +1}`
+- Bin those replica positions into a Cartesian cell list
+- Query neighbors around each atom's principal-cell position
+- Reconstruct the final image shift relative to the original stored atom position, then apply MIC once more for canonical nearest-image output
+
+This avoids relying on the old assumption that a skewed periodic cell can be searched correctly by wrapping only Cartesian cell indices.
+
+### Technical Issues Resolved
+
+#### Issue 1: Missed Neighbors in Skewed PBC Cells
+**Problem**: The old full-PBC path estimated a Cartesian bounding box from absolute lattice-matrix components and searched wrapped neighboring Cartesian cells. In skewed cells, atoms that are close through the lattice topology can land outside that local Cartesian-cell neighborhood and never become candidates.
+
+**Solution**: Explicitly materialize nearby lattice images in real space, then run the cell-list search over those image positions. Candidate generation now follows the actual skewed cell geometry.
+
+#### Issue 2: No Regression Coverage for NeighborList
+**Problem**: There was no focused automated test for data-layer neighbor/bond detection, especially not for skewed periodic cells.
+
+**Solution**: Added `atom-data-neighborlist-test`, which compares `NeighborList`/`buildBondList()` output against a brute-force MIC reference on skewed full-PBC and partial-PBC structures.
+
+### Remaining Limitation
+- `NeighborEntry` and `Bond` still store `imageX/Y/Z` as `int8_t`
+- Extremely unwrapped input structures spanning more than 127 unit-cell crossings along one periodic axis can overflow that representation
+- Normal wrapped inputs and typical mildly unwrapped inputs are unaffected
+
+### Build Commands
+```bash
+cmake -S . -B build
+cmake --build build --target atom-data-neighborlist-test
+ctest --test-dir build --output-on-failure -R atom-data-neighborlist
+```
+
+### Testing
+- Built `atom-data-neighborlist-test`
+- Ran `ctest --test-dir build --output-on-failure -R atom-data-neighborlist`
+- Result: passed
+
+---

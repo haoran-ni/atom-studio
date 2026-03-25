@@ -92,7 +92,9 @@ public:
 private:
     // ── Internal helpers ────────────────────────────────────────────────────
 
-    // Build using a Cartesian bounding-box cell grid (non-PBC or PBC).
+    // Build using a Cartesian cell grid. For PBC structures, atoms are first
+    // wrapped to a principal cell and replicated to neighboring lattice
+    // images so candidate generation stays correct for skewed unit cells.
     void buildCellList(
         const float* posX, const float* posY, const float* posZ,
         const int*   atomicNumbers, size_t atomCount,
