@@ -28,13 +28,12 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
 /**
  * @brief Unwrap molecules so that bonded atoms are adjacent in Cartesian space.
  *
- * For each connected fragment of organic atoms (H, B, C, N, O, F, Si, P, S, Cl,
- * Ge, As, Se, Br, Sb, Te, I, At), the BondList image shifts are used to resolve
- * which periodic image of each atom keeps the fragment contiguous.  The fragment
- * is then translated so that its geometric centre lies within the unit cell
- * ([0,1)^3 in fractional coordinates).
- *
- * Metallic and noble-gas atoms are left at their original positions.
+ * For each connected fragment whose atoms have a recorded van der Waals radius,
+ * the BondList image shifts are used to resolve which periodic image of each
+ * atom keeps the fragment contiguous. If the wrapped structure shows the same
+ * molecule as multiple fragments inside the unit cell, the largest wrapped
+ * fragment is kept in-cell and the remaining fragments are translated to
+ * reconnect to it.
  *
  * Requirements:
  *   - @p s must have a lattice defined.

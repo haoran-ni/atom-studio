@@ -2130,3 +2130,84 @@ ctest --test-dir build --output-on-failure -R atom-data-neighborlist
 - Result: passed
 
 ---
+
+## 2026-03-25: Review and Correct Unwrap Molecules Logic
+
+### Summary
+Reviewed `unwrapMolecules()` in `src/data` and corrected several logic issues. The previous implementation centered each connected component by its geometric center, which did not satisfy the requirement to keep the largest wrapped fragment of a molecule inside the unit cell and reconnect the smaller fragments to it. The unwrap operation now:
+- normalizes stored atom positions to wrapped fractional coordinates before graph traversal
+- reconstructs bond-image offsets relative to those wrapped coordinates
+- keeps the largest wrapped fragment in-cell
+- reconnects the remaining wrapped fragments to that anchor
+- skips only invalid/unknown elements rather than using the old organic-only whitelist
+- detects inconsistent cyclic bond-image assignments and leaves those components unchanged
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/data/StructureOperations.cpp` | Reworked unwrap logic: wrapped-coordinate normalization, consistent offset propagation, largest-fragment anchoring, widened element eligibility |
+| `src/data/StructureOperations.h` | Updated unwrap documentation to match the new behavior |
+| `src/data/CMakeLists.txt` | Added data-layer structure-operations regression test target |
+
+### Files Created
+| File | Purpose |
+|------|---------|
+| `src/data/tests/StructureOperationsTest.cpp` | Regression tests for unwrap anchoring, inconsistent bond-image cycles, and non-organic bonded fragments |
+
+### Architecture Decisions
+
+#### 1. Anchor by Largest Wrapped Fragment, Not Geometric Centre
+- The old code translated each connected component so its geometric center landed in `[0, 1)^3`
+- That can move the largest already-visible wrapped fragment out of the unit cell
+- The new code identifies wrapped subfragments by removing cross-boundary edges (`dx/dy/dz != 0`) and keeps the largest zero-shift-connected subfragment in-cell
+
+#### 2. Normalize Positions Before Using Bond Image Shifts
+- Stored atom positions may already lie outside the principal cell
+- Before offset propagation, each atom is converted to fractional coordinates and wrapped back into `[0, 1)` on periodic axes
+- The integer wrapping removed from each atom is tracked and folded into the bond-image offset reconstruction
+- This makes unwrap robust for mildly unwrapped inputs instead of assuming all atoms were already stored in a canonical wrapped image
+
+#### 3. Unwrap All Valid Elements With Recorded VdW Radius
+- Replaced the hardcoded "organic element" whitelist
+- Any valid element with a positive recorded van der Waals radius is now eligible for unwrap traversal
+- This broadens unwrap to bonded inorganic and metallic fragments without inventing a second element-classification system
+
+#### 4. Detect Inconsistent Cyclic Bond-Image Data
+- BFS still guarantees no dead or infinite loops via the `visited` set
+- In addition, when a node is reached through multiple paths, the propagated offset is now checked for consistency
+- If a connected component has contradictory bond-image assignments, that component is left unchanged rather than being unwrapped with a silently corrupted offset field
+
+### Technical Issues Resolved
+
+#### Issue 1: Wrong Anchor for Broken Wrapped Molecules
+**Problem**: A molecule broken into multiple wrapped fragments could be re-centered around its overall centroid, which violates the desired behavior of keeping the largest wrapped fragment inside the unit cell.
+
+**Solution**: Identify wrapped subfragments using only zero-shift adjacency edges and choose the largest one as the anchor offset for the final translation.
+
+#### Issue 2: Organic-Only Restriction
+**Problem**: Unwrap only processed a fixed organic-element whitelist, leaving bonded non-organic fragments untouched even when element data existed and bonds were available.
+
+**Solution**: Replace the whitelist with an `ElementData`-based eligibility check using the recorded van der Waals radius.
+
+#### Issue 3: Silent Offset Corruption in Inconsistent Cycles
+**Problem**: Cyclic bond graphs with contradictory image shifts could assign incompatible offsets depending on traversal order.
+
+**Solution**: Check every revisited node against the expected propagated offset; if any mismatch is found, mark the component inconsistent and skip modifying it.
+
+### Build Commands
+```bash
+cmake -S . -B build
+cmake --build build --target atom-data-structureops-test
+ctest --test-dir build --output-on-failure -R atom-data-structureops
+```
+
+### Testing
+- Built `atom-data-structureops-test`
+- Ran `ctest --test-dir build --output-on-failure -R atom-data-structureops`
+- Added coverage for:
+  - keeping the largest wrapped fragment in-cell
+  - leaving inconsistent cyclic bond-image components unchanged
+  - unwrapping a bonded non-organic fragment whose elements have recorded VdW radii
+- Result: passed
+
+---
