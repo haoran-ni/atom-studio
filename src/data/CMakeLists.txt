@@ -39,4 +39,10 @@ if(BUILD_TESTING)
     )
     target_link_libraries(atom-data-structure-test PRIVATE atom-data)
     add_test(NAME atom-data-structure COMMAND atom-data-structure-test)
+
+    add_executable(atom-data-element-color-test
+        tests/ElementDataColorTest.cpp
+    )
+    target_link_libraries(atom-data-element-color-test PRIVATE atom-data)
+    add_test(NAME atom-data-element-color COMMAND atom-data-element-color-test)
 endif()

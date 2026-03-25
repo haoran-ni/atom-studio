@@ -285,12 +285,12 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
     m_symbols.emplace_back(symbol);
 
     // Default rendering properties from element data
-    const auto& elem = ElementData::byAtomicNumber(atomicNumber);
     m_radii.push_back(ElementData::radiusForElement(atomicNumber, false));
-    m_colorR.push_back(elem.cpkColor.r);
-    m_colorG.push_back(elem.cpkColor.g);
-    m_colorB.push_back(elem.cpkColor.b);
-    m_colorA.push_back(elem.cpkColor.a);
+    const auto color = ElementData::colorForElement(atomicNumber);
+    m_colorR.push_back(color.r);
+    m_colorG.push_back(color.g);
+    m_colorB.push_back(color.b);
+    m_colorA.push_back(color.a);
 
     return index;
 }
@@ -347,13 +347,13 @@ void Structure::clearMasses() {
     m_masses.clear();
 }
 
-void Structure::updateColorsFromElements() {
+void Structure::updateColorsFromElements(ElementColorScheme scheme) {
     for (size_t i = 0; i < m_atomCount; ++i) {
-        const auto& elem = ElementData::byAtomicNumber(m_atomicNumbers[i]);
-        m_colorR[i] = elem.cpkColor.r;
-        m_colorG[i] = elem.cpkColor.g;
-        m_colorB[i] = elem.cpkColor.b;
-        m_colorA[i] = elem.cpkColor.a;
+        const auto color = ElementData::colorForElement(m_atomicNumbers[i], scheme);
+        m_colorR[i] = color.r;
+        m_colorG[i] = color.g;
+        m_colorB[i] = color.b;
+        m_colorA[i] = color.a;
     }
 }
 

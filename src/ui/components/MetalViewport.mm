@@ -28,6 +28,15 @@
 
 namespace atom::ui {
 
+namespace {
+
+data::ElementColorScheme colorSchemeFromIndex(int index) {
+    return index == 1 ? data::ElementColorScheme::Cpk
+                      : data::ElementColorScheme::Jmol;
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // PIMPL — holds Metal renderer instances
 // ---------------------------------------------------------------------------
@@ -174,6 +183,7 @@ bool MetalViewport::showUnitCell() const { return m_showUnitCell; }
 float MetalViewport::unitCellThickness() const { return m_unitCellThickness; }
 QColor MetalViewport::unitCellColor() const { return m_unitCellColor; }
 float MetalViewport::atomScale() const { return m_atomScale; }
+int MetalViewport::atomColorScheme() const { return m_atomColorScheme; }
 int MetalViewport::rendererMode() const { return m_rendererMode; }
 int MetalViewport::sampleCount() const { return m_sampleCount; }
 int MetalViewport::maxRTSamples() const { return m_maxRTSamples; }
@@ -209,6 +219,9 @@ QVariantList MetalViewport::getAxisDirections() const {
 
 void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
+    if (m_structure) {
+        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+    }
     m_needsStructureUpdate = true;
 
     emit atomCountChanged();
@@ -304,6 +317,20 @@ void MetalViewport::setAtomScale(float scale) {
         emit atomScaleChanged();
         update();
     }
+}
+
+void MetalViewport::setAtomColorScheme(int scheme) {
+    scheme = (scheme == 1) ? 1 : 0;
+    if (m_atomColorScheme == scheme) return;
+
+    m_atomColorScheme = scheme;
+    emit atomColorSchemeChanged();
+
+    if (m_structure) {
+        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+        m_needsStructureUpdate = true;
+    }
+    update();
 }
 
 float MetalViewport::bondScale() const {

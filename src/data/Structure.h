@@ -193,9 +193,10 @@ public:
     float* colorsA() { return m_colorA.data(); }
 
     /**
-     * @brief Update colors from element types (CPK coloring)
+     * @brief Update colors from element types using the selected ASE color scheme
      */
-    void updateColorsFromElements();
+    void updateColorsFromElements(
+        ElementColorScheme scheme = ElementColorScheme::Jmol);
 
     /**
      * @brief Update radii from element types

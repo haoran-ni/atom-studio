@@ -9,6 +9,11 @@
 
 namespace atom::data {
 
+enum class ElementColorScheme {
+    Jmol,
+    Cpk,
+};
+
 /**
  * @brief RGB color representation for element colors
  */
@@ -37,14 +42,14 @@ struct ElementInfo {
     float mass;            // atomic mass in amu
     float covalentRadius;  // in Angstroms; -1.0f if not defined for this element
     float vdwRadius;       // Van der Waals radius in Angstroms
-    Color cpkColor;        // CPK/Jmol color scheme
+    Color jmolColor;       // Jmol color scheme from ASE
 };
 
 /**
- * @brief Static element database with CPK colors and radii
+ * @brief Static element database with ASE-aligned colors and radii
  *
  * Provides fast lookup of element properties by atomic number or symbol.
- * Uses CPK/Jmol color scheme for visualization.
+ * Uses ASE Jmol colors by default, and also exposes ASE CPK colors.
  */
 class ElementData {
 public:
@@ -81,9 +86,11 @@ public:
     /**
      * @brief Get color for an element type/atomic number
      * @param atomicNumber Atomic number
-     * @return CPK color for the element
+     * @param scheme Color regime to use; defaults to ASE Jmol colors
+     * @return Element color for the selected scheme
      */
-    static Color colorForElement(int atomicNumber);
+    static Color colorForElement(int atomicNumber,
+                                 ElementColorScheme scheme = ElementColorScheme::Jmol);
 
     /**
      * @brief Get default radius for an element (always returns a value)

@@ -4,6 +4,84 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-25: Align Element Colors With ASE and Add Visualization Color-Scheme Selector
+
+### Summary
+Aligned the software's hardcoded element colors with ASE and exposed the available ASE element color regimes in the Visualization sidebar. The data layer now stores ASE Jmol colors as the default per-element colors and a separate ASE CPK table for explicit selection. Both viewport backends can switch the active structure coloring between Jmol and CPK at runtime, and the Visualization tab now provides a user-facing selector for that choice.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/data/ElementData.cpp` | Replaced hardcoded element colors with ASE-derived Jmol values and added a separate ASE-derived CPK table |
+| `src/data/ElementData.h` | Added `ElementColorScheme` and a scheme-aware `colorForElement()` API |
+| `src/data/Structure.cpp` | Defaulted new atoms to ASE Jmol colors and made color refresh scheme-aware |
+| `src/data/Structure.h` | Updated `updateColorsFromElements()` to accept a selected color scheme |
+| `src/data/CMakeLists.txt` | Registered the new data-layer color regression test |
+| `src/ui/components/OpenGLViewport.h` | Added `atomColorScheme` QML property |
+| `src/ui/components/OpenGLViewport.cpp` | Applied selected color scheme on load and on user changes |
+| `src/ui/components/MetalViewport.h` | Added `atomColorScheme` QML property |
+| `src/ui/components/MetalViewport.mm` | Applied selected color scheme on load and on user changes |
+| `src/ui/qml/Sidebar.qml` | Added Visualization sidebar combo box for `Jmol` vs `CPK` |
+
+### Files Created
+| File | Purpose |
+|------|---------|
+| `src/data/tests/ElementDataColorTest.cpp` | Regression coverage for ASE Jmol defaults, ASE CPK lookup, and high-Z fallback behavior |
+| `archived/print_ase_element_colors.py` | Utility script to print ASE per-element RGB values for all discovered ASE element color schemes |
+
+### Architecture Decisions
+
+#### 1. Use ASE Jmol as the Default Runtime Color Scheme
+- ASE exposes both `jmol_colors` and `cpk_colors`, but the previous in-app table was effectively a custom approximation
+- The software now defaults to ASE Jmol colors for the standard visualization path
+- This keeps the default rendering aligned with ASE while still allowing explicit CPK selection
+
+#### 2. Keep Both Color Tables in the Data Layer
+- The element database now distinguishes between the stored default Jmol color and the selectable CPK lookup table
+- `ElementData::colorForElement()` accepts an explicit `ElementColorScheme`
+- This keeps color policy centralized and avoids duplicating color tables in the UI or renderer layers
+
+#### 3. Recolor Structures in the Viewport Layer
+- `StructureModel` hands a cloned structure to the active viewport
+- The viewport now reapplies the selected element color scheme to that owned structure on load and when the user changes the selector
+- This avoids changing file-import behavior while keeping UI interaction immediate
+
+### Technical Issues Resolved
+
+#### Issue 1: In-App Element Colors Drifted From ASE
+**Problem**: The software used a hardcoded element color table that did not exactly match ASE's published Jmol/CPK color arrays.
+
+**Solution**: Replaced the hardcoded Jmol-like colors with exact ASE Jmol values and added exact ASE CPK values as a separate selectable regime.
+
+#### Issue 2: No User Control Over Element Color Regime
+**Problem**: Users could not switch between ASE-supported element coloring conventions in the Visualization UI.
+
+**Solution**: Added a `Color Scheme` combo box in the Visualization sidebar and wired it to both OpenGL and Metal viewports.
+
+#### Issue 3: Missing Regression Coverage for Color-Table Alignment
+**Problem**: There was no automated check preventing future drift from ASE's color tables.
+
+**Solution**: Added a focused data-layer regression test covering default Jmol colors, explicit CPK lookup, and fallback handling for elements beyond ASE's table coverage.
+
+### Build Commands
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure -R "atom-data-(element-color|structure)"
+```
+
+### Testing
+- Built the full application and updated data-layer test targets
+- Ran `ctest --test-dir build --output-on-failure -R "atom-data-(element-color|structure)"`
+- Verified:
+  - default element colors now resolve to ASE Jmol values
+  - explicit CPK color lookup returns ASE CPK values
+  - high-Z elements beyond ASE table coverage fall back consistently
+  - the UI/backend changes compile cleanly for both OpenGL and Metal viewport paths
+- Result: passed
+
+---
+
 ## 2026-03-25: Initial Viewport Rotation Center from Unit Cell or Geometry Center
 
 ### Summary

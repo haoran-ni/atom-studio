@@ -21,6 +21,15 @@
 
 namespace atom::ui {
 
+namespace {
+
+data::ElementColorScheme colorSchemeFromIndex(int index) {
+    return index == 1 ? data::ElementColorScheme::Cpk
+                      : data::ElementColorScheme::Jmol;
+}
+
+} // namespace
+
 /**
  * @brief Renderer implementation for QQuickFramebufferObject
  *
@@ -251,6 +260,10 @@ float OpenGLViewport::atomScale() const {
     return m_atomScale;
 }
 
+int OpenGLViewport::atomColorScheme() const {
+    return m_atomColorScheme;
+}
+
 int OpenGLViewport::rendererMode() const {
     return m_rendererMode;
 }
@@ -333,6 +346,9 @@ QVariantList OpenGLViewport::getAxisDirections() const {
 
 void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
+    if (m_structure) {
+        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+    }
     m_needsStructureUpdate = true;
 
     emit atomCountChanged();
@@ -499,6 +515,20 @@ void OpenGLViewport::setAtomScale(float scale) {
         emit atomScaleChanged();
         update();
     }
+}
+
+void OpenGLViewport::setAtomColorScheme(int scheme) {
+    scheme = (scheme == 1) ? 1 : 0;
+    if (m_atomColorScheme == scheme) return;
+
+    m_atomColorScheme = scheme;
+    emit atomColorSchemeChanged();
+
+    if (m_structure) {
+        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+        m_needsStructureUpdate = true;
+    }
+    update();
 }
 
 void OpenGLViewport::setRendererMode(int mode) {

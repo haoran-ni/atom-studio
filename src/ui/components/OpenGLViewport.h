@@ -42,6 +42,7 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float unitCellThickness READ unitCellThickness WRITE setUnitCellThickness NOTIFY unitCellThicknessChanged)
     Q_PROPERTY(QColor unitCellColor READ unitCellColor WRITE setUnitCellColor NOTIFY unitCellColorChanged)
     Q_PROPERTY(float atomScale READ atomScale WRITE setAtomScale NOTIFY atomScaleChanged)
+    Q_PROPERTY(int atomColorScheme READ atomColorScheme WRITE setAtomColorScheme NOTIFY atomColorSchemeChanged)
     Q_PROPERTY(float bondScale READ bondScale WRITE setBondScale NOTIFY bondScaleChanged)
     Q_PROPERTY(int rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(int sampleCount READ sampleCount NOTIFY sampleCountChanged)
@@ -79,6 +80,7 @@ public:
     float unitCellThickness() const;
     QColor unitCellColor() const;
     float atomScale() const;
+    int atomColorScheme() const;
     float bondScale() const;
     int rendererMode() const;
     int sampleCount() const;
@@ -113,6 +115,7 @@ public slots:
     void setUnitCellThickness(float thickness);
     void setUnitCellColor(const QColor& color);
     void setAtomScale(float scale);
+    void setAtomColorScheme(int scheme);
     void setBondScale(float scale);
     void setRendererMode(int mode);
     void setMaxRTSamples(int samples);
@@ -143,6 +146,7 @@ signals:
     void unitCellThicknessChanged();
     void unitCellColorChanged();
     void atomScaleChanged();
+    void atomColorSchemeChanged();
     void bondScaleChanged();
     void rendererModeChanged();
     void sampleCountChanged();
@@ -191,6 +195,7 @@ private:
     float m_unitCellThickness = 0.06f;
     QColor m_unitCellColor = QColor(0, 0, 0);
     float m_atomScale = 1.0f;
+    int m_atomColorScheme = 0;  // 0 = Jmol, 1 = CPK
     float m_bondScale = 1.1f;
     int m_rendererMode = 0;       // 0 = Raster, 1 = RayTracing
     int m_sampleCount = 0;

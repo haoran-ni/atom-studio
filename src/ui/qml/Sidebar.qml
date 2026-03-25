@@ -299,6 +299,23 @@ Rectangle {
                             currentIndex: 0
                         }
 
+                        Label {
+                            text: qsTr("Color Scheme")
+                            color: "#cccccc"
+                            font.pixelSize: 11
+                        }
+
+                        ComboBox {
+                            Layout.fillWidth: true
+                            model: [qsTr("Jmol"), qsTr("CPK")]
+                            currentIndex: sidebar.viewport ? sidebar.viewport.atomColorScheme : 0
+                            onActivated: function(index) {
+                                if (sidebar.viewport) {
+                                    sidebar.viewport.atomColorScheme = index
+                                }
+                            }
+                        }
+
                         NumericSliderControl {
                             title: qsTr("Atom Scale")
                             from: 0.1
