@@ -5,6 +5,7 @@ A high-performance desktop application for visualization of atomic structures.
 ## Features
 
 - Interactive visualization panel
+- Bright neutral right-hand sidebar with section icons and tunable-parameter hierarchy lines
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized
 - Supports various atomic structure file formats
@@ -114,6 +115,8 @@ atom-studio/
 │           ├── VulkanViewport.h
 │           └── VulkanViewport.cpp
 ├── resources/              # Application resources
+│   ├── resources.qrc       # QML + SVG resource bundle
+│   └── icons/              # Sidebar tab icons and chevron SVG assets
 ├── cmake/                  # CMake helpers
 └── scripts/                # Build/setup scripts
 ```

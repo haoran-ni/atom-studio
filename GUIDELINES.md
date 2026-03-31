@@ -21,6 +21,25 @@ The application consists of a header bar for app options, a side bar showing inf
 2. The code should be highly optimized and fast to run.
 3. Whenever you met something you can not decide, ask!
 
+## Current UI style requirements
+- The active custom visual language currently applies primarily to the **sidebar**, not to the whole application shell.
+- Sidebar styling should stay in `src/ui/qml/Sidebar.qml` unless there is a clear reason to promote something into a shared reusable component.
+- The sidebar should use a **bright neutral palette**: white, light gray, dark gray, and black. Avoid dark navy / purple styling in new sidebar work unless explicitly requested.
+- Sidebar section icons and expand/collapse arrows should come from `resources/icons/` SVG assets, exposed through `resources/resources.qrc`, rather than placeholder text glyphs or improvised canvas icons.
+- Sidebar tab headers must keep **consistent visual sizing** between collapsed and expanded states:
+  - no font magnification on expand
+  - no icon magnification on expand
+  - no arrow magnification on expand
+  - fixed header height between states
+- Collapsed sidebar tabs should appear as clean list items without extra card borders; expanded tabs may use a subtle highlighted background.
+- Hierarchy connector lines in the sidebar are only for **tunable parameter blocks** and action groups, not for purely informational sections such as `Structure Info`.
+- Sidebar hierarchy connectors must:
+  - connect smoothly to the backbone with no visible gaps
+  - align to the vertical center of the rendered parameter block they point to
+  - stop cleanly at the last parameter block with no extra tail
+  - remain visually aligned with the corresponding option text/control block
+- When editing sidebar visuals, preserve existing control behavior and viewport wiring unless the task explicitly asks for behavioral changes.
+
 ## Technology Stack
 
 ### Language: C++17/20
@@ -90,6 +109,8 @@ src/
     components/       # Qt C++ — viewports (per-backend), FileController, StructureModel
     qml/              # QML — Main, HeaderBar, Sidebar, ViewportPanel
   core/               # Application orchestration
+resources/
+  icons/              # Sidebar section icons and chevrons (SVG assets)
 ```
 
 ## Architecture Details

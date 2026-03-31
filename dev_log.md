@@ -4,6 +4,85 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-31: Sidebar UI Restyle — Bright Neutral Theme, Icon Assets, and Tunable-Parameter Hierarchy
+
+### Summary
+Restyled only the right-hand sidebar to match a cleaner card/list visual language without changing the rest of the application shell. The sidebar now uses a bright neutral palette (white, gray, black), dedicated SVG tab icons from `resources/icons`, consistent header sizing between collapsed and expanded states, and hierarchy connector lines that only appear for tunable parameter sections. The connector backbone now aligns to the vertical center of each parameter block, spans continuously between neighboring rows, and terminates cleanly at the final branch without an extra tail.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | Reworked the sidebar-only visual style, section-header sizing, SVG icon usage, bright neutral palette, and tunable-parameter hierarchy-line behavior |
+| `resources/resources.qrc` | Added sidebar SVG assets under the `/icons` resource prefix |
+| `resources/icons/chevron-right.svg` | Sidebar expand/collapse arrow asset, switched to fixed dark stroke for light-theme rendering |
+| `resources/icons/chevron-down.svg` | Sidebar expand/collapse arrow asset, switched to fixed dark stroke for light-theme rendering |
+| `resources/icons/background.svg` | Background tab icon, switched to fixed dark stroke |
+| `resources/icons/camera.svg` | Camera tab icon, switched to fixed dark stroke |
+| `resources/icons/info.svg` | Structure Info tab icon, switched to fixed dark stroke |
+| `resources/icons/manipulation.svg` | Structure Manipulation tab icon, switched to fixed dark stroke |
+| `resources/icons/render.svg` | Render Settings tab icon, switched to fixed dark stroke |
+| `resources/icons/unit-cell.svg` | Unit Cell tab icon, switched to fixed dark stroke |
+| `resources/icons/visualization.svg` | Visualization tab icon, switched to fixed dark stroke |
+
+### Architecture Decisions
+
+#### 1. Scope the Restyle to `Sidebar.qml` Only
+- The sidebar visual redesign was kept local to `src/ui/qml/Sidebar.qml`
+- Shared QML controls and the rest of the app window were intentionally left unchanged
+- This avoids accidental style drift across the viewport and top-level shell when only the sidebar is under active design iteration
+
+#### 2. Use SVG Assets for Tab Arrows and Section Icons
+- The previous right-side arrow inconsistency came from using different text glyphs for collapsed and expanded states
+- The sidebar now uses resource-backed SVG assets for both chevrons and section icons
+- Asset-based icons give stable visual sizing and eliminate font-glyph inconsistencies
+
+#### 3. Hierarchy Lines Only for Tunable Controls
+- `Structure Info` is informational, not interactive, so it no longer uses connector lines
+- Connector branches are now reserved for sections containing tunable parameters or actions
+- This makes the hierarchy line language semantically meaningful instead of decorative everywhere
+
+#### 4. Connector Alignment Based on Actual Rendered Block Height
+- Each branch joins the backbone at the vertical center of the rendered parameter block, not a fixed offset
+- This keeps tall grouped controls such as the RGB picker aligned correctly, while ordinary slider blocks still connect at their visual midpoint
+- The branch-row container also owns inter-row spacing so the backbone remains continuous between adjacent parameter groups
+
+### Technical Issues Resolved
+
+#### Issue 1: Expanded Sidebar Tabs Changed Icon/Text/Arrow Size
+**Problem**: Expanded tabs visually magnified the label, arrow, and placeholder icon, creating inconsistent sizing between collapsed and expanded states.
+
+**Solution**: Fixed the sidebar header height and the icon/text/arrow sizes so expansion only changes highlighting and content visibility, not the perceived scale of the header controls.
+
+#### Issue 2: Hierarchy Connector Misalignment for Tall Controls
+**Problem**: The connector branch used a hardcoded vertical join position, which misaligned branches for taller controls like the RGB color picker.
+
+**Solution**: Recomputed the branch join from the actual rendered content height of each parameter block so the connector terminates at the block’s vertical midpoint.
+
+#### Issue 3: Backbone Gaps and Tail at the Final Branch
+**Problem**: Neighboring connector segments were separated by layout spacing, and the final backbone extended slightly beyond the last branch join.
+
+**Solution**: Moved connector ownership into the branch-row container so the backbone spans the spacing between rows, and ended the final backbone exactly at the start of the last curve.
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+- Built successfully after all sidebar, resource, and SVG updates
+- Verified the sidebar compiles with the new `/icons` Qt resource entries
+- Verified tab arrows and tab icons now come from SVG assets rather than placeholder glyphs/canvas shapes
+- Verified collapsed and expanded section headers keep consistent icon/text/arrow sizing and fixed header height
+- Verified hierarchy lines:
+  - are absent from `Structure Info`
+  - connect only to tunable parameter blocks
+  - join at each block’s visual vertical center
+  - remain continuous between adjacent rows
+  - terminate cleanly at the final branch without an extra tail
+
+---
+
 ## 2026-03-31: QML UI Refactor — Extract Reusable Components
 
 ### Summary

@@ -12,4 +12,17 @@
         <file alias="InfoOverlayBox.qml">../src/ui/qml/InfoOverlayBox.qml</file>
         <file alias="AppMenuActions.qml">../src/ui/qml/AppMenuActions.qml</file>
     </qresource>
+    <qresource prefix="/icons">
+        <file alias="background.svg">icons/background.svg</file>
+        <file alias="camera.svg">icons/camera.svg</file>
+        <file alias="chevron-down.svg">icons/chevron-down.svg</file>
+        <file alias="chevron-left.svg">icons/chevron-left.svg</file>
+        <file alias="chevron-right.svg">icons/chevron-right.svg</file>
+        <file alias="chevron-up.svg">icons/chevron-up.svg</file>
+        <file alias="info.svg">icons/info.svg</file>
+        <file alias="manipulation.svg">icons/manipulation.svg</file>
+        <file alias="render.svg">icons/render.svg</file>
+        <file alias="unit-cell.svg">icons/unit-cell.svg</file>
+        <file alias="visualization.svg">icons/visualization.svg</file>
+    </qresource>
 </RCC>

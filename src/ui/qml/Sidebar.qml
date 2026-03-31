@@ -10,8 +10,27 @@ Rectangle {
     property string maxRTSamplesErrorMessage: ""
     readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
 
+    readonly property color panelBgTop: "#fbfbfc"
+    readonly property color panelBgBottom: "#efeff2"
+    readonly property color tabFill: "#e2e3e8"
+    readonly property color buttonFill: "#d8dae0"
+    readonly property color inputFill: "#ffffff"
+    readonly property color inputFillAlt: "#f3f4f7"
+    readonly property color borderSoft: "#c7c9d1"
+    readonly property color textStrong: "#17181c"
+    readonly property color textBody: "#33353c"
+    readonly property color textMuted: "#7a7d87"
+    readonly property color connectorColor: "#6e727d"
+
     function showMaxRTSamplesError(message) {
         maxRTSamplesErrorMessage = message
+        maxRTSamplesErrorDialog.title = qsTr("Invalid Sample Limit")
+        maxRTSamplesErrorDialog.open()
+    }
+
+    function showSliderInputError(message) {
+        maxRTSamplesErrorMessage = message
+        maxRTSamplesErrorDialog.title = qsTr("Invalid Value")
         maxRTSamplesErrorDialog.open()
     }
 
@@ -34,754 +53,1171 @@ Rectangle {
         sidebar.viewport.lightElevation = 45
     }
 
-    color: "#252526"
+    color: "transparent"
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 0
-        spacing: 0
+    gradient: Gradient {
+        GradientStop { position: 0.0; color: panelBgTop }
+        GradientStop { position: 1.0; color: panelBgBottom }
+    }
 
-        // Sidebar header
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            color: "#2d2d2d"
+    component SidebarButton: Button {
+        id: control
 
-            Label {
+        implicitHeight: 38
+
+        contentItem: Text {
+            text: control.text
+            color: control.enabled ? sidebar.textStrong : sidebar.textMuted
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: control.down ? "#343a4d" : sidebar.buttonFill
+            opacity: control.enabled ? 1.0 : 0.55
+        }
+    }
+
+    component SidebarTextField: TextField {
+        id: control
+
+        implicitHeight: 36
+        color: sidebar.textStrong
+        selectedTextColor: "#101522"
+        selectionColor: "#d8deed"
+        placeholderTextColor: sidebar.textMuted
+        font.pixelSize: 13
+        leftPadding: 12
+        rightPadding: 12
+        topPadding: 8
+        bottomPadding: 8
+
+        background: Rectangle {
+            radius: 10
+            color: control.activeFocus ? sidebar.inputFillAlt : sidebar.inputFill
+            border.width: control.activeFocus ? 1 : 0
+            border.color: sidebar.borderSoft
+        }
+    }
+
+    component SidebarCheckBox: CheckBox {
+        id: control
+
+        spacing: 10
+
+        indicator: Rectangle {
+            implicitWidth: 17
+            implicitHeight: 17
+            radius: 5
+            color: control.checked ? "#e4e9f6" : sidebar.inputFill
+            border.width: control.checked ? 0 : 1
+            border.color: sidebar.borderSoft
+
+            Rectangle {
                 anchors.centerIn: parent
-                text: qsTr("Properties")
-                color: "#cccccc"
-                font.pixelSize: 12
-                font.bold: true
+                width: 7
+                height: 7
+                radius: 3.5
+                visible: control.checked
+                color: "#25283a"
             }
         }
 
-        // Separator
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: "#3c3c3c"
+        contentItem: Text {
+            text: control.text
+            color: control.enabled ? sidebar.textBody : sidebar.textMuted
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: control.indicator.width + control.spacing
+        }
+    }
+
+    component SidebarComboBox: ComboBox {
+        id: control
+
+        implicitHeight: 38
+        leftPadding: 12
+        rightPadding: 34
+
+        contentItem: Text {
+            text: control.displayText
+            color: control.enabled ? sidebar.textStrong : sidebar.textMuted
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
         }
 
-        // Scrollable content area
+        indicator: Text {
+            text: control.popup.visible ? "\u2303" : "\u203A"
+            color: sidebar.textBody
+            font.pixelSize: control.popup.visible ? 16 : 20
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+        }
+
+        background: Rectangle {
+            radius: 12
+            color: sidebar.buttonFill
+        }
+
+        delegate: ItemDelegate {
+            required property int index
+            required property var modelData
+
+            width: control.width
+            highlighted: control.highlightedIndex === index
+
+            contentItem: Text {
+                text: modelData
+                color: highlighted ? sidebar.textStrong : sidebar.textBody
+                font.pixelSize: 13
+                leftPadding: 12
+                rightPadding: 12
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            background: Rectangle {
+                radius: 10
+                color: highlighted ? "#32384d" : "transparent"
+            }
+        }
+
+        popup: Popup {
+            y: control.height + 4
+            width: control.width
+            padding: 6
+
+            background: Rectangle {
+                radius: 12
+                color: sidebar.buttonFill
+            }
+
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: control.delegateModel
+                currentIndex: control.highlightedIndex
+                spacing: 3
+            }
+        }
+    }
+
+    component SidebarPropertyRow: RowLayout {
+        property string label: ""
+        property string value: ""
+
+        spacing: 10
+        Layout.fillWidth: true
+
+        Label {
+            visible: parent.label.length > 0
+            text: parent.label
+            color: sidebar.textMuted
+            font.pixelSize: 12
+            Layout.preferredWidth: parent.label.length > 0 ? 90 : 0
+        }
+
+        Label {
+            text: parent.value
+            color: sidebar.textBody
+            font.pixelSize: 13
+            Layout.fillWidth: true
+            wrapMode: Text.WrapAnywhere
+        }
+    }
+
+    component SidebarBranchRow: RowLayout {
+        property bool lastItem: false
+        property int gapAfter: lastItem ? 0 : 4
+        property alias content: contentLoader.sourceComponent
+
+        Layout.fillWidth: true
+        spacing: 10
+
+        Item {
+            Layout.preferredWidth: 24
+            Layout.fillHeight: true
+            implicitHeight: contentItem.implicitHeight + gapAfter
+
+            Canvas {
+                anchors.fill: parent
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = sidebar.connectorColor
+                    ctx.lineWidth = 1
+                    ctx.lineCap = "round"
+                    ctx.lineJoin = "round"
+                    ctx.globalAlpha = 0.95
+
+                    var x = 11
+                    var contentHeight = contentItem.height > 0 ? contentItem.height : contentItem.implicitHeight
+                    var y = Math.round(contentHeight * 0.5)
+                    var radius = 8
+                    y = Math.max(radius + 2, Math.min(contentHeight - radius - 2, y))
+                    var branchStartY = Math.max(0, y - radius)
+
+                    if (lastItem) {
+                        ctx.beginPath()
+                        ctx.moveTo(x, 0)
+                        ctx.lineTo(x, branchStartY)
+                        ctx.stroke()
+                    } else {
+                        ctx.beginPath()
+                        ctx.moveTo(x, 0)
+                        ctx.lineTo(x, height)
+                        ctx.stroke()
+                    }
+
+                    ctx.beginPath()
+                    ctx.moveTo(x, branchStartY)
+                    ctx.quadraticCurveTo(x, y, x + radius, y)
+                    ctx.lineTo(width, y)
+                    ctx.stroke()
+                }
+            }
+        }
+
+        Item {
+            id: contentItem
+            Layout.fillWidth: true
+            implicitHeight: contentLoader.implicitHeight
+
+            Loader {
+                id: contentLoader
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+            }
+        }
+    }
+
+    component SidebarSection: ColumnLayout {
+        id: section
+
+        property string title: ""
+        property string iconSource: ""
+        property alias content: contentLoader.sourceComponent
+        property bool expanded: false
+
+        spacing: 8
+        Layout.fillWidth: true
+
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 40
+
+            Rectangle {
+                anchors.fill: parent
+                visible: section.expanded
+                radius: 14
+                color: sidebar.tabFill
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 10
+
+                Image {
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    source: section.iconSource
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                }
+
+                Label {
+                    text: section.title
+                    color: section.expanded ? sidebar.textStrong : sidebar.textMuted
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                }
+
+                Image {
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    source: section.expanded ? "qrc:/icons/chevron-down.svg"
+                                             : "qrc:/icons/chevron-right.svg"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: section.expanded = !section.expanded
+            }
+        }
+
+        Loader {
+            id: contentLoader
+            Layout.fillWidth: true
+            visible: section.expanded
+        }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 14
+        spacing: 10
+
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
 
+            background: Item {}
+
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+            }
+
             ColumnLayout {
-                width: sidebar.width
-                spacing: 1
+                width: Math.max(0, sidebar.width - 28)
+                spacing: 10
 
-                // Structure Info Section
-                CollapsibleSection {
+                SidebarSection {
                     title: qsTr("Structure Info")
+                    iconSource: "qrc:/icons/info.svg"
+                    expanded: true
                     Layout.fillWidth: true
 
-                    content: ColumnLayout {
-                        spacing: 8
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 4
 
-                        PropertyRow {
-                            label: qsTr("File:")
-                            value: StructureModel.fileName
-                        }
-
-                        PropertyRow {
-                            label: qsTr("Atoms:")
-                            value: StructureModel.atomCount.toString()
-                        }
-
-                        PropertyRow {
-                            label: qsTr("Atom Types:")
-                            value: StructureModel.atomTypeCount.toString()
-                        }
-
-                        PropertyRow {
-                            label: qsTr("Bonds:")
-                            value: StructureModel.bondCount.toString()
-                        }
-
-                        // Element list
-                        Repeater {
-                            model: StructureModel.elements
-                            delegate: PropertyRow {
-                                label: ""
-                                value: modelData
-                            }
-                        }
-
-                        // Unit cell info
-                        PropertyRow {
-                            visible: StructureModel.hasUnitCell
-                            label: qsTr("Unit Cell:")
-                            value: StructureModel.hasUnitCell ? "Yes" : "No"
-                        }
-
-                        Label {
-                            visible: StructureModel.hasUnitCell
-                            text: StructureModel.cellParameters
-                            color: "#cccccc"
-                            font.pixelSize: 10
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 85
-                        }
-                    }
-                }
-
-                // Structure Manipulation Section
-                CollapsibleSection {
-                    title: qsTr("Structure Manipulation")
-                    Layout.fillWidth: true
-
-                    content: ColumnLayout {
-                        spacing: 8
-
-                        // ---- Replicate Unit Cell ----
-                        Label {
-                            text: qsTr("Replicate Unit Cell")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        // Controls + disabled overlay
-                        Item {
-                            Layout.fillWidth: true
-                            implicitHeight: replicateControls.implicitHeight
-
-                            ColumnLayout {
-                                id: replicateControls
-                                width: parent.width
-                                spacing: 6
-                                enabled: StructureModel.hasUnitCell
-                                opacity: enabled ? 1.0 : 0.4
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-
-                                    Label {
-                                        text: qsTr("X:")
-                                        color: "#cccccc"
-                                        font.pixelSize: 11
-                                        Layout.preferredWidth: 16
-                                    }
-                                    TextField {
-                                        id: replicateX
-                                        Layout.fillWidth: true
-                                        text: "1"
-                                        horizontalAlignment: TextInput.AlignHCenter
-                                        inputMethodHints: Qt.ImhDigitsOnly
-                                        validator: IntValidator { bottom: 1; top: 99 }
-                                        selectByMouse: true
-                                    }
-
-                                    Label {
-                                        text: qsTr("Y:")
-                                        color: "#cccccc"
-                                        font.pixelSize: 11
-                                        Layout.preferredWidth: 16
-                                    }
-                                    TextField {
-                                        id: replicateY
-                                        Layout.fillWidth: true
-                                        text: "1"
-                                        horizontalAlignment: TextInput.AlignHCenter
-                                        inputMethodHints: Qt.ImhDigitsOnly
-                                        validator: IntValidator { bottom: 1; top: 99 }
-                                        selectByMouse: true
-                                    }
-
-                                    Label {
-                                        text: qsTr("Z:")
-                                        color: "#cccccc"
-                                        font.pixelSize: 11
-                                        Layout.preferredWidth: 16
-                                    }
-                                    TextField {
-                                        id: replicateZ
-                                        Layout.fillWidth: true
-                                        text: "1"
-                                        horizontalAlignment: TextInput.AlignHCenter
-                                        inputMethodHints: Qt.ImhDigitsOnly
-                                        validator: IntValidator { bottom: 1; top: 99 }
-                                        selectByMouse: true
-                                    }
-                                }
-
-                                Button {
-                                    text: qsTr("Apply Replication")
-                                    Layout.fillWidth: true
-                                    onClicked: {
-                                        const nx = parseInt(replicateX.text)
-                                        const ny = parseInt(replicateY.text)
-                                        const nz = parseInt(replicateZ.text)
-                                        if (!Number.isInteger(nx) || nx < 1 ||
-                                            !Number.isInteger(ny) || ny < 1 ||
-                                            !Number.isInteger(nz) || nz < 1) {
-                                            sidebar.showSliderInputError(
-                                                qsTr("Replication factors must be integers \u2265 1."))
-                                            return
-                                        }
-                                        StructureModel.replicateCell(nx, ny, nz)
-                                    }
-                                }
-                            }
-
-                            // Transparent overlay: captures hover when disabled to show tooltip
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: !StructureModel.hasUnitCell
-                                ToolTip.visible: containsMouse
-                                ToolTip.text: qsTr("Not applicable for non-periodic structures")
-                            }
-                        }
-
-                        // ---- Unwrap Molecules ----
-                        Item {
-                            Layout.fillWidth: true
-                            implicitHeight: unwrapButton.implicitHeight
-
-                            Button {
-                                id: unwrapButton
-                                text: qsTr("Unwrap Molecules")
-                                width: parent.width
-                                enabled: StructureModel.hasUnitCell && StructureModel.hasBonds
-                                opacity: enabled ? 1.0 : 0.4
-                                onClicked: StructureModel.unwrapMolecules()
-                            }
-
-                            // Transparent overlay for tooltip when disabled
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: !(StructureModel.hasUnitCell && StructureModel.hasBonds)
-                                ToolTip.visible: containsMouse
-                                ToolTip.text: !StructureModel.hasUnitCell
-                                    ? qsTr("Not applicable for non-periodic structures")
-                                    : qsTr("Bond detection required")
-                            }
-                        }
-
-                        // ---- Reset ----
-                        Button {
-                            text: qsTr("Reset to Original")
-                            Layout.fillWidth: true
-                            enabled: StructureModel.hasStructure
-                            onClicked: StructureModel.resetToOriginal()
-                        }
-                    }
-                }
-
-                // Visualization Section
-                CollapsibleSection {
-                    title: qsTr("Visualization")
-                    Layout.fillWidth: true
-
-                    content: ColumnLayout {
-                        spacing: 8
-
-                        Label {
-                            text: qsTr("Atom Style")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        ComboBox {
-                            Layout.fillWidth: true
-                            model: ["Sphere", "Ball & Stick", "CPK", "Wireframe"]
-                            currentIndex: 0
-                        }
-
-                        Label {
-                            text: qsTr("Color Scheme")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        ComboBox {
-                            Layout.fillWidth: true
-                            model: [qsTr("Jmol"), qsTr("CPK")]
-                            currentIndex: sidebar.viewport ? sidebar.viewport.atomColorScheme : 0
-                            onActivated: function(index) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.atomColorScheme = index
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Atom Scale")
-                            from: 0.1
-                            to: 2.0
-                            defaultValue: 1.0
-                            decimals: 2
-                            sourceValue: sidebar.viewport ? sidebar.viewport.atomScale : 1.0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.atomScale = newValue
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Bond Scale")
-                            from: 0.5
-                            to: 2.0
-                            defaultValue: 1.1
-                            decimals: 2
-                            sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.1
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.bondScale = newValue
-                                }
-                            }
-                        }
-
-                        CheckBox {
-                            id: showBondsCheck
-                            text: qsTr("Show Bonds")
-                            checked: true
-                            onCheckedChanged: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.showBonds = checked
-                                }
-                            }
-                        }
-
-                    }
-                }
-
-                // Unit Cell Section
-                CollapsibleSection {
-                    title: qsTr("Unit Cell")
-                    Layout.fillWidth: true
-
-                    content: ColumnLayout {
-                        spacing: 8
-
-                        CheckBox {
-                            text: qsTr("Show Unit Cell")
-                            checked: sidebar.viewport ? sidebar.viewport.showUnitCell : true
-                            onCheckedChanged: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.showUnitCell = checked
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Thickness")
-                            from: 0.01
-                            to: 2.0
-                            defaultValue: 0.06
-                            decimals: 2
-                            sourceValue: sidebar.viewport ? sidebar.viewport.unitCellThickness : 0.06
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.unitCellThickness = newValue
-                                }
-                            }
-                        }
-
-                        RGBColorPicker {
-                            defaultColor: Qt.rgba(0, 0, 0, 1.0)
-                            sourceColor: sidebar.viewport ? sidebar.viewport.unitCellColor : defaultColor
-                            onColorApplied: function(c) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.unitCellColor = c
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Camera Section
-                CollapsibleSection {
-                    title: qsTr("Camera")
-                    Layout.fillWidth: true
-
-                    content: ColumnLayout {
-                        spacing: 8
-
-                        Label {
-                            text: qsTr("Projection")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        ComboBox {
-                            Layout.fillWidth: true
-                            model: ["Perspective", "Orthographic"]
-                            currentIndex: sidebar.viewport ? (sidebar.viewport.isPerspective ? 0 : 1) : 0
-                            onActivated: function(index) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.isPerspective = (index === 0)
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            title: qsTr("Field of View")
-                            visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
-                            integer: true
-                            from: 10
-                            to: 120
-                            stepSize: 1
-                            defaultValue: 45
-                            sourceValue: sidebar.viewport ? sidebar.viewport.fieldOfView : 45
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.fieldOfView = newValue
-                                }
-                            }
-                        }
-
-                        Label {
-                            text: qsTr("View Direction")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        GridLayout {
-                            Layout.fillWidth: true
-                            columns: 2
-                            columnSpacing: 4
-                            rowSpacing: 4
+                            SidebarPropertyRow { label: qsTr("File:"); value: StructureModel.fileName }
+                            SidebarPropertyRow { label: qsTr("Atoms:"); value: StructureModel.atomCount.toString() }
+                            SidebarPropertyRow { label: qsTr("Atom Types:"); value: StructureModel.atomTypeCount.toString() }
+                            SidebarPropertyRow { label: qsTr("Bonds:"); value: StructureModel.bondCount.toString() }
 
                             Repeater {
-                                model: ["+X", "−X", "+Y", "−Y", "+Z", "−Z"]
-                                Button {
-                                    text: modelData
-                                    Layout.fillWidth: true
-                                    onClicked: {
-                                        if (sidebar.viewport) {
-                                            sidebar.viewport.setViewDirection(index)
+                                model: StructureModel.elements
+                                delegate: SidebarPropertyRow { label: ""; value: modelData }
+                            }
+
+                            Item {
+                                visible: StructureModel.hasUnitCell
+                                Layout.fillWidth: true
+                                implicitHeight: unitCellInfo.implicitHeight
+
+                                ColumnLayout {
+                                    id: unitCellInfo
+                                    width: parent.width
+                                    spacing: 3
+
+                                    SidebarPropertyRow {
+                                        label: qsTr("Unit Cell:")
+                                        value: StructureModel.hasUnitCell ? "Yes" : "No"
+                                    }
+
+                                    Label {
+                                        text: StructureModel.cellParameters
+                                        color: sidebar.textBody
+                                        font.pixelSize: 11
+                                        Layout.fillWidth: true
+                                        Layout.leftMargin: 90
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    title: qsTr("Structure Manipulation")
+                    iconSource: "qrc:/icons/manipulation.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 6
+
+                                        Label {
+                                            text: qsTr("Replicate Unit Cell")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 12
+                                        }
+
+                                        Item {
+                                            Layout.fillWidth: true
+                                            implicitHeight: replicateControls.implicitHeight
+
+                                            ColumnLayout {
+                                                id: replicateControls
+                                                width: parent.width
+                                                spacing: 6
+                                                enabled: StructureModel.hasUnitCell
+                                                opacity: enabled ? 1.0 : 0.4
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 6
+
+                                                    Label {
+                                                        text: qsTr("X:")
+                                                        color: sidebar.textBody
+                                                        font.pixelSize: 11
+                                                        Layout.preferredWidth: 16
+                                                    }
+                                                    SidebarTextField {
+                                                        id: replicateX
+                                                        Layout.fillWidth: true
+                                                        text: "1"
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        inputMethodHints: Qt.ImhDigitsOnly
+                                                        validator: IntValidator { bottom: 1; top: 99 }
+                                                        selectByMouse: true
+                                                    }
+
+                                                    Label {
+                                                        text: qsTr("Y:")
+                                                        color: sidebar.textBody
+                                                        font.pixelSize: 11
+                                                        Layout.preferredWidth: 16
+                                                    }
+                                                    SidebarTextField {
+                                                        id: replicateY
+                                                        Layout.fillWidth: true
+                                                        text: "1"
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        inputMethodHints: Qt.ImhDigitsOnly
+                                                        validator: IntValidator { bottom: 1; top: 99 }
+                                                        selectByMouse: true
+                                                    }
+
+                                                    Label {
+                                                        text: qsTr("Z:")
+                                                        color: sidebar.textBody
+                                                        font.pixelSize: 11
+                                                        Layout.preferredWidth: 16
+                                                    }
+                                                    SidebarTextField {
+                                                        id: replicateZ
+                                                        Layout.fillWidth: true
+                                                        text: "1"
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        inputMethodHints: Qt.ImhDigitsOnly
+                                                        validator: IntValidator { bottom: 1; top: 99 }
+                                                        selectByMouse: true
+                                                    }
+                                                }
+
+                                                SidebarButton {
+                                                    text: qsTr("Apply Replication")
+                                                    Layout.fillWidth: true
+                                                    onClicked: {
+                                                        const nx = parseInt(replicateX.text)
+                                                        const ny = parseInt(replicateY.text)
+                                                        const nz = parseInt(replicateZ.text)
+                                                        if (!Number.isInteger(nx) || nx < 1 ||
+                                                            !Number.isInteger(ny) || ny < 1 ||
+                                                            !Number.isInteger(nz) || nz < 1) {
+                                                            sidebar.showSliderInputError(
+                                                                qsTr("Replication factors must be integers \u2265 1."))
+                                                            return
+                                                        }
+                                                        StructureModel.replicateCell(nx, ny, nz)
+                                                    }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                enabled: !StructureModel.hasUnitCell
+                                                ToolTip.visible: containsMouse
+                                                ToolTip.text: qsTr("Not applicable for non-periodic structures")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    Item {
+                                        Layout.fillWidth: true
+                                        implicitHeight: unwrapButton.implicitHeight
+
+                                        SidebarButton {
+                                            id: unwrapButton
+                                            text: qsTr("Unwrap Molecules")
+                                            width: parent.width
+                                            enabled: StructureModel.hasUnitCell && StructureModel.hasBonds
+                                            opacity: enabled ? 1.0 : 0.4
+                                            onClicked: StructureModel.unwrapMolecules()
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            enabled: !(StructureModel.hasUnitCell && StructureModel.hasBonds)
+                                            ToolTip.visible: containsMouse
+                                            ToolTip.text: !StructureModel.hasUnitCell
+                                                ? qsTr("Not applicable for non-periodic structures")
+                                                : qsTr("Bond detection required")
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Reset to Original")
+                                        Layout.fillWidth: true
+                                        enabled: StructureModel.hasStructure
+                                        onClicked: StructureModel.resetToOriginal()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    title: qsTr("Visualization")
+                    iconSource: "qrc:/icons/visualization.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Atom Style"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: ["Sphere", "Ball & Stick", "CPK", "Wireframe"]
+                                            currentIndex: 0
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Color Scheme"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: [qsTr("Jmol"), qsTr("CPK")]
+                                            currentIndex: sidebar.viewport ? sidebar.viewport.atomColorScheme : 0
+                                            onActivated: function(index) {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.atomColorScheme = index
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Atom Scale")
+                                        from: 0.1
+                                        to: 2.0
+                                        defaultValue: 1.0
+                                        decimals: 2
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.atomScale : 1.0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.atomScale = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Bond Scale")
+                                        from: 0.5
+                                        to: 2.0
+                                        defaultValue: 1.1
+                                        decimals: 2
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.1
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.bondScale = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Show Bonds")
+                                        checked: true
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.showBonds = checked
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
 
-                        Button {
-                            text: qsTr("Reset Camera")
-                            Layout.fillWidth: true
-                            onClicked: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.resetCamera()
+                SidebarSection {
+                    title: qsTr("Unit Cell")
+                    iconSource: "qrc:/icons/unit-cell.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Show Unit Cell")
+                                        checked: sidebar.viewport ? sidebar.viewport.showUnitCell : true
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.showUnitCell = checked
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        Button {
-                            text: qsTr("Fit to View")
-                            Layout.fillWidth: true
-                            onClicked: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.fitToView()
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Thickness")
+                                        from: 0.01
+                                        to: 2.0
+                                        defaultValue: 0.06
+                                        decimals: 2
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.unitCellThickness : 0.06
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.unitCellThickness = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    RGBColorPicker {
+                                        defaultColor: Qt.rgba(0, 0, 0, 1.0)
+                                        sourceColor: sidebar.viewport ? sidebar.viewport.unitCellColor : defaultColor
+                                        onColorApplied: function(c) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.unitCellColor = c
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Render Settings Section
-                CollapsibleSection {
+                SidebarSection {
+                    title: qsTr("Camera")
+                    iconSource: "qrc:/icons/camera.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Projection"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: ["Perspective", "Orthographic"]
+                                            currentIndex: sidebar.viewport ? (sidebar.viewport.isPerspective ? 0 : 1) : 0
+                                            onActivated: function(index) {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.isPerspective = (index === 0)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Field of View")
+                                        integer: true
+                                        from: 10
+                                        to: 120
+                                        stepSize: 1
+                                        defaultValue: 45
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.fieldOfView : 45
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.fieldOfView = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("View Direction"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        GridLayout {
+                                            Layout.fillWidth: true
+                                            columns: 2
+                                            columnSpacing: 4
+                                            rowSpacing: 4
+
+                                            Repeater {
+                                                model: ["+X", "−X", "+Y", "−Y", "+Z", "−Z"]
+                                                delegate: SidebarButton {
+                                                    text: modelData
+                                                    Layout.fillWidth: true
+                                                    onClicked: {
+                                                        if (sidebar.viewport) {
+                                                            sidebar.viewport.setViewDirection(index)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Reset Camera")
+                                        Layout.fillWidth: true
+                                        onClicked: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.resetCamera()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Fit to View")
+                                        Layout.fillWidth: true
+                                        onClicked: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.fitToView()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
                     title: qsTr("Render Settings")
+                    iconSource: "qrc:/icons/render.svg"
                     Layout.fillWidth: true
                     expanded: false
 
-                    content: ColumnLayout {
-                        spacing: 8
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
 
-                        Label {
-                            text: qsTr("Render Mode")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        ComboBox {
-                            Layout.fillWidth: true
-                            model: ["Raster (Fast)", "Ray Tracing (Quality)"]
-                            currentIndex: sidebar.viewport ? sidebar.viewport.rendererMode : 0
-                            onCurrentIndexChanged: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.rendererMode = currentIndex
-                                }
-                            }
-                        }
-
-                        Label {
-                            text: qsTr("Max RT Samples")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                            visible: sidebar.rtSettingsVisible
-                        }
-
-                        TextField {
-                            id: maxRTSamplesField
-                            Layout.fillWidth: true
-                            visible: sidebar.rtSettingsVisible
-                            text: sidebar.viewport ? sidebar.viewport.maxRTSamples.toString() : "1000"
-                            placeholderText: qsTr("1000")
-                            hoverEnabled: true
-                            inputMethodHints: Qt.ImhDigitsOnly
-                            validator: IntValidator { bottom: 1; top: 10000 }
-                            ToolTip.visible: hovered
-                            ToolTip.text: qsTr("Enter any integer between 1 and 10000")
-
-                            onEditingFinished: {
-                                if (!sidebar.viewport) {
-                                    return
-                                }
-
-                                const rawText = text.trim()
-                                if (!/^\d+$/.test(rawText)) {
-                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
-                                    text = sidebar.viewport.maxRTSamples.toString()
-                                    return
-                                }
-
-                                const parsed = Number(rawText)
-                                if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
-                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
-                                    text = sidebar.viewport.maxRTSamples.toString()
-                                    return
-                                }
-
-                                sidebar.viewport.maxRTSamples = parsed
-                                text = sidebar.viewport.maxRTSamples.toString()
-                            }
-
-                            Connections {
-                                target: sidebar.viewport
-                                ignoreUnknownSignals: true
-
-                                function onMaxRTSamplesChanged() {
-                                    if (sidebar.viewport) {
-                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
-                                    }
-                                }
-
-                                function onRendererModeChanged() {
-                                    if (sidebar.rtSettingsVisible) {
-                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Render Mode"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: ["Raster (Fast)", "Ray Tracing (Quality)"]
+                                            currentIndex: sidebar.viewport ? sidebar.viewport.rendererMode : 0
+                                            onCurrentIndexChanged: {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.rendererMode = currentIndex
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        CheckBox {
-                            text: qsTr("Ambient Occlusion")
-                            visible: sidebar.rtSettingsVisible
-                            checked: sidebar.viewport ? sidebar.viewport.enableAO : false
-                            onCheckedChanged: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.enableAO = checked
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Max RT Samples"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        SidebarTextField {
+                                            id: maxRTSamplesField
+                                            Layout.fillWidth: true
+                                            text: sidebar.viewport ? sidebar.viewport.maxRTSamples.toString() : "1000"
+                                            placeholderText: qsTr("1000")
+                                            hoverEnabled: true
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 1; top: 10000 }
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: qsTr("Enter any integer between 1 and 10000")
+
+                                            onEditingFinished: {
+                                                if (!sidebar.viewport) {
+                                                    return
+                                                }
+
+                                                const rawText = text.trim()
+                                                if (!/^\d+$/.test(rawText)) {
+                                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
+                                                    text = sidebar.viewport.maxRTSamples.toString()
+                                                    return
+                                                }
+
+                                                const parsed = Number(rawText)
+                                                if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+                                                    sidebar.showMaxRTSamplesError(qsTr("Invalid value. Enter an integer between 1 and 10000."))
+                                                    text = sidebar.viewport.maxRTSamples.toString()
+                                                    return
+                                                }
+
+                                                sidebar.viewport.maxRTSamples = parsed
+                                                text = sidebar.viewport.maxRTSamples.toString()
+                                            }
+
+                                            Connections {
+                                                target: sidebar.viewport
+                                                ignoreUnknownSignals: true
+
+                                                function onMaxRTSamplesChanged() {
+                                                    if (sidebar.viewport) {
+                                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
+                                                    }
+                                                }
+
+                                                function onRendererModeChanged() {
+                                                    if (sidebar.rtSettingsVisible) {
+                                                        maxRTSamplesField.text = sidebar.viewport.maxRTSamples.toString()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        CheckBox {
-                            text: qsTr("Shadows")
-                            visible: sidebar.rtSettingsVisible
-                            checked: sidebar.viewport ? sidebar.viewport.enableShadows : false
-                            onCheckedChanged: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.enableShadows = checked
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Ambient Occlusion")
+                                        checked: sidebar.viewport ? sidebar.viewport.enableAO : false
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.enableAO = checked
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Ambient")
-                            tooltipText: qsTr("Base light intensity applied everywhere. Higher values brighten the whole scene, including shadowed areas.")
-                            from: 0
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.3
-                            sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.3
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.ambientStrength = newValue
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Shadows")
+                                        checked: sidebar.viewport ? sidebar.viewport.enableShadows : false
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.enableShadows = checked
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Diffuse")
-                            tooltipText: qsTr("Strength of directional matte lighting. Higher values increase light-facing contrast and shape definition.")
-                            from: 0
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.7
-                            sourceValue: sidebar.viewport ? sidebar.viewport.diffuseStrength : 0.7
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.diffuseStrength = newValue
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Ambient")
+                                        tooltipText: qsTr("Base light intensity applied everywhere. Higher values brighten the whole scene, including shadowed areas.")
+                                        from: 0
+                                        to: 1
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: 0.3
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.3
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.ambientStrength = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Shadow opacity")
-                            tooltipText: qsTr("Strength of ray-traced shadows. 0 disables shadow darkening, 1 keeps fully dark shadows.")
-                            from: 0
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 1.0
-                            visible: sidebar.rtSettingsVisible
-                            enabled: sidebar.viewport ? sidebar.viewport.enableShadows : false
-                            sourceValue: sidebar.viewport ? sidebar.viewport.shadowOpacity : 1.0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.shadowOpacity = newValue
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Diffuse")
+                                        tooltipText: qsTr("Strength of directional matte lighting. Higher values increase light-facing contrast and shape definition.")
+                                        from: 0
+                                        to: 1
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: 0.7
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.diffuseStrength : 0.7
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.diffuseStrength = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Specular")
-                            tooltipText: qsTr("Brightness of reflective highlights. Higher values make highlights stronger and more noticeable.")
-                            from: 0
-                            to: 1
-                            stepSize: 0.01
-                            decimals: 2
-                            defaultValue: 0.0
-                            sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.specularStrength = newValue
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Shadow opacity")
+                                        tooltipText: qsTr("Strength of ray-traced shadows. 0 disables shadow darkening, 1 keeps fully dark shadows.")
+                                        from: 0
+                                        to: 1
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: 1.0
+                                        enabled: sidebar.viewport ? sidebar.viewport.enableShadows : false
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.shadowOpacity : 1.0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.shadowOpacity = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Shininess")
-                            tooltipText: qsTr("Sharpness of specular highlights. Higher values make highlights tighter; lower values make them softer.")
-                            integer: true
-                            from: 1
-                            to: 128
-                            stepSize: 1
-                            defaultValue: 32
-                            sourceValue: sidebar.viewport ? sidebar.viewport.shininess : 32
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.shininess = Math.round(newValue)
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Specular")
+                                        tooltipText: qsTr("Brightness of reflective highlights. Higher values make highlights stronger and more noticeable.")
+                                        from: 0
+                                        to: 1
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: 0.0
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.specularStrength = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Light azimuth")
-                            tooltipText: qsTr("Angle in the XY plane. 0° = +X, 90° = +Y, ±180° = −X.")
-                            from: -180
-                            to: 180
-                            stepSize: 1
-                            decimals: 0
-                            defaultValue: 0
-                            sourceValue: sidebar.viewport ? sidebar.viewport.lightAzimuth : 0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.lightAzimuth = newValue
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Shininess")
+                                        tooltipText: qsTr("Sharpness of specular highlights. Higher values make highlights tighter; lower values make them softer.")
+                                        integer: true
+                                        from: 1
+                                        to: 128
+                                        stepSize: 1
+                                        defaultValue: 32
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.shininess : 32
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.shininess = Math.round(newValue)
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Light elevation")
-                            tooltipText: qsTr("Angle from the XY plane toward +Z. 0° = in XY plane, 90° = +Z, -90° = −Z.")
-                            from: -90
-                            to: 90
-                            stepSize: 1
-                            decimals: 0
-                            defaultValue: 45
-                            sourceValue: sidebar.viewport ? sidebar.viewport.lightElevation : 45
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.lightElevation = newValue
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Light azimuth")
+                                        tooltipText: qsTr("Angle in the XY plane. 0° = +X, 90° = +Y, ±180° = −X.")
+                                        from: -180
+                                        to: 180
+                                        stepSize: 1
+                                        decimals: 0
+                                        defaultValue: 0
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.lightAzimuth : 0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.lightAzimuth = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Ambient occlusion samples")
-                            tooltipText: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
-                            integer: true
-                            from: 1
-                            to: 16
-                            stepSize: 1
-                            defaultValue: 4
-                            visible: sidebar.rtSettingsVisible
-                            sourceValue: sidebar.viewport ? sidebar.viewport.aoSamples : 4
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.aoSamples = Math.round(newValue)
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Light elevation")
+                                        tooltipText: qsTr("Angle from the XY plane toward +Z. 0° = in XY plane, 90° = +Z, -90° = −Z.")
+                                        from: -90
+                                        to: 90
+                                        stepSize: 1
+                                        decimals: 0
+                                        defaultValue: 45
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.lightElevation : 45
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.lightElevation = newValue
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        NumericSliderControl {
-                            title: qsTr("Ambient occlusion radius")
-                            tooltipText: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
-                            from: 1
-                            to: 10
-                            stepSize: 0.1
-                            decimals: 1
-                            defaultValue: 3.0
-                            visible: sidebar.rtSettingsVisible
-                            sourceValue: sidebar.viewport ? sidebar.viewport.aoRadius : 3.0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.aoRadius = newValue
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Ambient occlusion samples")
+                                        tooltipText: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
+                                        integer: true
+                                        from: 1
+                                        to: 16
+                                        stepSize: 1
+                                        defaultValue: 4
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.aoSamples : 4
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.aoSamples = Math.round(newValue)
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        Button {
-                            text: qsTr("Reset Render Settings")
-                            Layout.fillWidth: true
-                            onClicked: sidebar.resetRayTracingSettings()
+                            SidebarBranchRow {
+                                visible: sidebar.rtSettingsVisible
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Ambient occlusion radius")
+                                        tooltipText: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
+                                        from: 1
+                                        to: 10
+                                        stepSize: 0.1
+                                        decimals: 1
+                                        defaultValue: 3.0
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.aoRadius : 3.0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.aoRadius = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Reset Render Settings")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.resetRayTracingSettings()
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                // Background Section
-                CollapsibleSection {
+                SidebarSection {
                     title: qsTr("Background")
+                    iconSource: "qrc:/icons/background.svg"
                     Layout.fillWidth: true
                     expanded: false
 
-                    content: ColumnLayout {
-                        spacing: 8
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 0
 
-                        RGBColorPicker {
-                            id: backgroundColorPicker
-                            defaultColor: Qt.rgba(230 / 255.0, 230 / 255.0, 230 / 255.0, 1.0)
-                            sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
-                            onColorApplied: function(c) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = c
+                            SidebarBranchRow {
+                                content: Component {
+                                    RGBColorPicker {
+                                        id: backgroundColorPicker
+                                        defaultColor: Qt.rgba(230 / 255.0, 230 / 255.0, 230 / 255.0, 1.0)
+                                        sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
+                                        onColorApplied: function(c) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.backgroundColor = c
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        Button {
-                            text: qsTr("Reset to Default")
-                            Layout.fillWidth: true
-                            onClicked: {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = backgroundColorPicker.defaultColor
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Reset to Default")
+                                        Layout.fillWidth: true
+                                        onClicked: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.backgroundColor = backgroundColorPicker.defaultColor
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Spacer to push content to top
                 Item {
                     Layout.fillHeight: true
                 }
@@ -798,13 +1234,17 @@ Rectangle {
         x: Math.round((sidebar.width - width) * 0.5)
         y: Math.round((sidebar.height - height) * 0.5)
 
+        background: Rectangle {
+            radius: 12
+            color: sidebar.buttonFill
+        }
+
         contentItem: Label {
             text: sidebar.maxRTSamplesErrorMessage
             width: 316
-            color: "#cccccc"
+            color: sidebar.textBody
             wrapMode: Text.WordWrap
             padding: 12
         }
     }
-
 }
