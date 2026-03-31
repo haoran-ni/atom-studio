@@ -8,6 +8,8 @@ Rectangle {
 
     color: "#2d2d2d"
 
+    AppMenuActions { id: appActions }
+
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: 5
@@ -27,74 +29,26 @@ Rectangle {
             Menu {
                 title: qsTr("File")
 
-                Action {
-                    text: qsTr("Open...")
-                    shortcut: StandardKey.Open
-                    onTriggered: FileController.openFileDialog()
-                }
-
-                Action {
-                    text: qsTr("Open Recent")
-                    enabled: false
-                }
-
+                MenuItem { action: appActions.fileOpen }
+                MenuItem { action: appActions.fileOpenRecent }
                 MenuSeparator {}
-
-                Action {
-                    text: qsTr("Save Image...")
-                    shortcut: StandardKey.Save
-                    onTriggered: console.log("Save image triggered")
-                }
-
-                Action {
-                    text: qsTr("Export...")
-                    onTriggered: console.log("Export triggered")
-                }
-
+                MenuItem { action: appActions.fileSaveImage }
+                MenuItem { action: appActions.fileExport }
                 MenuSeparator {}
-
-                Action {
-                    text: qsTr("Quit")
-                    shortcut: StandardKey.Quit
-                    onTriggered: Qt.quit()
-                }
+                MenuItem { action: appActions.fileQuit }
             }
 
             // Edit menu
             Menu {
                 title: qsTr("Edit")
 
-                Action {
-                    text: qsTr("Undo")
-                    shortcut: StandardKey.Undo
-                    enabled: false
-                }
-
-                Action {
-                    text: qsTr("Redo")
-                    shortcut: StandardKey.Redo
-                    enabled: false
-                }
-
+                MenuItem { action: appActions.editUndo }
+                MenuItem { action: appActions.editRedo }
                 MenuSeparator {}
-
-                Action {
-                    text: qsTr("Select All")
-                    shortcut: StandardKey.SelectAll
-                    onTriggered: console.log("Select all triggered")
-                }
-
-                Action {
-                    text: qsTr("Deselect All")
-                    onTriggered: console.log("Deselect all triggered")
-                }
-
+                MenuItem { action: appActions.editSelectAll }
+                MenuItem { action: appActions.editDeselectAll }
                 MenuSeparator {}
-
-                Action {
-                    text: qsTr("Preferences...")
-                    onTriggered: console.log("Preferences triggered")
-                }
+                MenuItem { action: appActions.editPreferences }
             }
 
             // View menu

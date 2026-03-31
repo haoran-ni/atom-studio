@@ -4,6 +4,45 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-31: QML UI Refactor — Extract Reusable Components
+
+### Summary
+Extracted duplicated QML code into standalone reusable component files. No visual or behavioral changes; purely structural. The Sidebar had three inline `component` definitions and two near-identical RGB color picker blocks. ViewportPanel had two structurally identical semi-transparent overlay boxes. Both ViewportPanel and HeaderBar independently defined the same File and Edit menu actions.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | Removed 3 inline component definitions; replaced 2 RGB picker blocks with `RGBColorPicker`; removed redundant `sliderInputErrorDialog` and `showSliderInputError` |
+| `src/ui/qml/ViewportPanel.qml` | Replaced 2 overlay `Rectangle`s with `InfoOverlayBox`; replaced inline `Action` items with `MenuItem { action: appActions.xxx }` |
+| `src/ui/qml/HeaderBar.qml` | Replaced inline `Action` items with `MenuItem { action: appActions.xxx }` |
+| `resources/resources.qrc` | Added 6 new QML component entries |
+
+### New Files
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/CollapsibleSection.qml` | Expandable section with click-to-toggle header |
+| `src/ui/qml/PropertyRow.qml` | Label + value display row |
+| `src/ui/qml/NumericSliderControl.qml` | Slider + text field + reset button; self-contained validation dialog using `Overlay.overlay` |
+| `src/ui/qml/RGBColorPicker.qml` | RGB Color label + preview rectangle + R/G/B sliders; exposes `sourceColor`, `defaultColor`, `colorApplied` signal |
+| `src/ui/qml/InfoOverlayBox.qml` | Semi-transparent dark rounded box with `default property alias` for child labels |
+| `src/ui/qml/AppMenuActions.qml` | `QtObject` holding shared File and Edit `Action` instances for use in both ViewportPanel and HeaderBar |
+
+### Architecture Decisions
+- `NumericSliderControl` now owns its own error dialog (`Overlay.overlay` + `anchors.centerIn: parent`) instead of delegating to the parent `Sidebar`. This makes the component fully self-contained and centers the dialog in the window rather than the sidebar panel.
+- `RGBColorPicker` uses `sourceColor`/`defaultColor` color properties and a `colorApplied(color)` signal, keeping it decoupled from which viewport property it targets.
+- `AppMenuActions` is a `QtObject` (not a visual item), allowing it to be instantiated inside any QML file as a non-visual child and accessed by id.
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+- Built successfully with no errors or warnings
+
+---
+
 ## 2026-03-31: Fix Orthographic View Rendering Bugs and RT Blurriness
 
 ### Summary

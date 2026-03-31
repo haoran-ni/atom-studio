@@ -103,7 +103,13 @@ atom-studio/
 │       │   ├── Main.qml
 │       │   ├── HeaderBar.qml
 │       │   ├── Sidebar.qml
-│       │   └── ViewportPanel.qml
+│       │   ├── ViewportPanel.qml
+│       │   ├── CollapsibleSection.qml  # Reusable collapsible section
+│       │   ├── PropertyRow.qml         # Reusable label/value row
+│       │   ├── NumericSliderControl.qml # Reusable slider + text + reset
+│       │   ├── RGBColorPicker.qml      # Reusable RGB color picker
+│       │   ├── InfoOverlayBox.qml      # Reusable semi-transparent overlay
+│       │   └── AppMenuActions.qml      # Shared File/Edit menu actions
 │       └── components/     # C++ UI components
 │           ├── VulkanViewport.h
 │           └── VulkanViewport.cpp

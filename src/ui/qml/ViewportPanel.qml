@@ -8,6 +8,8 @@ Rectangle {
 
     property var viewport: viewportLoader.item
 
+    AppMenuActions { id: appActions }
+
     color: "#e6e6e6"
 
     // Placeholder gradient background (shown when no structure is loaded)
@@ -162,74 +164,26 @@ Rectangle {
         id: fileMenu
         parent: viewportPanel
 
-        Action {
-            text: qsTr("Open...")
-            shortcut: StandardKey.Open
-            onTriggered: FileController.openFileDialog()
-        }
-
-        Action {
-            text: qsTr("Open Recent")
-            enabled: false
-        }
-
+        MenuItem { action: appActions.fileOpen }
+        MenuItem { action: appActions.fileOpenRecent }
         MenuSeparator {}
-
-        Action {
-            text: qsTr("Save Image...")
-            shortcut: StandardKey.Save
-            onTriggered: console.log("Save image triggered")
-        }
-
-        Action {
-            text: qsTr("Export...")
-            onTriggered: console.log("Export triggered")
-        }
-
+        MenuItem { action: appActions.fileSaveImage }
+        MenuItem { action: appActions.fileExport }
         MenuSeparator {}
-
-        Action {
-            text: qsTr("Quit")
-            shortcut: StandardKey.Quit
-            onTriggered: Qt.quit()
-        }
+        MenuItem { action: appActions.fileQuit }
     }
 
     Menu {
         id: editMenu
         parent: viewportPanel
 
-        Action {
-            text: qsTr("Undo")
-            shortcut: StandardKey.Undo
-            enabled: false
-        }
-
-        Action {
-            text: qsTr("Redo")
-            shortcut: StandardKey.Redo
-            enabled: false
-        }
-
+        MenuItem { action: appActions.editUndo }
+        MenuItem { action: appActions.editRedo }
         MenuSeparator {}
-
-        Action {
-            text: qsTr("Select All")
-            shortcut: StandardKey.SelectAll
-            onTriggered: console.log("Select all triggered")
-        }
-
-        Action {
-            text: qsTr("Deselect All")
-            onTriggered: console.log("Deselect all triggered")
-        }
-
+        MenuItem { action: appActions.editSelectAll }
+        MenuItem { action: appActions.editDeselectAll }
         MenuSeparator {}
-
-        Action {
-            text: qsTr("Preferences...")
-            onTriggered: console.log("Preferences triggered")
-        }
+        MenuItem { action: appActions.editPreferences }
     }
 
     // Placeholder content (shown when no structure loaded)
@@ -253,84 +207,43 @@ Rectangle {
     }
 
     // Viewport info overlay (top-right)
-    Rectangle {
+    InfoOverlayBox {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 10
-        width: infoColumn.width + 16
-        height: infoColumn.height + 12
-        color: "#000000"
-        opacity: 0.5
-        radius: 4
         visible: StructureModel.hasStructure
 
-        ColumnLayout {
-            id: infoColumn
-            anchors.centerIn: parent
-            spacing: 2
+        Label {
+            text: "FPS: " + (viewportPanel.viewport ? viewportPanel.viewport.fps.toFixed(1) : "0.0")
+            color: "#ffffff"
+            font.pixelSize: 10
+        }
 
-            Label {
-                text: "FPS: " + (viewportPanel.viewport ? viewportPanel.viewport.fps.toFixed(1) : "0.0")
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
+        Label {
+            visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
+            text: "Mode: Ray Tracing"
+            color: "#88ccff"
+            font.pixelSize: 10
+        }
 
-            Label {
-                visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
-                text: "Mode: Ray Tracing"
-                color: "#88ccff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
-                text: "Samples: " + (viewportPanel.viewport ? viewportPanel.viewport.sampleCount : 0)
-                color: "#88ccff"
-                font.pixelSize: 10
-            }
+        Label {
+            visible: viewportPanel.viewport ? viewportPanel.viewport.rendererMode === 1 : false
+            text: "Samples: " + (viewportPanel.viewport ? viewportPanel.viewport.sampleCount : 0)
+            color: "#88ccff"
+            font.pixelSize: 10
         }
     }
 
     // Camera controls hint (bottom-right)
-    Rectangle {
+    InfoOverlayBox {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 10
-        width: controlsColumn.width + 16
-        height: controlsColumn.height + 12
-        color: "#000000"
-        opacity: 0.5
-        radius: 4
 
-        ColumnLayout {
-            id: controlsColumn
-            anchors.centerIn: parent
-            spacing: 2
-
-            Label {
-                text: "LMB: Rotate"
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                text: "RMB: Pan"
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                text: "Scroll: Zoom"
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-
-            Label {
-                text: "DblClick: Reset"
-                color: "#ffffff"
-                font.pixelSize: 10
-            }
-        }
+        Label { text: "LMB: Rotate";   color: "#ffffff"; font.pixelSize: 10 }
+        Label { text: "RMB: Pan";      color: "#ffffff"; font.pixelSize: 10 }
+        Label { text: "Scroll: Zoom";  color: "#ffffff"; font.pixelSize: 10 }
+        Label { text: "DblClick: Reset"; color: "#ffffff"; font.pixelSize: 10 }
     }
 
     // Axis indicator (UI overlay only; not part of raster/ray tracing)

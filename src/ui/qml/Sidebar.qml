@@ -8,17 +8,11 @@ Rectangle {
 
     property var viewport: null
     property string maxRTSamplesErrorMessage: ""
-    property string sliderInputErrorMessage: ""
     readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
 
     function showMaxRTSamplesError(message) {
         maxRTSamplesErrorMessage = message
         maxRTSamplesErrorDialog.open()
-    }
-
-    function showSliderInputError(message) {
-        sliderInputErrorMessage = message
-        sliderInputErrorDialog.open()
     }
 
     function resetRayTracingSettings() {
@@ -390,91 +384,12 @@ Rectangle {
                             }
                         }
 
-                        Label {
-                            text: qsTr("RGB Color")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 24
-                            radius: 2
-                            border.color: "#3c3c3c"
-                            border.width: 1
-                            color: Qt.rgba(
-                                unitCellRedControl.currentValue / 255.0,
-                                unitCellGreenControl.currentValue / 255.0,
-                                unitCellBlueControl.currentValue / 255.0,
-                                1.0
-                            )
-                        }
-
-                        NumericSliderControl {
-                            id: unitCellRedControl
-                            title: qsTr("R")
-                            titleColor: "#ff7777"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 0
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.r * 255) : 0
-                            onValueApplied: function(newValue) {
+                        RGBColorPicker {
+                            defaultColor: Qt.rgba(0, 0, 0, 1.0)
+                            sourceColor: sidebar.viewport ? sidebar.viewport.unitCellColor : defaultColor
+                            onColorApplied: function(c) {
                                 if (sidebar.viewport) {
-                                    sidebar.viewport.unitCellColor = Qt.rgba(
-                                        newValue / 255.0,
-                                        unitCellGreenControl.currentValue / 255.0,
-                                        unitCellBlueControl.currentValue / 255.0,
-                                        1.0
-                                    )
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            id: unitCellGreenControl
-                            title: qsTr("G")
-                            titleColor: "#77ff77"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 0
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.g * 255) : 0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.unitCellColor = Qt.rgba(
-                                        unitCellRedControl.currentValue / 255.0,
-                                        newValue / 255.0,
-                                        unitCellBlueControl.currentValue / 255.0,
-                                        1.0
-                                    )
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            id: unitCellBlueControl
-                            title: qsTr("B")
-                            titleColor: "#7777ff"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 0
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.unitCellColor.b * 255) : 0
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.unitCellColor = Qt.rgba(
-                                        unitCellRedControl.currentValue / 255.0,
-                                        unitCellGreenControl.currentValue / 255.0,
-                                        newValue / 255.0,
-                                        1.0
-                                    )
+                                    sidebar.viewport.unitCellColor = c
                                 }
                             }
                         }
@@ -843,91 +758,13 @@ Rectangle {
                     content: ColumnLayout {
                         spacing: 8
 
-                        Label {
-                            text: qsTr("RGB Color")
-                            color: "#cccccc"
-                            font.pixelSize: 11
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 24
-                            radius: 2
-                            border.color: "#3c3c3c"
-                            border.width: 1
-                            color: Qt.rgba(
-                                backgroundRedControl.currentValue / 255.0,
-                                backgroundGreenControl.currentValue / 255.0,
-                                backgroundBlueControl.currentValue / 255.0,
-                                1.0
-                            )
-                        }
-
-                        NumericSliderControl {
-                            id: backgroundRedControl
-                            title: qsTr("R")
-                            titleColor: "#ff7777"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 230
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.r * 255) : 230
-                            onValueApplied: function(newValue) {
+                        RGBColorPicker {
+                            id: backgroundColorPicker
+                            defaultColor: Qt.rgba(230 / 255.0, 230 / 255.0, 230 / 255.0, 1.0)
+                            sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
+                            onColorApplied: function(c) {
                                 if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = Qt.rgba(
-                                        newValue / 255.0,
-                                        backgroundGreenControl.currentValue / 255.0,
-                                        backgroundBlueControl.currentValue / 255.0,
-                                        1.0
-                                    )
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            id: backgroundGreenControl
-                            title: qsTr("G")
-                            titleColor: "#77ff77"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 230
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.g * 255) : 230
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = Qt.rgba(
-                                        backgroundRedControl.currentValue / 255.0,
-                                        newValue / 255.0,
-                                        backgroundBlueControl.currentValue / 255.0,
-                                        1.0
-                                    )
-                                }
-                            }
-                        }
-
-                        NumericSliderControl {
-                            id: backgroundBlueControl
-                            title: qsTr("B")
-                            titleColor: "#7777ff"
-                            titlePixelSize: 10
-                            integer: true
-                            from: 0
-                            to: 255
-                            stepSize: 1
-                            defaultValue: 230
-                            sourceValue: sidebar.viewport ? Math.round(sidebar.viewport.backgroundColor.b * 255) : 230
-                            onValueApplied: function(newValue) {
-                                if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = Qt.rgba(
-                                        backgroundRedControl.currentValue / 255.0,
-                                        backgroundGreenControl.currentValue / 255.0,
-                                        newValue / 255.0,
-                                        1.0
-                                    )
+                                    sidebar.viewport.backgroundColor = c
                                 }
                             }
                         }
@@ -937,16 +774,7 @@ Rectangle {
                             Layout.fillWidth: true
                             onClicked: {
                                 if (sidebar.viewport) {
-                                    sidebar.viewport.backgroundColor = Qt.rgba(
-                                        230 / 255.0,
-                                        230 / 255.0,
-                                        230 / 255.0,
-                                        1.0
-                                    )
-                                } else {
-                                    backgroundRedControl.currentValue = 230
-                                    backgroundGreenControl.currentValue = 230
-                                    backgroundBlueControl.currentValue = 230
+                                    sidebar.viewport.backgroundColor = backgroundColorPicker.defaultColor
                                 }
                             }
                         }
@@ -979,262 +807,4 @@ Rectangle {
         }
     }
 
-    Dialog {
-        id: sliderInputErrorDialog
-        title: qsTr("Invalid Value")
-        modal: true
-        standardButtons: Dialog.Ok
-        width: 340
-        x: Math.round((sidebar.width - width) * 0.5)
-        y: Math.round((sidebar.height - height) * 0.5)
-
-        contentItem: Label {
-            text: sidebar.sliderInputErrorMessage
-            width: 316
-            color: "#cccccc"
-            wrapMode: Text.WordWrap
-            padding: 12
-        }
-    }
-
-    component NumericSliderControl: ColumnLayout {
-        id: control
-
-        property string title: ""
-        property string tooltipText: ""
-        property color titleColor: "#cccccc"
-        property int titlePixelSize: 11
-        property bool integer: false
-        property int decimals: integer ? 0 : 2
-        property real defaultValue: 0
-        property real sourceValue: defaultValue
-        property int inputWidth: 74
-
-        property alias from: slider.from
-        property alias to: slider.to
-        property alias stepSize: slider.stepSize
-        property alias currentValue: slider.value
-
-        signal valueApplied(real newValue)
-
-        Layout.fillWidth: true
-        spacing: 4
-
-        function normalizedValue(rawValue) {
-            if (!Number.isFinite(rawValue)) {
-                return defaultValue
-            }
-            return integer ? Math.round(rawValue) : rawValue
-        }
-
-        function formatValue(rawValue) {
-            const normalized = normalizedValue(rawValue)
-            if (integer) {
-                return normalized.toString()
-            }
-            return Number(normalized).toFixed(decimals)
-        }
-
-        function errorMessage() {
-            if (integer) {
-                return qsTr("Invalid value. Enter an integer between %1 and %2.")
-                    .arg(Math.round(slider.from))
-                    .arg(Math.round(slider.to))
-            }
-
-            return qsTr("Invalid value. Enter a number between %1 and %2.")
-                .arg(Number(slider.from).toFixed(decimals))
-                .arg(Number(slider.to).toFixed(decimals))
-        }
-
-        function revertText() {
-            valueField.text = formatValue(slider.value)
-        }
-
-        function applyValue(newValue) {
-            const normalized = normalizedValue(newValue)
-            slider.value = normalized
-            valueField.text = formatValue(slider.value)
-            valueApplied(normalized)
-        }
-
-        function commitText() {
-            const rawText = valueField.text.trim()
-
-            if (rawText.length === 0) {
-                sidebar.showSliderInputError(errorMessage())
-                revertText()
-                return
-            }
-
-            let parsed = NaN
-            if (integer) {
-                if (!/^[+-]?\d+$/.test(rawText)) {
-                    sidebar.showSliderInputError(errorMessage())
-                    revertText()
-                    return
-                }
-                parsed = Number(rawText)
-                if (!Number.isInteger(parsed)) {
-                    sidebar.showSliderInputError(errorMessage())
-                    revertText()
-                    return
-                }
-            } else {
-                parsed = Number(rawText)
-                if (!Number.isFinite(parsed)) {
-                    sidebar.showSliderInputError(errorMessage())
-                    revertText()
-                    return
-                }
-            }
-
-            if (parsed < slider.from || parsed > slider.to) {
-                sidebar.showSliderInputError(errorMessage())
-                revertText()
-                return
-            }
-
-            applyValue(parsed)
-        }
-
-        onSourceValueChanged: {
-            if (!valueField.activeFocus) {
-                slider.value = normalizedValue(sourceValue)
-                valueField.text = formatValue(slider.value)
-            }
-        }
-
-        Component.onCompleted: {
-            slider.value = normalizedValue(sourceValue)
-            valueField.text = formatValue(slider.value)
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-
-            Label {
-                id: titleLabel
-                text: control.title
-                color: control.titleColor
-                font.pixelSize: control.titlePixelSize
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-                ToolTip.visible: control.tooltipText.length > 0 && titleHoverArea.containsMouse
-                ToolTip.text: control.tooltipText
-
-                MouseArea {
-                    id: titleHoverArea
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    hoverEnabled: control.tooltipText.length > 0
-                    enabled: control.tooltipText.length > 0
-                }
-            }
-
-            TextField {
-                id: valueField
-                Layout.preferredWidth: control.inputWidth
-                horizontalAlignment: TextInput.AlignRight
-                inputMethodHints: control.integer ? Qt.ImhDigitsOnly : Qt.ImhFormattedNumbersOnly
-                selectByMouse: true
-                onAccepted: control.commitText()
-            }
-
-            Button {
-                text: qsTr("Reset")
-                onClicked: control.applyValue(control.defaultValue)
-            }
-        }
-
-        Slider {
-            id: slider
-            Layout.fillWidth: true
-            onValueChanged: control.revertText()
-            onMoved: control.valueApplied(control.normalizedValue(value))
-        }
-    }
-
-    // Collapsible Section Component
-    component CollapsibleSection: ColumnLayout {
-        id: section
-
-        property string title: ""
-        property alias content: contentLoader.sourceComponent
-        property bool expanded: false
-
-        spacing: 0
-        Layout.fillWidth: true
-
-        // Section header
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            color: sectionMouse.containsMouse ? "#3c3c3c" : "#333333"
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                spacing: 8
-
-                Label {
-                    text: section.expanded ? "\u25BC" : "\u25B6"
-                    color: "#808080"
-                    font.pixelSize: 10
-                }
-
-                Label {
-                    text: section.title
-                    color: "#cccccc"
-                    font.pixelSize: 11
-                    font.bold: true
-                    Layout.fillWidth: true
-                }
-            }
-
-            MouseArea {
-                id: sectionMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                onClicked: section.expanded = !section.expanded
-            }
-        }
-
-        // Section content
-        Loader {
-            id: contentLoader
-            Layout.fillWidth: true
-            Layout.leftMargin: 15
-            Layout.rightMargin: 10
-            Layout.topMargin: 8
-            Layout.bottomMargin: 8
-            visible: section.expanded
-        }
-    }
-
-    // Property Row Component
-    component PropertyRow: RowLayout {
-        property string label: ""
-        property string value: ""
-
-        spacing: 10
-        Layout.fillWidth: true
-
-        Label {
-            text: label
-            color: "#808080"
-            font.pixelSize: 11
-            Layout.preferredWidth: 80
-        }
-
-        Label {
-            text: value
-            color: "#cccccc"
-            font.pixelSize: 11
-            Layout.fillWidth: true
-            elide: Text.ElideRight
-        }
-    }
 }
