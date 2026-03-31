@@ -49,6 +49,10 @@ public:
     QQuaternion orientation() const { return m_orientation; }
     void setOrientation(const QQuaternion& q);
     float distance() const { return m_distance; }
+    // Scene-scale reference used for size-in-world overlays (e.g. gizmos).
+    // Returns m_distance in perspective (tracks zoom) and m_orthoScale in
+    // orthographic (distance is fixed; orthoScale tracks zoom instead).
+    float viewScale() const { return m_perspective ? m_distance : m_orthoScale; }
 
     // Camera position (computed from target, azimuth, elevation, distance)
     QVector3D position() const;
@@ -96,7 +100,9 @@ private:
     // Projection parameters
     bool m_perspective = true;
     float m_fov = 45.0f;         // Field of view in degrees
-    float m_orthoScale = 10.0f;  // Orthographic scale
+    float m_orthoScale  = 10.0f;  // Orthographic scale
+    float m_sceneExtent =  0.0f;  // Scene extent from last fitToView(); used to
+                                  // set ortho distance/planes on mode switch
     float m_aspectRatio = 1.0f;
     float m_near = 0.1f;
     float m_far = 10000.0f;

@@ -804,7 +804,7 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
         gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
         gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
         gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
-        float len = camera.distance() * 0.03f;
+        float len = camera.viewScale() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,
                                m_settings.rotationCenterZ, len, /*depthTest=*/false);
@@ -881,7 +881,7 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
         gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
         gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
         gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
-        float len = camera.distance() * 0.03f;
+        float len = camera.viewScale() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,
                                m_settings.rotationCenterZ, len, /*depthTest=*/false);

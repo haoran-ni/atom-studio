@@ -4,6 +4,66 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-03-31: Fix Orthographic View Rendering Bugs and RT Blurriness
+
+### Summary
+Fixed three bugs that all manifested in orthographic view: (1) atoms disappearing in raster mode under heavy zoom, (2) sphere interiors shown in RT mode under heavy zoom, and (3) RT mode blurriness after the camera fix was applied. The root cause of the first two was `Camera::zoom()` moving the camera physically closer to the scene in ortho mode, which has no visual effect in orthographic projection but brings the camera inside atom volumes. The fix locks the ortho camera at a safe scene-scale distance and only changes the visible half-extent (`m_orthoScale`). The RT blurriness was a consequential floating-point cancellation problem: with the camera now fixed at a large distance, the classic `disc = b²−c` sphere/cylinder discriminant suffered catastrophic cancellation. Both intersection functions were replaced with geometrically stable reformulations.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/common/Camera.cpp` | OVITO-style ortho camera: zoom only changes `m_orthoScale`; `m_distance`/near/far fixed at scene scale; `fitToView` stores `m_sceneExtent`; `setProjection` uses stored extent on mode switch; pan scales by `m_orthoScale` in ortho |
+| `src/render/common/Camera.h` | Added `m_sceneExtent` member; added `viewScale()` helper (returns `m_distance` in perspective, `m_orthoScale` in ortho) |
+| `src/render/metal/MetalRenderer.mm` | Gizmo size: `camera.distance()` → `camera.viewScale()` |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Gizmo size: `camera.distance()` → `camera.viewScale()` at two locations |
+| `src/render/metal/MetalShaderLibrary.mm` | Four shader fixes (see below) |
+
+### Architecture Decisions
+
+#### 1. OVITO-Style Orthographic Camera
+Orthographic projection has no foreshortening, so camera distance has no visual effect on the rendered image — only `m_orthoScale` (the visible half-extent) determines zoom level. The previous code shrank `m_distance` alongside `m_orthoScale` on every zoom step, eventually placing the camera inside atom volumes. The fix: `Camera::zoom()` never touches `m_distance`, `m_near`, or `m_far` in ortho mode. These are set once by `fitToView()` (`m_distance = extent×2`, `m_far = extent×5`) and restored on perspective→ortho switch using `m_sceneExtent`.
+
+#### 2. Store `m_sceneExtent` in `fitToView()`
+`setProjection()` previously inferred scene scale by back-computing `extent = m_orthoScale / 0.6`. This fails after perspective zoom (which does modify `m_orthoScale`), corrupting the camera distance on mode switch and clipping long unit cells. Storing the true extent from `fitToView()` gives a reliable source of truth.
+
+#### 3. Stable Ray-Primitive Intersection
+The classic formulation `disc = b² − (|oc|² − r²)` suffers catastrophic cancellation when `|oc| ≈ m_distance >> r`: both `b²` and `|oc|² − r²` are ~`m_distance²` (~40 000), their difference is ~`r²` (~a few Å²), and float32 ULP at 40 000 is ~0.004 — a tens-of-percent relative error in the discriminant for near-limb rays, visible as blurry atom/bond silhouettes. The fix reformulates the discriminant as `r² − |oc ⊥ rd|²`, where `oc ⊥ rd` is the purely lateral component of `oc` with magnitude ≤ r — no large intermediate values. The same two-stage projection is applied to `intersectCylinder`.
+
+### Technical Issues Resolved
+
+#### Issue 1: Atoms Disappear in Raster Mode (Ortho Heavy Zoom)
+**Problem**: The ortho branch of the sphere fragment shader always selected the front surface (`hz = C.z + sqrtDisc`). When the camera was inside a sphere volume, `hz > 0` (front surface behind the camera), depth was written as 0, the billboard covered the screen at depth 0, and all subsequent atoms failed the depth test.
+
+**Solution**: Added back-surface fallback: `if (hz > 0.0) hz = C.z - sqrtDisc`. Primary fix: camera never enters sphere volumes (OVITO camera). Shader change is defense-in-depth.
+
+#### Issue 2: Sphere Interiors Shown in RT Mode (Ortho Heavy Zoom)
+**Problem**: `intersectSphere` used `t > 0.001` epsilon. When `m_distance ≈ R`, `t_front ≈ 0` was rejected and the back surface was returned instead.
+
+**Solution**: Changed epsilon to `t > 0.0`. Secondary-ray self-intersection is handled by the existing biased origin (`bias = max(R×0.01, 0.05)`). Primary fix: camera never approaches sphere surfaces (OVITO camera).
+
+#### Issue 3: RT Mode Blurriness After Camera Fix
+**Problem**: After locking `m_distance` at `extent×2` (~200 Å), the discriminant `b²−c` in `intersectSphere` and `intersectCylinder` suffered catastrophic float32 cancellation at large camera distance, producing incorrect normals near atom/bond silhouettes and visible blurring.
+
+**Solution**: Replaced both intersection functions with stable formulations computing `disc = r² − |lateral|²` directly, where `lateral` is the component of `oc` perpendicular to both the ray direction and (for cylinders) the cylinder axis — always ≤ r in magnitude regardless of camera distance.
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+- Built successfully after all changes
+- Verified in raster mode: atoms remain visible at all ortho zoom levels
+- Verified in RT mode: no sphere interior rendering at any ortho zoom level
+- Verified in RT mode: atom and bond silhouettes are sharp under orthographic view
+- Verified perspective mode: behavior unchanged
+- Verified pan speed proportional to zoom level in ortho mode
+- Verified gizmo remains visually proportional when zoomed in ortho mode
+- Verified perspective→ortho switch at various zoom levels: camera resets correctly for all cell shapes including long/skewed cells
+
+---
+
 ## 2026-03-25: Align Element Colors With ASE and Add Visualization Color-Scheme Selector
 
 ### Summary

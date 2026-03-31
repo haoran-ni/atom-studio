@@ -58,3 +58,5 @@ vcpkg_installed/
 *.tmp
 *.temp
 *.log
+
+__pycache__/

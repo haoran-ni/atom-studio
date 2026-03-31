@@ -197,8 +197,12 @@ fragment SphereFragmentOut sphere_fragment(
         if (disc < 0.0) discard_fragment();
 
         float sqrtDisc = sqrt(disc);
-        // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z)
-        hitPos = float3(in.viewPosOnQuad.xy, C.z + sqrtDisc);
+        // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z).
+        // If that surface is behind the camera (hz > 0), fall back to the back
+        // surface — this guards against the camera entering the sphere volume.
+        float hz = C.z + sqrtDisc;
+        if (hz > 0.0) hz = C.z - sqrtDisc;
+        hitPos = float3(in.viewPosOnQuad.xy, hz);
     }
 
     normal = normalize(hitPos - C);
@@ -523,22 +527,29 @@ float intersectCylinder(float3 ro, float3 rd, float3 pa, float3 pb, float radius
     float bard = dot(ba, rd);
     float baoc = dot(ba, oc);
 
-    float k2 = baba - bard * bard;
-    float k1 = baba * dot(oc, rd) - baoc * bard;
-    float k0 = baba * dot(oc, oc) - baoc * baoc - radius * radius * baba;
+    // Stable formulation: project rd and oc perpendicular to the cylinder axis,
+    // then project out the ray direction to get a pure lateral distance.
+    // Avoids catastrophic cancellation when |oc| >> radius (ortho camera at large distance).
+    float3 rd_perp = rd - (bard / baba) * ba;
+    float3 oc_perp = oc - (baoc / baba) * ba;
 
-    float disc = k1 * k1 - k2 * k0;
+    float a  = dot(rd_perp, rd_perp);
+    if (a < 1e-8) return -1.0;     // ray nearly parallel to cylinder axis
+
+    float hb = dot(oc_perp, rd_perp);
+    float3 q  = oc_perp - (hb / a) * rd_perp;  // lateral distance in ba⊥ subspace
+    float disc = a * (radius * radius - dot(q, q));
     if (disc < 0.0) return -1.0;
 
     float sqrtDisc = sqrt(disc);
 
-    float t = (-k1 - sqrtDisc) / k2;
+    float t = (-hb - sqrtDisc) / a;
     float y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.001) return t;
+    if (y > 0.0 && y < baba && t > 0.0) return t;
 
-    t = (-k1 + sqrtDisc) / k2;
+    t = (-hb + sqrtDisc) / a;
     y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.001) return t;
+    if (y > 0.0 && y < baba && t > 0.0) return t;
 
     return -1.0;
 }
@@ -546,14 +557,16 @@ float intersectCylinder(float3 ro, float3 rd, float3 pa, float3 pb, float radius
 float intersectSphere(float3 ro, float3 rd, float3 center, float radius) {
     float3 oc = ro - center;
     float b = dot(oc, rd);
-    float c = dot(oc, oc) - radius * radius;
-    float disc = b * b - c;
+    // Stable: disc = r² − |oc ⊥ rd|²  avoids cancellation when |oc| >> radius
+    // (ortho camera sits at m_distance >> r; b² ≈ c ≈ m_distance², diff ≈ r²)
+    float3 q = oc - b * rd;
+    float disc = radius * radius - dot(q, q);
     if (disc < 0.0) return -1.0;
     float sqrtDisc = sqrt(disc);
     float t = -b - sqrtDisc;
-    if (t > 0.001) return t;
+    if (t > 0.0) return t;
     t = -b + sqrtDisc;
-    if (t > 0.001) return t;
+    if (t > 0.0) return t;
     return -1.0;
 }
 

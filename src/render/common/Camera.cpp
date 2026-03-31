@@ -59,25 +59,24 @@ void Camera::pan(float deltaX, float deltaY) {
     QVector3D right = rightVector();
     QVector3D up = upVector();
 
-    // Scale pan amount by distance for consistent feel
-    float scale = m_distance * 0.002f;
+    // Scale pan amount for consistent feel: perspective uses camera distance,
+    // ortho uses visible half-extent so speed tracks zoom level.
+    float scale = (m_perspective ? m_distance : m_orthoScale) * 0.002f;
     m_target += right * (-deltaX * scale) + up * (deltaY * scale);
     m_viewDirty = true;
 }
 
 void Camera::zoom(float factor) {
-    m_distance *= factor;
-    m_distance = qBound(0.1f, m_distance, 100000.0f);
-
-    // Also adjust ortho scale for orthographic mode
+    if (m_perspective) {
+        m_distance *= factor;
+        m_distance = qBound(0.1f, m_distance, 100000.0f);
+        m_near = m_distance * 0.001f;
+        m_far  = m_distance * 10.0f;
+        m_viewDirty = true;
+    }
+    // Ortho: only shrink/grow the visible half-extent; distance and planes stay fixed
     m_orthoScale *= factor;
-    m_orthoScale = qBound(0.1f, m_orthoScale, 10000.0f);
-
-    // Keep clipping planes consistent with distance to prevent atom clipping
-    m_near = m_distance * 0.001f;
-    m_far  = m_distance * 10.0f;
-
-    m_viewDirty = true;
+    m_orthoScale = qBound(0.001f, m_orthoScale, 10000.0f);
     m_projDirty = true;
 }
 
@@ -93,16 +92,23 @@ void Camera::fitToView(const QVector3D& center, float extent) {
         // Calculate distance to fit the extent in view
         if (m_perspective) {
             float fovRad = qDegreesToRadians(m_fov * 0.5f);
-            m_distance = (extent * 0.5f) / qTan(fovRad) * 1.5f;
+            m_distance    = (extent * 0.5f) / qTan(fovRad) * 1.5f;
+            m_sceneExtent = extent;
+            m_near = qMax(0.01f, m_distance * 0.001f);
+            m_far  = m_distance * 10.0f;
         } else {
-            m_orthoScale = extent * 0.6f;
-            m_distance = extent * 2.0f;
+            m_orthoScale  = extent * 0.6f;
+            m_distance    = extent * 2.0f;
+            m_sceneExtent = extent;
+            // Near/far fixed from scene extent — not from distance — so the full
+            // depth of the structure remains visible at any ortho zoom level.
+            m_near = 0.01f;
+            m_far  = m_distance + extent * 3.0f;  // = extent * 5, comfortably past far edge
         }
+    } else {
+        m_near = qMax(0.01f, m_distance * 0.001f);
+        m_far  = m_distance * 10.0f;
     }
-
-    // Update near/far planes based on extent
-    m_near = qMax(0.01f, m_distance * 0.001f);
-    m_far = m_distance * 10.0f;
 
     m_viewDirty = true;
     m_projDirty = true;
@@ -135,6 +141,18 @@ QVector3D Camera::upVector() const {
 }
 
 void Camera::setProjection(bool perspective) {
+    if (!perspective && m_perspective) {
+        // Switching perspective → ortho: restore a safe camera distance using
+        // the scene extent recorded by the last fitToView() call.  Using the
+        // stored value avoids a chicken-and-egg problem where m_orthoScale has
+        // been modified by perspective zooms and no longer represents the true
+        // scene scale.
+        float ext = (m_sceneExtent > 0.0f) ? m_sceneExtent : m_orthoScale / 0.6f;
+        m_distance = qMax(ext * 2.0f, 1.0f);
+        m_near = 0.01f;
+        m_far  = m_distance + ext * 3.0f;
+        m_viewDirty = true;
+    }
     m_perspective = perspective;
     m_projDirty = true;
 }
