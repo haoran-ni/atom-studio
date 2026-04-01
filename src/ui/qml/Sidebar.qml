@@ -34,6 +34,15 @@ Rectangle {
         maxRTSamplesErrorDialog.open()
     }
 
+    function collapseOtherSections(activeSection) {
+        for (var i = 0; i < sectionsLayout.children.length; ++i) {
+            var child = sectionsLayout.children[i]
+            if (child !== activeSection && child.expanded !== undefined) {
+                child.expanded = false
+            }
+        }
+    }
+
     function resetRayTracingSettings() {
         if (!sidebar.viewport) {
             return
@@ -327,7 +336,14 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: section.expanded = !section.expanded
+                onClicked: {
+                    if (section.expanded) {
+                        section.expanded = false
+                    } else {
+                        sidebar.collapseOtherSections(section)
+                        section.expanded = true
+                    }
+                }
             }
         }
 
@@ -355,13 +371,15 @@ Rectangle {
             }
 
             ColumnLayout {
+                id: sectionsLayout
                 width: Math.max(0, sidebar.width - 28)
                 spacing: 10
 
                 SidebarSection {
+                    id: filesSection
                     title: qsTr("Files")
                     iconSource: "qrc:/icons/files.svg"
-                    expanded: false
+                    expanded: true
                     Layout.fillWidth: true
 
                     content: Component {
@@ -421,9 +439,10 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: structureInfoSection
                     title: qsTr("Structure Info")
                     iconSource: "qrc:/icons/info.svg"
-                    expanded: true
+                    expanded: false
                     Layout.fillWidth: true
 
                     content: Component {
@@ -482,6 +501,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: structureManipulationSection
                     title: qsTr("Structure Manipulation")
                     iconSource: "qrc:/icons/manipulation.svg"
                     Layout.fillWidth: true
@@ -645,6 +665,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: visualizationSection
                     title: qsTr("Visualization")
                     iconSource: "qrc:/icons/visualization.svg"
                     Layout.fillWidth: true
@@ -729,7 +750,7 @@ Rectangle {
                                 content: Component {
                                     SidebarCheckBox {
                                         text: qsTr("Show Bonds")
-                                        checked: true
+                                        checked: sidebar.viewport ? sidebar.viewport.showBonds : false
                                         onCheckedChanged: {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.showBonds = checked
@@ -743,6 +764,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: unitCellSection
                     title: qsTr("Unit Cell")
                     iconSource: "qrc:/icons/unit-cell.svg"
                     Layout.fillWidth: true
@@ -802,6 +824,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: cameraSection
                     title: qsTr("Camera")
                     iconSource: "qrc:/icons/camera.svg"
                     Layout.fillWidth: true
@@ -912,6 +935,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: renderSettingsSection
                     title: qsTr("Render Settings")
                     iconSource: "qrc:/icons/render.svg"
                     Layout.fillWidth: true
@@ -1241,6 +1265,7 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: backgroundSection
                     title: qsTr("Background")
                     iconSource: "qrc:/icons/background.svg"
                     Layout.fillWidth: true
