@@ -2,7 +2,6 @@
 <RCC version="1.0">
     <qresource prefix="/qml">
         <file alias="Main.qml">../src/ui/qml/Main.qml</file>
-        <file alias="HeaderBar.qml">../src/ui/qml/HeaderBar.qml</file>
         <file alias="Sidebar.qml">../src/ui/qml/Sidebar.qml</file>
         <file alias="ViewportPanel.qml">../src/ui/qml/ViewportPanel.qml</file>
         <file alias="CollapsibleSection.qml">../src/ui/qml/CollapsibleSection.qml</file>
@@ -10,7 +9,6 @@
         <file alias="NumericSliderControl.qml">../src/ui/qml/NumericSliderControl.qml</file>
         <file alias="RGBColorPicker.qml">../src/ui/qml/RGBColorPicker.qml</file>
         <file alias="InfoOverlayBox.qml">../src/ui/qml/InfoOverlayBox.qml</file>
-        <file alias="AppMenuActions.qml">../src/ui/qml/AppMenuActions.qml</file>
     </qresource>
     <qresource prefix="/icons">
         <file alias="background.svg">icons/background.svg</file>

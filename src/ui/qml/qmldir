@@ -1,6 +1,5 @@
 module AtomStudio.UI
 
 Main 1.0 Main.qml
-HeaderBar 1.0 HeaderBar.qml
 Sidebar 1.0 Sidebar.qml
 ViewportPanel 1.0 ViewportPanel.qml
