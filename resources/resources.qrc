@@ -26,4 +26,7 @@
         <file alias="unit-cell.svg">icons/unit-cell.svg</file>
         <file alias="visualization.svg">icons/visualization.svg</file>
     </qresource>
+    <qresource prefix="/branding">
+        <file alias="app-logo.png">temp_logo.png</file>
+    </qresource>
 </RCC>

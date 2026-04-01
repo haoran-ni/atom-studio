@@ -4,6 +4,49 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-01: Application Branding Setup — Qt Runtime Icon and macOS Bundle Icon
+
+### Summary
+Hooked up the application logo in both places required by the desktop app: the runtime Qt application/window icon now loads from the bundled Qt resource `temp_logo.png`, and the macOS app bundle now packages `temp_logo.icns` and exposes it through `CFBundleIconFile` so Finder and Dock can use the same branding asset family.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/main.cpp` | Added `QIcon` include and set the runtime application/window icon from the Qt resource system |
+| `resources/resources.qrc` | Added a `/branding` resource entry exposing `temp_logo.png` as `app-logo.png` |
+| `resources/Info.plist.in` | Changed `CFBundleIconFile` from empty to `${MACOSX_BUNDLE_ICON_FILE}` |
+| `CMakeLists.txt` | Registered `resources/temp_logo.icns` as a macOS bundle resource and set `MACOSX_BUNDLE_ICON_FILE` to `temp_logo.icns` |
+| `GUIDELINES.md` | Documented the established runtime-icon and macOS bundle-icon configuration paths |
+
+### Architecture Decisions
+
+#### 1. Keep the Runtime Icon in the Qt Resource System
+- The application already bundles QML and sidebar SVG assets through `resources/resources.qrc`
+- Loading the runtime icon through `QIcon(":/branding/app-logo.png")` keeps icon resolution independent from the working directory and consistent with the rest of the app asset pipeline
+- This also avoids relying on loose files next to the executable during local runs
+
+#### 2. Keep the macOS Bundle Icon Separate as `.icns`
+- macOS Finder and Dock expect a bundle icon asset in `.icns` format rather than the PNG used by the Qt runtime icon path
+- The icon file is now packaged into `Contents/Resources` via `MACOSX_PACKAGE_LOCATION "Resources"` and referenced using `MACOSX_BUNDLE_ICON_FILE`
+- This matches the standard CMake/macOS bundle flow instead of using a custom post-build copy step just for branding
+
+#### 3. Document Both Branding Paths Explicitly
+- Desktop branding now has two intentionally different asset paths: Qt runtime icon and macOS bundle icon
+- `GUIDELINES.md` was updated so future branding changes do not update only one of the two integration points
+
+### Build Commands
+```bash
+cmake --build build --target atom-studio
+```
+
+### Testing
+- Built successfully after the runtime icon and macOS bundle icon changes
+- Verified the generated app bundle contains `build/bin/atom-studio.app/Contents/Resources/temp_logo.icns`
+- Verified the generated `Info.plist` sets `CFBundleIconFile` to `temp_logo.icns`
+- Verified the runtime executable still links and launches with the updated `QIcon` resource path
+
+---
+
 ## 2026-04-01: Sidebar UI Polish — Icon Chevrons, Bold Titles, Color Hierarchy, White Background Default
 
 ### Summary

@@ -83,10 +83,20 @@ endif()
 # Add subdirectories
 add_subdirectory(src)
 
+set(APP_BUNDLE_SOURCES)
+set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/resources/temp_logo.icns")
+if(APPLE)
+    set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    list(APPEND APP_BUNDLE_SOURCES ${APP_ICON_MACOS})
+endif()
+
 # Main executable
 add_executable(${PROJECT_NAME}
     src/main.cpp
     resources/resources.qrc
+    ${APP_BUNDLE_SOURCES}
 )
 
 # Link libraries
@@ -120,6 +130,7 @@ set(PYTHON_RUNTIME_BUNDLE_ROOT "${CMAKE_BINARY_DIR}/bin")
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_ICON_FILE "temp_logo.icns"
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist.in
     )
 

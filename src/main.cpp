@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
@@ -54,6 +55,7 @@ int main(int argc, char* argv[])
     app.setApplicationVersion("0.1.0");
     app.setOrganizationName("ATOM-STUDIO");
     app.setOrganizationDomain("atomstudio.app");
+    app.setWindowIcon(QIcon(":/branding/app-logo.png"));
 
     qInfo() << "Starting ATOM-STUDIO v" << app.applicationVersion();
     qInfo() << "Qt version:" << qVersion();
