@@ -94,6 +94,22 @@ void FileController::loadFile(const QString& filePath) {
     m_loader->loadFile(filePath);
 }
 
+void FileController::openSaveImageDialog(const QString& format, bool includeAxes) {
+    QString filter;
+    if (format == ".png")
+        filter = tr("PNG Image (*.png)");
+    else if (format == ".jpg")
+        filter = tr("JPEG Image (*.jpg *.jpeg)");
+    else
+        filter = tr("All Files (*)");
+
+    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation)
+                          + "/output_image" + format;
+    QString path = QFileDialog::getSaveFileName(nullptr, tr("Export Image"), defaultPath, filter);
+    if (!path.isEmpty())
+        emit saveImagePathSelected(path, format, includeAxes);
+}
+
 void FileController::loadFileUrl(const QUrl& fileUrl) {
     loadFile(fileUrl.toLocalFile());
 }

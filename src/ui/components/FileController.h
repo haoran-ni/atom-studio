@@ -64,6 +64,11 @@ public slots:
      */
     void cancelLoad();
 
+    /**
+     * @brief Open a save-image dialog and emit saveImagePathSelected on confirmation
+     */
+    Q_INVOKABLE void openSaveImageDialog(const QString& format, bool includeAxes);
+
 signals:
     void isLoadingChanged();
     void loadProgressChanged();
@@ -79,6 +84,11 @@ signals:
      * @brief Emitted when loading fails
      */
     void loadFailed(const QString& error);
+
+    /**
+     * @brief Emitted when the user confirms an image save path
+     */
+    void saveImagePathSelected(const QString& filePath, const QString& format, bool includeAxes);
 
 private slots:
     void onLoadingStarted(const QString& filePath);

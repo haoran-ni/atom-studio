@@ -190,7 +190,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
 
     const auto& bg = settings.backgroundColor;
     passDesc.colorAttachments[0].clearColor = MTLClearColorMake(
-        bg.redF(), bg.greenF(), bg.blueF(), 1.0);
+        bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(), bg.blueF() * bg.alphaF(), bg.alphaF());
 
     passDesc.depthAttachment.texture = m_impl->depthTexture;
     passDesc.depthAttachment.loadAction = MTLLoadActionClear;

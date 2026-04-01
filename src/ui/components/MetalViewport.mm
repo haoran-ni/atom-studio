@@ -275,10 +275,8 @@ void MetalViewport::setShowBonds(bool show) {
 }
 
 void MetalViewport::setBackgroundColor(const QColor& color) {
-    QColor opaque = color;
-    opaque.setAlpha(255);
-    if (m_backgroundColor != opaque) {
-        m_backgroundColor = opaque;
+    if (m_backgroundColor != color) {
+        m_backgroundColor = color;
         emit backgroundColorChanged();
         update();
     }

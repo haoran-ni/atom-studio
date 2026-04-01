@@ -57,7 +57,7 @@ struct RTUniforms {
     float    atomScale;
     float3   lightDir;
     float    ambient;
-    float3   backgroundColor;
+    float4   backgroundColor;
     float    diffuse;
     float    specular;
     float    shininess;
@@ -837,7 +837,7 @@ fragment float4 rt_fragment(
                  rt.bvhNodeCount, hitT, hitIndex);
 
     if (hitIndex < 0) {
-        return float4(rt.backgroundColor, 1.0);
+        return float4(rt.backgroundColor.rgb * rt.backgroundColor.a, rt.backgroundColor.a);
     }
 
     // Shading
@@ -926,8 +926,8 @@ fragment float4 display_fragment(
 {
     constexpr sampler nearestSampler(mag_filter::nearest, min_filter::nearest);
     float4 accum = accumTexture.sample(nearestSampler, in.texCoord);
-    float3 color = accum.rgb / max(disp.sampleCount, 1.0);
-    return float4(color, 1.0);
+    float4 out_color = accum / max(disp.sampleCount, 1.0);
+    return out_color;
 }
 )";
 

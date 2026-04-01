@@ -89,7 +89,7 @@ void OpenGLRenderer::invalidateBondData() {
 
 void OpenGLRenderer::renderBackground(const RenderSettings& settings) {
     const auto& bg = settings.backgroundColor;
-    glClearColor(bg.redF(), bg.greenF(), bg.blueF(), 1.0f);
+    glClearColor(bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(), bg.blueF() * bg.alphaF(), bg.alphaF());
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 

@@ -15,6 +15,9 @@
     <qresource prefix="/icons">
         <file alias="background.svg">icons/background.svg</file>
         <file alias="camera.svg">icons/camera.svg</file>
+        <file alias="export.svg">icons/export.svg</file>
+        <file alias="files.svg">icons/files.svg</file>
+        <file alias="import.svg">icons/import.svg</file>
         <file alias="chevron-down.svg">icons/chevron-down.svg</file>
         <file alias="chevron-left.svg">icons/chevron-left.svg</file>
         <file alias="chevron-right.svg">icons/chevron-right.svg</file>

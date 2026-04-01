@@ -7,15 +7,14 @@ Rectangle {
     id: viewportPanel
 
     property var viewport: viewportLoader.item
-
-    AppMenuActions { id: appActions }
+    property bool suppressBackground: false
 
     color: "#e6e6e6"
 
     // Placeholder gradient background (shown when no structure is loaded)
     gradient: Gradient {
-        GradientStop { position: 0.0; color: "#e6e6e6" }
-        GradientStop { position: 1.0; color: "#e6e6e6" }
+        GradientStop { position: 0.0; color: suppressBackground ? "transparent" : "#e6e6e6" }
+        GradientStop { position: 1.0; color: suppressBackground ? "transparent" : "#e6e6e6" }
     }
 
     // Platform-conditional viewport: Metal on macOS, OpenGL elsewhere
@@ -33,157 +32,6 @@ Rectangle {
     Component {
         id: metalViewportComp
         MetalViewport {}
-    }
-
-    // Floating tab bar with menu actions (replaces the old window header menu)
-    Rectangle {
-        id: floatingTabBar
-        z: 50
-        color: "#2d2d2d"
-        radius: 10
-        border.color: "#4a4a4a"
-        border.width: 1
-        height: 38
-        width: tabRow.implicitWidth + 16
-
-        property bool dragArmed: false
-        property bool positioned: false
-        property bool userMoved: false
-
-        function clampToBounds() {
-            x = Math.max(0, Math.min(x, Math.max(0, viewportPanel.width - width)))
-            y = Math.max(0, Math.min(y, Math.max(0, viewportPanel.height - height)))
-        }
-
-        function placeDefaultPosition() {
-            if (viewportPanel.width <= 0 || viewportPanel.height <= 0 || width <= 0 || height <= 0) {
-                return
-            }
-
-            x = Math.round((viewportPanel.width - width) * 0.5)
-            y = Math.round(viewportPanel.height * 0.03)
-            positioned = true
-            clampToBounds()
-        }
-
-        function showMenu(menu, button) {
-            menu.x = Math.round(floatingTabBar.x + tabRow.x + button.x)
-            menu.y = Math.round(floatingTabBar.y + floatingTabBar.height + 4)
-            menu.open()
-        }
-
-        Component.onCompleted: placeDefaultPosition()
-
-        onWidthChanged: {
-            if (!userMoved) {
-                placeDefaultPosition()
-            } else if (positioned) {
-                clampToBounds()
-            }
-        }
-
-        onHeightChanged: {
-            if (!userMoved) {
-                placeDefaultPosition()
-            } else if (positioned) {
-                clampToBounds()
-            }
-        }
-
-        RowLayout {
-            id: tabRow
-            anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            spacing: 4
-
-            Rectangle {
-                id: dragHandle
-                Layout.preferredWidth: 18
-                Layout.preferredHeight: Math.max(20, floatingTabBar.height - 10)
-                Layout.alignment: Qt.AlignVCenter
-                radius: 6
-                color: dragMouseArea.containsPress ? "#555555" : "#3a3a3a"
-                ToolTip.visible: dragMouseArea.containsMouse
-                ToolTip.text: qsTr("Hold and drag to move.\nDouble-click to reset.")
-
-                Label {
-                    anchors.centerIn: parent
-                    text: "||"
-                    color: "#a0a0a0"
-                    font.pixelSize: 10
-                }
-
-                MouseArea {
-                    id: dragMouseArea
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton
-                    hoverEnabled: true
-                    pressAndHoldInterval: 350
-                    cursorShape: floatingTabBar.dragArmed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-
-                    drag.target: floatingTabBar.dragArmed ? floatingTabBar : undefined
-                    drag.axis: Drag.XAndYAxis
-                    drag.minimumX: 0
-                    drag.maximumX: Math.max(0, viewportPanel.width - floatingTabBar.width)
-                    drag.minimumY: 0
-                    drag.maximumY: Math.max(0, viewportPanel.height - floatingTabBar.height)
-
-                    onPressed: floatingTabBar.dragArmed = false
-                    onPressAndHold: floatingTabBar.dragArmed = true
-                    onPositionChanged: {
-                        if (floatingTabBar.dragArmed && drag.active) {
-                            floatingTabBar.userMoved = true
-                        }
-                    }
-                    onDoubleClicked: {
-                        floatingTabBar.dragArmed = false
-                        floatingTabBar.userMoved = false
-                        floatingTabBar.placeDefaultPosition()
-                    }
-                    onReleased: floatingTabBar.dragArmed = false
-                    onCanceled: floatingTabBar.dragArmed = false
-                }
-            }
-
-            ToolButton {
-                id: fileTabButton
-                text: qsTr("File")
-                onClicked: floatingTabBar.showMenu(fileMenu, fileTabButton)
-            }
-
-            ToolButton {
-                id: editTabButton
-                text: qsTr("Edit")
-                onClicked: floatingTabBar.showMenu(editMenu, editTabButton)
-            }
-        }
-    }
-
-    Menu {
-        id: fileMenu
-        parent: viewportPanel
-
-        MenuItem { action: appActions.fileOpen }
-        MenuItem { action: appActions.fileOpenRecent }
-        MenuSeparator {}
-        MenuItem { action: appActions.fileSaveImage }
-        MenuItem { action: appActions.fileExport }
-        MenuSeparator {}
-        MenuItem { action: appActions.fileQuit }
-    }
-
-    Menu {
-        id: editMenu
-        parent: viewportPanel
-
-        MenuItem { action: appActions.editUndo }
-        MenuItem { action: appActions.editRedo }
-        MenuSeparator {}
-        MenuItem { action: appActions.editSelectAll }
-        MenuItem { action: appActions.editDeselectAll }
-        MenuSeparator {}
-        MenuItem { action: appActions.editPreferences }
     }
 
     // Placeholder content (shown when no structure loaded)
@@ -208,6 +56,7 @@ Rectangle {
 
     // Viewport info overlay (top-right)
     InfoOverlayBox {
+        id: infoOverlay
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 10
@@ -236,6 +85,7 @@ Rectangle {
 
     // Camera controls hint (bottom-right)
     InfoOverlayBox {
+        id: cameraHintsOverlay
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 10
@@ -462,6 +312,31 @@ Rectangle {
         }
     }
 
+    // Image export handler
+    Connections {
+        target: FileController
+        function onSaveImagePathSelected(filePath, format, includeAxes) {
+            if (format === ".pdf") {
+                console.warn("ViewportPanel: PDF export not yet implemented")
+                return
+            }
+            var isTransparent = viewportPanel.viewport &&
+                                viewportPanel.viewport.backgroundColor.a < 0.99
+            infoOverlay.visible = false
+            cameraHintsOverlay.visible = false
+            if (!includeAxes) axisOverlay.visible = false
+            if (isTransparent) viewportPanel.suppressBackground = true
+
+            viewportPanel.grabToImage(function(result) {
+                result.saveToFile(filePath)
+                infoOverlay.visible = true
+                cameraHintsOverlay.visible = true
+                axisOverlay.visible = true
+                viewportPanel.suppressBackground = false
+            })
+        }
+    }
+
     // Drop area for files
     DropArea {
         anchors.fill: parent
@@ -473,12 +348,6 @@ Rectangle {
     }
 
     onWidthChanged: {
-        if (!floatingTabBar.userMoved || !floatingTabBar.positioned) {
-            floatingTabBar.placeDefaultPosition()
-        } else if (floatingTabBar.positioned) {
-            floatingTabBar.clampToBounds()
-        }
-
         if (!axisOverlay.positioned) {
             axisOverlay.placeDefaultPosition()
         } else {
@@ -487,12 +356,6 @@ Rectangle {
     }
 
     onHeightChanged: {
-        if (!floatingTabBar.userMoved || !floatingTabBar.positioned) {
-            floatingTabBar.placeDefaultPosition()
-        } else if (floatingTabBar.positioned) {
-            floatingTabBar.clampToBounds()
-        }
-
         if (!axisOverlay.positioned) {
             axisOverlay.placeDefaultPosition()
         } else {

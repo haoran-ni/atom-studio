@@ -309,7 +309,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             pass.colorAttachments[0].storeAction = MTLStoreActionStore;
             const auto& bg = m_settings.backgroundColor;
             pass.colorAttachments[0].clearColor = MTLClearColorMake(
-                bg.redF(), bg.greenF(), bg.blueF(), 1.0);
+                bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(), bg.blueF() * bg.alphaF(), bg.alphaF());
             id<MTLRenderCommandEncoder> enc = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
             [enc endEncoding];
         }
@@ -673,7 +673,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.ambient = m_settings.ambientStrength;
 
     QColor bg = m_settings.backgroundColor;
-    rt.backgroundColor = simd_make_float3(bg.redF(), bg.greenF(), bg.blueF());
+    rt.backgroundColor = simd_make_float4(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF());
     rt.diffuse = m_settings.diffuseStrength;
     rt.specular = m_settings.specularStrength;
     rt.shininess = m_settings.shininess;

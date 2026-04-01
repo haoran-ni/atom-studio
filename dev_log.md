@@ -4,6 +4,75 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-01: Export Images Feature — Background Alpha, Sidebar Files Section, and Image Save Pipeline
+
+### Summary
+Added a complete image export pipeline: a new "Files" sidebar section with Import/Export controls, background transparency via an alpha slider in the Background color picker, and a `grabToImage`-based export handler that hides HUD overlays before capture. The render backends (Metal raster, Metal RT, OpenGL) now carry alpha through from the UI color picker to the clear color and shader miss return. Premultiplied-alpha clear values are used so the saved image preserves true transparency while the live viewport composites correctly over the Qt scene graph.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | Added "Files" `SidebarSection` with Import Structures button, Export Structures combo (disabled placeholder), and Export Images combo with dynamic format list and Include Axes checkbox; passed `showAlpha: true` to the Background `RGBColorPicker` |
+| `src/ui/qml/RGBColorPicker.qml` | Added optional alpha slider (`showAlpha` property, `alphaControl` NumericSliderControl); all four `onValueApplied` handlers now include alpha in the emitted color |
+| `src/ui/qml/ViewportPanel.qml` | Added `suppressBackground` property for transparent gradient during export; added IDs to `infoOverlay` and `cameraHintsOverlay`; added `Connections` block listening to `FileController.onSaveImagePathSelected` that hides HUD, grabs image, and restores; removed the floating tab bar (`floatingTabBar`, `fileMenu`, `editMenu`, `AppMenuActions`) |
+| `src/ui/components/FileController.h` | Added `Q_INVOKABLE openSaveImageDialog(format, includeAxes)` and `saveImagePathSelected` signal |
+| `src/ui/components/FileController.cpp` | Implemented `openSaveImageDialog` — opens a native save dialog with format-appropriate filter and emits the signal |
+| `src/ui/components/MetalViewport.mm` | Removed forced `alpha=255` in `setBackgroundColor` so alpha propagates to render settings |
+| `src/ui/components/OpenGLViewport.cpp` | Same alpha propagation fix as MetalViewport |
+| `src/render/metal/MetalRenderer.mm` | Clear color now uses premultiplied alpha: `r*a, g*a, b*a, a` |
+| `src/render/opengl/OpenGLRenderer.cpp` | Same premultiplied-alpha clear color |
+| `src/render/metal/MetalTypes.h` | `RTUniforms::backgroundColor` changed from `simd_float3` to `simd_float4` to carry alpha |
+| `src/render/metal/MetalShaderLibrary.mm` | MSL struct `float3` → `float4` for `backgroundColor`; miss return uses premultiplied alpha; display fragment pass-through preserves alpha channel |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Packs alpha into `backgroundColor` uniform; clear colors use premultiplied alpha |
+| `resources/resources.qrc` | Added `export.svg`, `files.svg`, `import.svg` icon entries |
+
+### Architecture Decisions
+
+#### 1. Background Alpha Lives in the Viewport Color, Not a Per-Export Toggle
+- Rather than a separate "transparent background" checkbox in the export UI, alpha is part of the background color itself via the existing `RGBColorPicker` extended with an optional alpha slider
+- This gives live visual feedback in the viewport and avoids a disconnect between what the user sees and what gets exported
+- The alpha slider is opt-in (`showAlpha: false` by default) so other color pickers are unaffected
+
+#### 2. Premultiplied Alpha for Clear Colors
+- All render backends clear with `(r*a, g*a, b*a, a)` — standard premultiplied alpha
+- This ensures correct compositing when the texture is displayed in the Qt scene graph (which uses premultiplied blending)
+- The saved image also comes out correct because `grabToImage` captures the composited result
+
+#### 3. Dynamic Export Format List Based on Alpha
+- When background alpha < 1, only `.png` appears in the Export Images dropdown since JPEG does not support transparency
+- When fully opaque, `.png`, `.jpg`, and `.pdf` are all offered (PDF is a placeholder, not yet implemented)
+
+#### 4. Files Section Consolidates Import and Export
+- Import Structures (opens file dialog), Export Structures (placeholder combo), and Export Images are grouped under a single "Files" sidebar section
+- This replaces the previous floating tab bar's File menu, which was removed in this session
+
+#### 5. HUD Hiding During Export Capture
+- The `grabToImage` handler temporarily hides `infoOverlay`, `cameraHintsOverlay`, and optionally `axisOverlay` before capture, then restores them in the completion callback
+- `suppressBackground` makes the QML gradient transparent so only the rendered viewport content appears in the captured image
+
+### Known Issue: Black Viewport Background at Low Alpha
+- When background alpha approaches 0, the viewport displays a black background instead of white because premultiplied `(r*0, g*0, b*0, 0)` = `(0,0,0,0)` composites over whatever Qt draws behind the viewport item (which is dark/black by default)
+- The saved image is correct (transparent background as intended)
+- A fix would composite-over-white for viewport display (`r*a + (1-a)`) while keeping premultiplied values for export — deferred to a follow-up
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+- Built successfully after all changes
+- Verified alpha slider appears in Background color picker and controls viewport transparency
+- Verified Export Images dropdown shows only `.png` when alpha < 1, all formats when opaque
+- Verified clicking an export format opens the native save dialog with correct filter
+- Verified exported `.png` with transparent background has correct alpha channel
+- Verified exported `.png` with opaque background has correct solid color
+- Verified HUD overlays (FPS, camera hints) are hidden in exported images
+- Verified Include Axes checkbox controls whether the axis glyph appears in exports
+
+---
+
 ## 2026-04-01: Application Branding Setup — Qt Runtime Icon and macOS Bundle Icon
 
 ### Summary

@@ -359,6 +359,68 @@ Rectangle {
                 spacing: 10
 
                 SidebarSection {
+                    title: qsTr("Files")
+                    iconSource: "qrc:/icons/files.svg"
+                    expanded: false
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Import Structures")
+                                        Layout.fillWidth: true
+                                        onClicked: FileController.openFileDialog()
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarComboBox {
+                                        Layout.fillWidth: true
+                                        displayText: qsTr("Export Structures")
+                                        model: [".xyz", ".in", "POSCAR", ".cif"]
+                                        enabled: false
+                                        onActivated: console.log("Export structures as " + currentText)
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 6
+
+                                        SidebarComboBox {
+                                            id: exportImagesComboBox
+                                            Layout.fillWidth: true
+                                            displayText: qsTr("Export Images")
+                                            model: {
+                                                var a = sidebar.viewport ? sidebar.viewport.backgroundColor.a : 1.0
+                                                return a < 0.99 ? [".png"] : [".png", ".jpg", ".pdf"]
+                                            }
+                                            enabled: StructureModel.hasStructure
+                                            onActivated: FileController.openSaveImageDialog(
+                                                currentText, exportImagesIncludeAxes.checked)
+                                        }
+
+                                        SidebarCheckBox {
+                                            id: exportImagesIncludeAxes
+                                            text: qsTr("Include Axes")
+                                            enabled: StructureModel.hasStructure
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
                     title: qsTr("Structure Info")
                     iconSource: "qrc:/icons/info.svg"
                     expanded: true
@@ -1192,6 +1254,7 @@ Rectangle {
                                 content: Component {
                                     RGBColorPicker {
                                         id: backgroundColorPicker
+                                        showAlpha: true
                                         defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
                                         sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
                                         onColorApplied: function(c) {

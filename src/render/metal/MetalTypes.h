@@ -55,7 +55,7 @@ struct RTUniforms {
     float         atomScale;
     simd_float3   lightDir;
     float         ambient;
-    simd_float3   backgroundColor;
+    simd_float4   backgroundColor;
     float         diffuse;
     float         specular;
     float         shininess;

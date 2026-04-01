@@ -7,6 +7,7 @@ ColumnLayout {
 
     property color sourceColor: Qt.rgba(0, 0, 0, 1.0)
     property color defaultColor: Qt.rgba(0, 0, 0, 1.0)
+    property bool showAlpha: false
 
     signal colorApplied(color newColor)
 
@@ -23,7 +24,7 @@ ColumnLayout {
             redControl.currentValue / 255.0,
             greenControl.currentValue / 255.0,
             blueControl.currentValue / 255.0,
-            1.0
+            root.showAlpha ? alphaControl.currentValue / 255.0 : 1.0
         )
     }
 
@@ -43,7 +44,7 @@ ColumnLayout {
                 newValue / 255.0,
                 greenControl.currentValue / 255.0,
                 blueControl.currentValue / 255.0,
-                1.0
+                root.showAlpha ? alphaControl.currentValue / 255.0 : 1.0
             ))
         }
     }
@@ -64,7 +65,7 @@ ColumnLayout {
                 redControl.currentValue / 255.0,
                 newValue / 255.0,
                 blueControl.currentValue / 255.0,
-                1.0
+                root.showAlpha ? alphaControl.currentValue / 255.0 : 1.0
             ))
         }
     }
@@ -85,7 +86,29 @@ ColumnLayout {
                 redControl.currentValue / 255.0,
                 greenControl.currentValue / 255.0,
                 newValue / 255.0,
-                1.0
+                root.showAlpha ? alphaControl.currentValue / 255.0 : 1.0
+            ))
+        }
+    }
+
+    NumericSliderControl {
+        id: alphaControl
+        visible: root.showAlpha
+        title: qsTr("A")
+        titleColor: "#7a7d87"
+        titlePixelSize: 11
+        integer: true
+        from: 0
+        to: 255
+        stepSize: 1
+        defaultValue: Math.round(root.defaultColor.a * 255)
+        sourceValue: Math.round(root.sourceColor.a * 255)
+        onValueApplied: function(newValue) {
+            root.colorApplied(Qt.rgba(
+                redControl.currentValue / 255.0,
+                greenControl.currentValue / 255.0,
+                blueControl.currentValue / 255.0,
+                newValue / 255.0
             ))
         }
     }
