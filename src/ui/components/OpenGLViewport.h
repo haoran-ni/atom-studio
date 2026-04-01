@@ -36,6 +36,7 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(int atomCount READ atomCount NOTIFY atomCountChanged)
     Q_PROPERTY(int bondCount READ bondCount NOTIFY bondCountChanged)
     Q_PROPERTY(float fps READ fps NOTIFY fpsChanged)
+    Q_PROPERTY(qulonglong frameToken READ frameToken NOTIFY frameTokenChanged)
     Q_PROPERTY(bool showBonds READ showBonds WRITE setShowBonds NOTIFY showBondsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
     Q_PROPERTY(bool showUnitCell READ showUnitCell WRITE setShowUnitCell NOTIFY showUnitCellChanged)
@@ -58,6 +59,7 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float shininess READ shininess WRITE setShininess NOTIFY shininessChanged)
     Q_PROPERTY(float lightAzimuth READ lightAzimuth WRITE setLightAzimuth NOTIFY lightAzimuthChanged)
     Q_PROPERTY(float lightElevation READ lightElevation WRITE setLightElevation NOTIFY lightElevationChanged)
+    Q_PROPERTY(bool showViewportAxes READ showViewportAxes WRITE setShowViewportAxes NOTIFY showViewportAxesChanged)
     Q_PROPERTY(float viewportAxesX READ viewportAxesX WRITE setViewportAxesX NOTIFY viewportAxesXChanged)
     Q_PROPERTY(float viewportAxesY READ viewportAxesY WRITE setViewportAxesY NOTIFY viewportAxesYChanged)
     Q_PROPERTY(float viewportAxesScale READ viewportAxesScale WRITE setViewportAxesScale NOTIFY viewportAxesScaleChanged)
@@ -74,6 +76,7 @@ public:
     int atomCount() const;
     int bondCount() const;
     float fps() const;
+    qulonglong frameToken() const;
     bool showBonds() const;
     QColor backgroundColor() const;
     bool showUnitCell() const;
@@ -96,6 +99,7 @@ public:
     float shininess() const;
     float lightAzimuth() const;
     float lightElevation() const;
+    bool showViewportAxes() const;
     float viewportAxesX() const;
     float viewportAxesY() const;
     float viewportAxesScale() const;
@@ -130,6 +134,7 @@ public slots:
     void setShininess(float shininess);
     void setLightAzimuth(float value);
     void setLightElevation(float value);
+    void setShowViewportAxes(bool show);
     void setViewportAxesX(float value);
     void setViewportAxesY(float value);
     void setViewportAxesScale(float value);
@@ -140,6 +145,7 @@ signals:
     void atomCountChanged();
     void bondCountChanged();
     void fpsChanged();
+    void frameTokenChanged();
     void showBondsChanged();
     void backgroundColorChanged();
     void showUnitCellChanged();
@@ -162,6 +168,7 @@ signals:
     void shininessChanged();
     void lightAzimuthChanged();
     void lightElevationChanged();
+    void showViewportAxesChanged();
     void viewportAxesXChanged();
     void viewportAxesYChanged();
     void viewportAxesScaleChanged();
@@ -179,6 +186,8 @@ protected:
                         const QRectF& oldGeometry) override;
 
 private:
+    void notifyFramePresented();
+
     class RendererImpl;
     friend class RendererImpl;
 
@@ -211,10 +220,12 @@ private:
     float m_shininess = 32.0f;
     float m_lightAzimuth = 0.0f;
     float m_lightElevation = 45.0f;
+    bool m_showViewportAxes = true;
     float m_viewportAxesX = 60.0f;
     float m_viewportAxesY = 60.0f;
     float m_viewportAxesScale = 1.0f;
     float m_fps = 0.0f;
+    qulonglong m_frameToken = 0;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;
 

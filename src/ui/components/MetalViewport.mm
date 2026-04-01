@@ -17,6 +17,7 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QDebug>
+#include <QMetaObject>
 #include <QRunnable>
 #include <QFutureWatcher>
 #include <QtConcurrent>
@@ -177,6 +178,7 @@ int MetalViewport::bondCount() const {
 }
 
 float MetalViewport::fps() const { return m_fps; }
+qulonglong MetalViewport::frameToken() const { return m_frameToken; }
 bool MetalViewport::showBonds() const { return m_showBonds; }
 QColor MetalViewport::backgroundColor() const { return m_backgroundColor; }
 bool MetalViewport::showUnitCell() const { return m_showUnitCell; }
@@ -198,6 +200,7 @@ float MetalViewport::specularStrength() const { return m_specularStrength; }
 float MetalViewport::shininess() const { return m_shininess; }
 float MetalViewport::lightAzimuth() const { return m_lightAzimuth; }
 float MetalViewport::lightElevation() const { return m_lightElevation; }
+bool MetalViewport::showViewportAxes() const { return m_showViewportAxes; }
 float MetalViewport::viewportAxesX() const { return m_viewportAxesX; }
 float MetalViewport::viewportAxesY() const { return m_viewportAxesY; }
 float MetalViewport::viewportAxesScale() const { return m_viewportAxesScale; }
@@ -519,6 +522,14 @@ void MetalViewport::setLightElevation(float value) {
     }
 }
 
+void MetalViewport::setShowViewportAxes(bool show) {
+    if (m_showViewportAxes != show) {
+        m_showViewportAxes = show;
+        emit showViewportAxesChanged();
+        update();
+    }
+}
+
 void MetalViewport::setViewportAxesX(float value) {
     if (!std::isfinite(value)) return;
     if (!qFuzzyCompare(m_viewportAxesX, value)) {
@@ -665,7 +676,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     qreal dpr = renderWindow->devicePixelRatio();
     int pw = static_cast<int>(width() * dpr);
     int ph = static_cast<int>(height() * dpr);
-    m_renderSettings.showViewportAxes = true;
+    m_renderSettings.showViewportAxes = m_showViewportAxes;
     m_renderSettings.viewportAxesScreenX = m_viewportAxesX * static_cast<float>(dpr);
     m_renderSettings.viewportAxesScreenY = m_viewportAxesY * static_cast<float>(dpr);
     m_renderSettings.viewportAxesScale = m_viewportAxesScale;
@@ -743,6 +754,9 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     } else {
         update();
     }
+
+    QMetaObject::invokeMethod(this, &MetalViewport::notifyFramePresented,
+                              Qt::QueuedConnection);
 
     return node;
 }
@@ -837,6 +851,11 @@ void MetalViewport::wheelEvent(QWheelEvent* event) {
 void MetalViewport::mouseDoubleClickEvent(QMouseEvent* event) {
     resetCamera();
     event->accept();
+}
+
+void MetalViewport::notifyFramePresented() {
+    ++m_frameToken;
+    emit frameTokenChanged();
 }
 
 } // namespace atom::ui

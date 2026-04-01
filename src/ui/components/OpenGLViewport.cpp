@@ -16,6 +16,7 @@
 #include <QOpenGLFramebufferObjectFormat>
 #include <QFutureWatcher>
 #include <QtConcurrent>
+#include <QMetaObject>
 #include <QDebug>
 #include <algorithm>
 
@@ -50,6 +51,8 @@ public:
         }
 
         m_activeRenderer->render(*m_viewport->m_camera, m_viewport->m_renderSettings);
+        QMetaObject::invokeMethod(m_viewport, &OpenGLViewport::notifyFramePresented,
+                                  Qt::QueuedConnection);
 
         // For RT mode: update sample count and keep rendering until converged
         if (m_currentMode == 1 && m_rtRenderer) {
@@ -172,7 +175,7 @@ public:
         viewport->m_renderSettings.shininess = viewport->m_shininess;
         viewport->m_renderSettings.lightAzimuth = viewport->m_lightAzimuth;
         viewport->m_renderSettings.lightElevation = viewport->m_lightElevation;
-        viewport->m_renderSettings.showViewportAxes = true;
+        viewport->m_renderSettings.showViewportAxes = viewport->m_showViewportAxes;
         viewport->m_renderSettings.viewportAxesScreenX = viewport->m_viewportAxesX * static_cast<float>(dpr);
         viewport->m_renderSettings.viewportAxesScreenY = viewport->m_viewportAxesY * static_cast<float>(dpr);
         viewport->m_renderSettings.viewportAxesScale = viewport->m_viewportAxesScale;
@@ -234,6 +237,10 @@ int OpenGLViewport::bondCount() const {
 
 float OpenGLViewport::fps() const {
     return m_fps;
+}
+
+qulonglong OpenGLViewport::frameToken() const {
+    return m_frameToken;
 }
 
 bool OpenGLViewport::showBonds() const {
@@ -318,6 +325,10 @@ float OpenGLViewport::lightAzimuth() const {
 
 float OpenGLViewport::lightElevation() const {
     return m_lightElevation;
+}
+
+bool OpenGLViewport::showViewportAxes() const {
+    return m_showViewportAxes;
 }
 
 float OpenGLViewport::viewportAxesX() const {
@@ -647,6 +658,14 @@ void OpenGLViewport::setLightElevation(float value) {
     }
 }
 
+void OpenGLViewport::setShowViewportAxes(bool show) {
+    if (m_showViewportAxes != show) {
+        m_showViewportAxes = show;
+        emit showViewportAxesChanged();
+        update();
+    }
+}
+
 void OpenGLViewport::setViewportAxesX(float value) {
     if (!std::isfinite(value)) return;
     if (!qFuzzyCompare(m_viewportAxesX, value)) {
@@ -689,6 +708,11 @@ void OpenGLViewport::setFieldOfView(float fov) {
         emit projectionChanged();
         update();
     }
+}
+
+void OpenGLViewport::notifyFramePresented() {
+    ++m_frameToken;
+    emit frameTokenChanged();
 }
 
 bool OpenGLViewport::event(QEvent* event) {

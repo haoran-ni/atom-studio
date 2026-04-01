@@ -8,6 +8,7 @@ Rectangle {
 
     property var viewport: viewportLoader.item
     property bool suppressBackground: false
+    property var pendingExportState: null
 
     color: "#e6e6e6"
 
@@ -15,6 +16,25 @@ Rectangle {
     gradient: Gradient {
         GradientStop { position: 0.0; color: suppressBackground ? "transparent" : "#e6e6e6" }
         GradientStop { position: 1.0; color: suppressBackground ? "transparent" : "#e6e6e6" }
+    }
+
+    function restoreExportState(state) {
+        infoOverlay.visible = state.previousInfoOverlayVisible
+        cameraHintsOverlay.visible = state.previousCameraHintsVisible
+        axisOverlay.visible = state.previousAxisOverlayVisible
+        if (state.hadViewport && viewportPanel.viewport
+                && viewportPanel.viewport.showViewportAxes !== undefined) {
+            viewportPanel.viewport.showViewportAxes = state.previousViewportAxesVisible
+        }
+        viewportPanel.suppressBackground = false
+    }
+
+    function runImageExport(state) {
+        pendingExportState = null
+        viewportPanel.grabToImage(function(result) {
+            result.saveToFile(state.filePath)
+            restoreExportState(state)
+        })
     }
 
     // Platform-conditional viewport: Metal on macOS, OpenGL elsewhere
@@ -320,20 +340,58 @@ Rectangle {
                 console.warn("ViewportPanel: PDF export not yet implemented")
                 return
             }
+            var hadViewport = !!viewportPanel.viewport
             var isTransparent = viewportPanel.viewport &&
                                 viewportPanel.viewport.backgroundColor.a < 0.99
+            var state = {
+                filePath: filePath,
+                hadViewport: hadViewport,
+                previousInfoOverlayVisible: infoOverlay.visible,
+                previousCameraHintsVisible: cameraHintsOverlay.visible,
+                previousAxisOverlayVisible: axisOverlay.visible,
+                previousViewportAxesVisible: hadViewport
+                                             && viewportPanel.viewport.showViewportAxes !== undefined
+                                             ? viewportPanel.viewport.showViewportAxes
+                                             : true,
+                waitForViewportFrame: !includeAxes
+                                      && hadViewport
+                                      && viewportPanel.viewport.showViewportAxes !== undefined
+                                      && viewportPanel.viewport.frameToken !== undefined,
+                startingFrameToken: hadViewport && viewportPanel.viewport.frameToken !== undefined
+                                    ? viewportPanel.viewport.frameToken
+                                    : 0
+            }
             infoOverlay.visible = false
             cameraHintsOverlay.visible = false
             if (!includeAxes) axisOverlay.visible = false
+            if (!includeAxes && hadViewport && viewportPanel.viewport.showViewportAxes !== undefined) {
+                viewportPanel.viewport.showViewportAxes = false
+            }
             if (isTransparent) viewportPanel.suppressBackground = true
 
-            viewportPanel.grabToImage(function(result) {
-                result.saveToFile(filePath)
-                infoOverlay.visible = true
-                cameraHintsOverlay.visible = true
-                axisOverlay.visible = true
-                viewportPanel.suppressBackground = false
-            })
+            if (state.waitForViewportFrame) {
+                pendingExportState = state
+                return
+            }
+
+            runImageExport(state)
+        }
+    }
+
+    Connections {
+        target: viewportPanel.viewport
+        ignoreUnknownSignals: true
+
+        function onFrameTokenChanged() {
+            if (!pendingExportState || !viewportPanel.viewport) {
+                return
+            }
+
+            if (viewportPanel.viewport.frameToken <= pendingExportState.startingFrameToken) {
+                return
+            }
+
+            runImageExport(pendingExportState)
         }
     }
 
