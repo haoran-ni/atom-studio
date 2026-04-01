@@ -5,6 +5,7 @@ import AtomStudio 1.0
 
 ApplicationWindow {
     id: mainWindow
+    property string persistentStatusMessage: ""
 
     visible: true
     width: 1400
@@ -21,8 +22,16 @@ ApplicationWindow {
     // because std::shared_ptr cannot pass through QML signals
     Connections {
         target: FileController
+        function onLoadingStarted(filePath) {
+            mainWindow.persistentStatusMessage = ""
+        }
+
+        function onStructureLoaded(structure) {
+            mainWindow.persistentStatusMessage = ""
+        }
+
         function onLoadFailed(error) {
-            statusLabel.text = "Error: " + error
+            mainWindow.persistentStatusMessage = "Error: " + error
         }
     }
 
@@ -58,35 +67,66 @@ ApplicationWindow {
 
     // Status bar at the bottom
     footer: Rectangle {
-        height: 24
-        color: "#252526"
+        height: 30
+
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: sidebar ? sidebar.panelBgTop : "#fbfbfc" }
+            GradientStop { position: 1.0; color: sidebar ? sidebar.panelBgBottom : "#efeff2" }
+        }
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: sidebar ? sidebar.borderSoft : "#c7c9d1"
+        }
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            spacing: 20
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            spacing: 10
 
             Label {
                 id: statusLabel
-                text: FileController.isLoading ? FileController.loadStatus : "Ready"
-                color: "#cccccc"
-                font.pixelSize: 11
+                text: FileController.isLoading
+                    ? FileController.loadStatus
+                    : (sidebar.statusHint.length > 0
+                        ? sidebar.statusHint
+                        : (mainWindow.persistentStatusMessage.length > 0
+                            ? mainWindow.persistentStatusMessage
+                            : "Ready"))
+                color: sidebar ? sidebar.textBody : "#33353c"
+                font.pixelSize: 12
+                font.weight: Font.Medium
+                Layout.fillWidth: true
+                elide: Text.ElideRight
             }
 
             // Loading progress
             ProgressBar {
                 visible: FileController.isLoading
                 value: FileController.loadProgress
-                Layout.preferredWidth: 100
-            }
+                Layout.preferredWidth: 120
 
-            Item { Layout.fillWidth: true }
+                background: Rectangle {
+                    radius: 3
+                    color: sidebar ? sidebar.inputFillAlt : "#f3f4f7"
+                    border.width: 1
+                    border.color: sidebar ? sidebar.borderSoft : "#c7c9d1"
+                }
 
-            Label {
-                text: StructureModel.hasStructure ? StructureModel.fileName : "No file loaded"
-                color: "#808080"
-                font.pixelSize: 11
+                contentItem: Item {
+                    implicitHeight: 6
+
+                    Rectangle {
+                        width: parent.width * parent.ProgressBar.visualPosition
+                        height: parent.height
+                        radius: 3
+                        color: sidebar ? sidebar.connectorColor : "#6e727d"
+                    }
+                }
             }
         }
     }

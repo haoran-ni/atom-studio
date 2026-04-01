@@ -8,6 +8,8 @@ Rectangle {
 
     property var viewport: null
     property string maxRTSamplesErrorMessage: ""
+    property string statusHint: ""
+    property var statusHintOwner: null
     readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
 
     readonly property color panelBgTop: "#fbfbfc"
@@ -32,6 +34,18 @@ Rectangle {
         maxRTSamplesErrorMessage = message
         maxRTSamplesErrorDialog.title = qsTr("Invalid Value")
         maxRTSamplesErrorDialog.open()
+    }
+
+    function setStatusHint(owner, message) {
+        statusHintOwner = owner
+        statusHint = message
+    }
+
+    function clearStatusHint(owner) {
+        if (statusHintOwner === owner) {
+            statusHintOwner = null
+            statusHint = ""
+        }
     }
 
     function collapseOtherSections(activeSection) {
@@ -283,9 +297,17 @@ Rectangle {
         property string iconSource: ""
         property alias content: contentLoader.sourceComponent
         property bool expanded: false
+        property real expansion: expanded ? 1.0 : 0.0
 
         spacing: 8
         Layout.fillWidth: true
+
+        Behavior on expansion {
+            NumberAnimation {
+                duration: 180
+                easing.type: Easing.OutCubic
+            }
+        }
 
         Item {
             Layout.fillWidth: true
@@ -293,9 +315,16 @@ Rectangle {
 
             Rectangle {
                 anchors.fill: parent
-                visible: section.expanded
                 radius: 14
                 color: sidebar.tabFill
+                opacity: section.expansion
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 140
+                        easing.type: Easing.OutCubic
+                    }
+                }
             }
 
             RowLayout {
@@ -324,11 +353,18 @@ Rectangle {
                 Image {
                     Layout.preferredWidth: 16
                     Layout.preferredHeight: 16
-                    source: section.expanded ? "qrc:/icons/chevron-down.svg"
-                                             : "qrc:/icons/chevron-right.svg"
+                    source: "qrc:/icons/chevron-right.svg"
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
+                    rotation: section.expansion * 90
+
+                    Behavior on rotation {
+                        NumberAnimation {
+                            duration: 180
+                            easing.type: Easing.OutCubic
+                        }
+                    }
                 }
             }
 
@@ -347,10 +383,26 @@ Rectangle {
             }
         }
 
-        Loader {
-            id: contentLoader
+        Item {
             Layout.fillWidth: true
-            visible: section.expanded
+            Layout.preferredHeight: contentLoader.implicitHeight * section.expansion
+            opacity: section.expansion
+            clip: true
+            visible: section.expansion > 0.001 || contentLoader.active
+
+            Loader {
+                id: contentLoader
+                anchors.left: parent.left
+                anchors.right: parent.right
+                active: section.expanded || section.expansion > 0.001
+            }
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 120
+                    easing.type: Easing.OutCubic
+                }
+            }
         }
     }
 
@@ -610,8 +662,13 @@ Rectangle {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 enabled: !StructureModel.hasUnitCell
-                                                ToolTip.visible: containsMouse
-                                                ToolTip.text: qsTr("Not applicable for non-periodic structures")
+                                                onContainsMouseChanged: {
+                                                    if (containsMouse) {
+                                                        sidebar.setStatusHint(this, qsTr("Not applicable for non-periodic structures"))
+                                                    } else {
+                                                        sidebar.clearStatusHint(this)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -639,10 +696,15 @@ Rectangle {
                                             anchors.fill: parent
                                             hoverEnabled: true
                                             enabled: !(StructureModel.hasUnitCell && StructureModel.hasBonds)
-                                            ToolTip.visible: containsMouse
-                                            ToolTip.text: !StructureModel.hasUnitCell
-                                                ? qsTr("Not applicable for non-periodic structures")
-                                                : qsTr("Bond detection required")
+                                            onContainsMouseChanged: {
+                                                if (containsMouse) {
+                                                    sidebar.setStatusHint(this, !StructureModel.hasUnitCell
+                                                        ? qsTr("Not applicable for non-periodic structures")
+                                                        : qsTr("Bond detection required"))
+                                                } else {
+                                                    sidebar.clearStatusHint(this)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -713,6 +775,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Atom Scale")
+                                        statusHintTarget: sidebar
                                         from: 0.1
                                         to: 2.0
                                         defaultValue: 1.0
@@ -731,6 +794,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Bond Scale")
+                                        statusHintTarget: sidebar
                                         from: 0.5
                                         to: 2.0
                                         defaultValue: 1.1
@@ -791,6 +855,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Thickness")
+                                        statusHintTarget: sidebar
                                         from: 0.01
                                         to: 2.0
                                         defaultValue: 0.06
@@ -858,6 +923,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Field of View")
+                                        statusHintTarget: sidebar
                                         integer: true
                                         from: 10
                                         to: 120
@@ -980,8 +1046,13 @@ Rectangle {
                                             hoverEnabled: true
                                             inputMethodHints: Qt.ImhDigitsOnly
                                             validator: IntValidator { bottom: 1; top: 10000 }
-                                            ToolTip.visible: hovered
-                                            ToolTip.text: qsTr("Enter any integer between 1 and 10000")
+                                            onHoveredChanged: {
+                                                if (hovered) {
+                                                    sidebar.setStatusHint(this, qsTr("Enter any integer between 1 and 10000"))
+                                                } else {
+                                                    sidebar.clearStatusHint(this)
+                                                }
+                                            }
 
                                             onEditingFinished: {
                                                 if (!sidebar.viewport) {
@@ -1064,6 +1135,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Ambient")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Base light intensity applied everywhere. Higher values brighten the whole scene, including shadowed areas.")
                                         from: 0
                                         to: 1
@@ -1084,6 +1156,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Diffuse")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Strength of directional matte lighting. Higher values increase light-facing contrast and shape definition.")
                                         from: 0
                                         to: 1
@@ -1105,6 +1178,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Shadow opacity")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Strength of ray-traced shadows. 0 disables shadow darkening, 1 keeps fully dark shadows.")
                                         from: 0
                                         to: 1
@@ -1126,6 +1200,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Specular")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Brightness of reflective highlights. Higher values make highlights stronger and more noticeable.")
                                         from: 0
                                         to: 1
@@ -1147,6 +1222,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Shininess")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Sharpness of specular highlights. Higher values make highlights tighter; lower values make them softer.")
                                         integer: true
                                         from: 1
@@ -1168,6 +1244,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Light azimuth")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Angle in the XY plane. 0° = +X, 90° = +Y, ±180° = −X.")
                                         from: -180
                                         to: 180
@@ -1189,6 +1266,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Light elevation")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Angle from the XY plane toward +Z. 0° = in XY plane, 90° = +Z, -90° = −Z.")
                                         from: -90
                                         to: 90
@@ -1211,6 +1289,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Ambient occlusion samples")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Number of AO rays per pixel per frame. Higher values reduce AO noise but render slower.")
                                         integer: true
                                         from: 1
@@ -1233,6 +1312,7 @@ Rectangle {
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Ambient occlusion radius")
+                                        statusHintTarget: sidebar
                                         tooltipText: qsTr("Maximum distance AO rays search for occluders. Higher values create broader occlusion effects.")
                                         from: 1
                                         to: 10

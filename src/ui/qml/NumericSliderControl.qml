@@ -7,6 +7,7 @@ ColumnLayout {
 
     property string title: ""
     property string tooltipText: ""
+    property var statusHintTarget: null
     property color titleColor: "#17181c"
     property int titlePixelSize: 13
     property bool integer: false
@@ -61,6 +62,18 @@ ColumnLayout {
         slider.value = normalized
         valueField.text = formatValue(slider.value)
         valueApplied(normalized)
+    }
+
+    function updateStatusHint() {
+        if (!statusHintTarget || tooltipText.length === 0) {
+            return
+        }
+
+        if (titleHoverArea.containsMouse) {
+            statusHintTarget.setStatusHint(control, tooltipText)
+        } else {
+            statusHintTarget.clearStatusHint(control)
+        }
     }
 
     function commitText() {
@@ -120,6 +133,12 @@ ColumnLayout {
         valueField.text = formatValue(slider.value)
     }
 
+    Component.onDestruction: {
+        if (statusHintTarget && tooltipText.length > 0) {
+            statusHintTarget.clearStatusHint(control)
+        }
+    }
+
     RowLayout {
         Layout.fillWidth: true
         spacing: 6
@@ -132,8 +151,6 @@ ColumnLayout {
             font.weight: Font.DemiBold
             Layout.fillWidth: true
             elide: Text.ElideRight
-            ToolTip.visible: control.tooltipText.length > 0 && titleHoverArea.containsMouse
-            ToolTip.text: control.tooltipText
 
             MouseArea {
                 id: titleHoverArea
@@ -141,6 +158,7 @@ ColumnLayout {
                 acceptedButtons: Qt.NoButton
                 hoverEnabled: control.tooltipText.length > 0
                 enabled: control.tooltipText.length > 0
+                onContainsMouseChanged: control.updateStatusHint()
             }
         }
 
