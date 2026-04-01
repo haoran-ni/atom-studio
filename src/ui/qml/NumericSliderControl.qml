@@ -7,13 +7,13 @@ ColumnLayout {
 
     property string title: ""
     property string tooltipText: ""
-    property color titleColor: "#cccccc"
-    property int titlePixelSize: 11
+    property color titleColor: "#17181c"
+    property int titlePixelSize: 13
     property bool integer: false
     property int decimals: integer ? 0 : 2
     property real defaultValue: 0
     property real sourceValue: defaultValue
-    property int inputWidth: 74
+    property int inputWidth: 64
 
     property alias from: slider.from
     property alias to: slider.to
@@ -23,7 +23,7 @@ ColumnLayout {
     signal valueApplied(real newValue)
 
     Layout.fillWidth: true
-    spacing: 4
+    spacing: 3
 
     function normalizedValue(rawValue) {
         if (!Number.isFinite(rawValue)) {
@@ -129,6 +129,7 @@ ColumnLayout {
             text: control.title
             color: control.titleColor
             font.pixelSize: control.titlePixelSize
+            font.weight: Font.DemiBold
             Layout.fillWidth: true
             elide: Text.ElideRight
             ToolTip.visible: control.tooltipText.length > 0 && titleHoverArea.containsMouse
@@ -146,14 +147,47 @@ ColumnLayout {
         TextField {
             id: valueField
             Layout.preferredWidth: control.inputWidth
+            implicitHeight: 26
             horizontalAlignment: TextInput.AlignRight
             inputMethodHints: control.integer ? Qt.ImhDigitsOnly : Qt.ImhFormattedNumbersOnly
             selectByMouse: true
+            color: "#17181c"
+            font.pixelSize: 12
+            leftPadding: 6
+            rightPadding: 6
+            topPadding: 3
+            bottomPadding: 3
             onAccepted: control.commitText()
+
+            background: Rectangle {
+                radius: 7
+                color: valueField.activeFocus ? "#f3f4f7" : "#ffffff"
+                border.width: 1
+                border.color: "#c7c9d1"
+            }
         }
 
         Button {
-            text: qsTr("Reset")
+            id: resetBtn
+            implicitWidth: 26
+            implicitHeight: 26
+
+            Image {
+                source: "qrc:/icons/reset.svg"
+                width: 14
+                height: 14
+                sourceSize: Qt.size(14, 14)
+                anchors.centerIn: parent
+                opacity: resetBtn.down ? 0.5 : 1.0
+            }
+
+            background: Rectangle {
+                radius: 7
+                color: resetBtn.down ? "#6e727d" : "#e2e3e8"
+                border.width: 1
+                border.color: "#c7c9d1"
+            }
+
             onClicked: control.applyValue(control.defaultValue)
         }
     }
@@ -161,6 +195,37 @@ ColumnLayout {
     Slider {
         id: slider
         Layout.fillWidth: true
+        implicitHeight: 22
+        topPadding: 3
+        bottomPadding: 3
+
+        background: Rectangle {
+            x: slider.leftPadding
+            y: slider.topPadding + (slider.availableHeight - height) / 2
+            width: slider.availableWidth
+            height: 4
+            radius: 2
+            color: "#e0e2e8"
+
+            Rectangle {
+                width: slider.visualPosition * parent.width
+                height: parent.height
+                radius: 2
+                color: "#6e727d"
+            }
+        }
+
+        handle: Rectangle {
+            x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
+            y: slider.topPadding + (slider.availableHeight - height) / 2
+            width: 16
+            height: 16
+            radius: 8
+            color: slider.pressed ? "#f3f4f7" : "#ffffff"
+            border.color: "#c7c9d1"
+            border.width: 1
+        }
+
         onValueChanged: control.revertText()
         onMoved: control.valueApplied(control.normalizedValue(value))
     }
@@ -173,13 +238,13 @@ ColumnLayout {
         standardButtons: Dialog.Ok
         parent: Overlay.overlay
         anchors.centerIn: parent
+        width: 340
 
         contentItem: Label {
             text: validationDialog.message
-            color: "#cccccc"
+            color: "#33353c"
             wrapMode: Text.WordWrap
             padding: 12
-            width: 316
         }
     }
 }

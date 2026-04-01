@@ -12,8 +12,8 @@ Rectangle {
 
     readonly property color panelBgTop: "#fbfbfc"
     readonly property color panelBgBottom: "#efeff2"
-    readonly property color tabFill: "#e2e3e8"
-    readonly property color buttonFill: "#d8dae0"
+    readonly property color tabFill: "#d8dae0"
+    readonly property color buttonFill: "#e2e3e8"
     readonly property color inputFill: "#ffffff"
     readonly property color inputFillAlt: "#f3f4f7"
     readonly property color borderSoft: "#c7c9d1"
@@ -112,6 +112,7 @@ Rectangle {
         indicator: Rectangle {
             implicitWidth: 17
             implicitHeight: 17
+            anchors.verticalCenter: parent.verticalCenter
             radius: 5
             color: control.checked ? "#e4e9f6" : sidebar.inputFill
             border.width: control.checked ? 0 : 1
@@ -131,6 +132,7 @@ Rectangle {
             text: control.text
             color: control.enabled ? sidebar.textBody : sidebar.textMuted
             font.pixelSize: 13
+            font.weight: Font.DemiBold
             verticalAlignment: Text.AlignVCenter
             leftPadding: control.indicator.width + control.spacing
         }
@@ -151,10 +153,11 @@ Rectangle {
             elide: Text.ElideRight
         }
 
-        indicator: Text {
-            text: control.popup.visible ? "\u2303" : "\u203A"
-            color: sidebar.textBody
-            font.pixelSize: control.popup.visible ? 16 : 20
+        indicator: Image {
+            source: control.popup.visible ? "qrc:/icons/chevron-down.svg" : "qrc:/icons/chevron-right.svg"
+            width: 16
+            height: 16
+            sourceSize: Qt.size(16, 16)
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: parent.right
             anchors.rightMargin: 12
@@ -169,7 +172,12 @@ Rectangle {
             required property int index
             required property var modelData
 
-            width: control.width
+            width: ListView.view ? ListView.view.width : control.width
+            implicitHeight: 34
+            topPadding: 0
+            bottomPadding: 0
+            leftPadding: 0
+            rightPadding: 0
             highlighted: control.highlightedIndex === index
 
             contentItem: Text {
@@ -182,8 +190,8 @@ Rectangle {
             }
 
             background: Rectangle {
-                radius: 10
-                color: highlighted ? "#32384d" : "transparent"
+                radius: 8
+                color: highlighted ? sidebar.buttonFill : "transparent"
             }
         }
 
@@ -194,7 +202,9 @@ Rectangle {
 
             background: Rectangle {
                 radius: 12
-                color: sidebar.buttonFill
+                color: sidebar.inputFill
+                border.width: 1
+                border.color: sidebar.borderSoft
             }
 
             contentItem: ListView {
@@ -202,7 +212,7 @@ Rectangle {
                 implicitHeight: contentHeight
                 model: control.delegateModel
                 currentIndex: control.highlightedIndex
-                spacing: 3
+                spacing: 2
             }
         }
     }
@@ -218,7 +228,7 @@ Rectangle {
             visible: parent.label.length > 0
             text: parent.label
             color: sidebar.textMuted
-            font.pixelSize: 12
+            font.pixelSize: 13
             Layout.preferredWidth: parent.label.length > 0 ? 90 : 0
         }
 
@@ -231,69 +241,29 @@ Rectangle {
         }
     }
 
-    component SidebarBranchRow: RowLayout {
+    component SidebarBranchRow: Item {
         property bool lastItem: false
-        property int gapAfter: lastItem ? 0 : 4
         property alias content: contentLoader.sourceComponent
 
         Layout.fillWidth: true
-        spacing: 10
+        implicitHeight: contentLoader.implicitHeight
 
-        Item {
-            Layout.preferredWidth: 24
-            Layout.fillHeight: true
-            implicitHeight: contentItem.implicitHeight + gapAfter
-
-            Canvas {
-                anchors.fill: parent
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.strokeStyle = sidebar.connectorColor
-                    ctx.lineWidth = 1
-                    ctx.lineCap = "round"
-                    ctx.lineJoin = "round"
-                    ctx.globalAlpha = 0.95
-
-                    var x = 11
-                    var contentHeight = contentItem.height > 0 ? contentItem.height : contentItem.implicitHeight
-                    var y = Math.round(contentHeight * 0.5)
-                    var radius = 8
-                    y = Math.max(radius + 2, Math.min(contentHeight - radius - 2, y))
-                    var branchStartY = Math.max(0, y - radius)
-
-                    if (lastItem) {
-                        ctx.beginPath()
-                        ctx.moveTo(x, 0)
-                        ctx.lineTo(x, branchStartY)
-                        ctx.stroke()
-                    } else {
-                        ctx.beginPath()
-                        ctx.moveTo(x, 0)
-                        ctx.lineTo(x, height)
-                        ctx.stroke()
-                    }
-
-                    ctx.beginPath()
-                    ctx.moveTo(x, branchStartY)
-                    ctx.quadraticCurveTo(x, y, x + radius, y)
-                    ctx.lineTo(width, y)
-                    ctx.stroke()
-                }
-            }
+        Rectangle {
+            x: 10
+            y: 0
+            width: 2
+            height: contentLoader.implicitHeight
+            radius: 1
+            color: sidebar.connectorColor
+            opacity: 0.45
         }
 
-        Item {
-            id: contentItem
-            Layout.fillWidth: true
-            implicitHeight: contentLoader.implicitHeight
-
-            Loader {
-                id: contentLoader
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-            }
+        Loader {
+            id: contentLoader
+            anchors.left: parent.left
+            anchors.leftMargin: 20
+            anchors.right: parent.right
+            anchors.top: parent.top
         }
     }
 
@@ -396,39 +366,52 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 4
+                            spacing: 8
 
-                            SidebarPropertyRow { label: qsTr("File:"); value: StructureModel.fileName }
-                            SidebarPropertyRow { label: qsTr("Atoms:"); value: StructureModel.atomCount.toString() }
-                            SidebarPropertyRow { label: qsTr("Atom Types:"); value: StructureModel.atomTypeCount.toString() }
-                            SidebarPropertyRow { label: qsTr("Bonds:"); value: StructureModel.bondCount.toString() }
-
-                            Repeater {
-                                model: StructureModel.elements
-                                delegate: SidebarPropertyRow { label: ""; value: modelData }
+                            SidebarBranchRow {
+                                content: Component { SidebarPropertyRow { label: qsTr("File:"); value: StructureModel.fileName } }
+                            }
+                            SidebarBranchRow {
+                                content: Component { SidebarPropertyRow { label: qsTr("Atoms:"); value: StructureModel.atomCount.toString() } }
+                            }
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 2
+                                        SidebarPropertyRow { label: qsTr("Atom Types:"); value: StructureModel.atomTypeCount.toString() }
+                                        Repeater {
+                                            model: StructureModel.elements
+                                            delegate: Label {
+                                                text: modelData
+                                                color: sidebar.textBody
+                                                font.pixelSize: 13
+                                                Layout.fillWidth: true
+                                                Layout.leftMargin: 100
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                content: Component { SidebarPropertyRow { label: qsTr("Bonds:"); value: StructureModel.bondCount.toString() } }
                             }
 
-                            Item {
+                            SidebarBranchRow {
                                 visible: StructureModel.hasUnitCell
-                                Layout.fillWidth: true
-                                implicitHeight: unitCellInfo.implicitHeight
-
-                                ColumnLayout {
-                                    id: unitCellInfo
-                                    width: parent.width
-                                    spacing: 3
-
-                                    SidebarPropertyRow {
-                                        label: qsTr("Unit Cell:")
-                                        value: StructureModel.hasUnitCell ? "Yes" : "No"
-                                    }
-
-                                    Label {
-                                        text: StructureModel.cellParameters
-                                        color: sidebar.textBody
-                                        font.pixelSize: 11
-                                        Layout.fillWidth: true
-                                        Layout.leftMargin: 90
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 4
+                                        SidebarPropertyRow {
+                                            label: qsTr("Unit Cell:")
+                                            value: StructureModel.hasUnitCell ? "Yes" : "No"
+                                        }
+                                        Label {
+                                            text: StructureModel.cellParameters
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            Layout.fillWidth: true
+                                            Layout.leftMargin: 90
+                                        }
                                     }
                                 }
                             }
@@ -443,17 +426,19 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 6
 
                                         Label {
                                             text: qsTr("Replicate Unit Cell")
-                                            color: sidebar.textBody
-                                            font.pixelSize: 12
+                                            color: sidebar.textStrong
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
                                         }
 
                                         Item {
@@ -474,7 +459,7 @@ Rectangle {
                                                     Label {
                                                         text: qsTr("X:")
                                                         color: sidebar.textBody
-                                                        font.pixelSize: 11
+                                                        font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
                                                     SidebarTextField {
@@ -490,7 +475,7 @@ Rectangle {
                                                     Label {
                                                         text: qsTr("Y:")
                                                         color: sidebar.textBody
-                                                        font.pixelSize: 11
+                                                        font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
                                                     SidebarTextField {
@@ -506,7 +491,7 @@ Rectangle {
                                                     Label {
                                                         text: qsTr("Z:")
                                                         color: sidebar.textBody
-                                                        font.pixelSize: 11
+                                                        font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
                                                     SidebarTextField {
@@ -551,7 +536,9 @@ Rectangle {
                                 }
                             }
 
+
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     Item {
                                         Layout.fillWidth: true
@@ -579,6 +566,7 @@ Rectangle {
                                 }
                             }
 
+
                             SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
@@ -601,13 +589,13 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("Atom Style"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("Atom Style"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         SidebarComboBox {
                                             Layout.fillWidth: true
                                             model: ["Sphere", "Ball & Stick", "CPK", "Wireframe"]
@@ -618,10 +606,11 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("Color Scheme"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("Color Scheme"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         SidebarComboBox {
                                             Layout.fillWidth: true
                                             model: [qsTr("Jmol"), qsTr("CPK")]
@@ -635,6 +624,7 @@ Rectangle {
                                     }
                                 }
                             }
+
 
                             SidebarBranchRow {
                                 content: Component {
@@ -697,7 +687,7 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
                                 content: Component {
@@ -756,13 +746,13 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("Projection"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("Projection"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         SidebarComboBox {
                                             Layout.fillWidth: true
                                             model: ["Perspective", "Orthographic"]
@@ -778,6 +768,7 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: !(sidebar.viewport ? sidebar.viewport.isPerspective : true)
                                 visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
                                 content: Component {
                                     NumericSliderControl {
@@ -797,11 +788,13 @@ Rectangle {
                                 }
                             }
 
+
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("View Direction"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("View Direction"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         GridLayout {
                                             Layout.fillWidth: true
                                             columns: 2
@@ -825,29 +818,28 @@ Rectangle {
                                 }
                             }
 
-                            SidebarBranchRow {
-                                content: Component {
-                                    SidebarButton {
-                                        text: qsTr("Reset Camera")
-                                        Layout.fillWidth: true
-                                        onClicked: {
-                                            if (sidebar.viewport) {
-                                                sidebar.viewport.resetCamera()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
 
                             SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
-                                    SidebarButton {
-                                        text: qsTr("Fit to View")
-                                        Layout.fillWidth: true
-                                        onClicked: {
-                                            if (sidebar.viewport) {
-                                                sidebar.viewport.fitToView()
+                                    RowLayout {
+                                        spacing: 6
+                                        SidebarButton {
+                                            text: qsTr("Reset Camera")
+                                            Layout.fillWidth: true
+                                            onClicked: {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.resetCamera()
+                                                }
+                                            }
+                                        }
+                                        SidebarButton {
+                                            text: qsTr("Fit to View")
+                                            Layout.fillWidth: true
+                                            onClicked: {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.fitToView()
+                                                }
                                             }
                                         }
                                     }
@@ -865,13 +857,14 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
+                                lastItem: !sidebar.rtSettingsVisible
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("Render Mode"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("Render Mode"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         SidebarComboBox {
                                             Layout.fillWidth: true
                                             model: ["Raster (Fast)", "Ray Tracing (Quality)"]
@@ -887,11 +880,12 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: !sidebar.rtSettingsVisible
                                 visible: sidebar.rtSettingsVisible
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
-                                        Label { text: qsTr("Max RT Samples"); color: sidebar.textBody; font.pixelSize: 11 }
+                                        Label { text: qsTr("Max RT Samples"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
                                         SidebarTextField {
                                             id: maxRTSamplesField
                                             Layout.fillWidth: true
@@ -947,6 +941,7 @@ Rectangle {
                                 }
                             }
 
+
                             SidebarBranchRow {
                                 visible: sidebar.rtSettingsVisible
                                 content: Component {
@@ -963,6 +958,7 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: true
                                 visible: sidebar.rtSettingsVisible
                                 content: Component {
                                     SidebarCheckBox {
@@ -976,6 +972,7 @@ Rectangle {
                                     }
                                 }
                             }
+
 
                             SidebarBranchRow {
                                 content: Component {
@@ -1060,6 +1057,7 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Shininess")
@@ -1078,6 +1076,7 @@ Rectangle {
                                     }
                                 }
                             }
+
 
                             SidebarBranchRow {
                                 content: Component {
@@ -1100,6 +1099,7 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Light elevation")
@@ -1118,6 +1118,7 @@ Rectangle {
                                     }
                                 }
                             }
+
 
                             SidebarBranchRow {
                                 visible: sidebar.rtSettingsVisible
@@ -1141,6 +1142,7 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                lastItem: true
                                 visible: sidebar.rtSettingsVisible
                                 content: Component {
                                     NumericSliderControl {
@@ -1160,6 +1162,7 @@ Rectangle {
                                     }
                                 }
                             }
+
 
                             SidebarBranchRow {
                                 lastItem: true
@@ -1183,13 +1186,13 @@ Rectangle {
 
                     content: Component {
                         ColumnLayout {
-                            spacing: 0
+                            spacing: 8
 
                             SidebarBranchRow {
                                 content: Component {
                                     RGBColorPicker {
                                         id: backgroundColorPicker
-                                        defaultColor: Qt.rgba(230 / 255.0, 230 / 255.0, 230 / 255.0, 1.0)
+                                        defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
                                         sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
                                         onColorApplied: function(c) {
                                             if (sidebar.viewport) {

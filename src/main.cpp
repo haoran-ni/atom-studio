@@ -41,6 +41,11 @@ int main(int argc, char* argv[])
     QApplication::setHighDpiScaleFactorRoundingPolicy(
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
+    // Prevent Qt from importing the OS dark/light mode palette so the UI
+    // always renders with the Fusion light theme regardless of system appearance.
+    // Must be called before QApplication is constructed.
+    QApplication::setDesktopSettingsAware(false);
+
     // Create Qt application (QApplication instead of QGuiApplication for QFileDialog support)
     QApplication app(argc, argv);
 

@@ -190,7 +190,7 @@ private:
     Qt::MouseButtons m_pressedButtons;
 
     bool m_showBonds = true;
-    QColor m_backgroundColor = QColor(230, 230, 230);
+    QColor m_backgroundColor = QColor(255, 255, 255);
     bool m_showUnitCell = true;
     float m_unitCellThickness = 0.06f;
     QColor m_unitCellColor = QColor(0, 0, 0);

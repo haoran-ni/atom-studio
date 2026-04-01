@@ -11,19 +11,13 @@ ColumnLayout {
     signal colorApplied(color newColor)
 
     Layout.fillWidth: true
-    spacing: 8
-
-    Label {
-        text: qsTr("RGB Color")
-        color: "#cccccc"
-        font.pixelSize: 11
-    }
+    spacing: 6
 
     Rectangle {
         Layout.fillWidth: true
-        height: 24
-        radius: 2
-        border.color: "#3c3c3c"
+        height: 26
+        radius: 8
+        border.color: "#c7c9d1"
         border.width: 1
         color: Qt.rgba(
             redControl.currentValue / 255.0,
@@ -36,8 +30,8 @@ ColumnLayout {
     NumericSliderControl {
         id: redControl
         title: qsTr("R")
-        titleColor: "#ff7777"
-        titlePixelSize: 10
+        titleColor: "#b04848"
+        titlePixelSize: 11
         integer: true
         from: 0
         to: 255
@@ -57,8 +51,8 @@ ColumnLayout {
     NumericSliderControl {
         id: greenControl
         title: qsTr("G")
-        titleColor: "#77ff77"
-        titlePixelSize: 10
+        titleColor: "#3d8f5a"
+        titlePixelSize: 11
         integer: true
         from: 0
         to: 255
@@ -78,8 +72,8 @@ ColumnLayout {
     NumericSliderControl {
         id: blueControl
         title: qsTr("B")
-        titleColor: "#7777ff"
-        titlePixelSize: 10
+        titleColor: "#4068aa"
+        titlePixelSize: 11
         integer: true
         from: 0
         to: 255

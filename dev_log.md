@@ -4,6 +4,51 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-01: Sidebar UI Polish — Icon Chevrons, Bold Titles, Color Hierarchy, White Background Default
+
+### Summary
+Continued sidebar UI refinement with four targeted changes: replaced Unicode glyph indicators on ComboBox controls with proper SVG chevron assets; applied `Font.DemiBold` weight to all option, slider, and checkbox title labels for clearer visual hierarchy; corrected the tab/button color hierarchy so expanded tab headers are visually darker than the option blocks beneath them; and changed the default viewport background color from light gray (230, 230, 230) to pure white (255, 255, 255).
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | SVG chevron indicator on `SidebarComboBox`; bold titles on option labels and `SidebarCheckBox`; corrected `tabFill`/`buttonFill` color hierarchy; `buttonFill` darkened; ComboBox dropdown highlight aligned to `buttonFill`; QML background `defaultColor` set to white |
+| `src/ui/qml/NumericSliderControl.qml` | Added `font.weight: Font.DemiBold` to slider title label |
+| `src/render/common/RenderSettings.h` | Default `backgroundColor` changed from `QColor(230,230,230)` to `QColor(255,255,255)` |
+| `src/ui/components/MetalViewport.h` | Default `m_backgroundColor` changed to `QColor(255,255,255)` |
+| `src/ui/components/OpenGLViewport.h` | Default `m_backgroundColor` changed to `QColor(255,255,255)` |
+
+### Architecture Decisions
+
+#### 1. SVG Chevrons for ComboBox Indicator
+- The previous `indicator` was a `Text` item using Unicode characters (`›` and `⌃`) with different `font.pixelSize` values for the two states, producing inconsistent sizing
+- Replaced with an `Image` item sourcing `qrc:/icons/chevron-right.svg` (closed) and `qrc:/icons/chevron-down.svg` (open) at a fixed 16×16 size
+- Consistent with the existing `SidebarSection` header which already used these same SVG assets
+
+#### 2. `Font.DemiBold` Applied at the Component Level
+- Option titles in Sidebar.qml (above ComboBoxes and for grouped control blocks) were plain `Label` items with no explicit weight
+- `SidebarCheckBox` and `NumericSliderControl` each define their own text rendering internally
+- Bold was applied at each definition site rather than via a shared property so the weight is stable regardless of how the components are used
+
+#### 3. Color Hierarchy: Tab Header Darker Than Option Blocks
+- Original palette had `tabFill: #e2e3e8` (lighter) and `buttonFill: #d8dae0` (darker), which meant option blocks appeared more prominent than the section header they belong to
+- Fixed by swapping the semantic roles: `tabFill` → `#d8dae0` (darker, for expanded section headers), `buttonFill` → `#e2e3e8` then further refined to `#e2e3e8` with the reset button already at that value
+- ComboBox dropdown item highlight was also moved from `tabFill` to `buttonFill` so hovered items match the surrounding control tone rather than the heavier tab bar tone
+- Final values: `tabFill: #d8dae0`, `buttonFill: #e2e3e8`; reset button in `NumericSliderControl` was already `#e2e3e8` and now matches without a code change
+
+#### 4. White Default Background Propagated to All Initialization Sites
+- The default background was `QColor(230, 230, 230)` defined independently in three places: `RenderSettings`, `MetalViewport`, and `OpenGLViewport`
+- The QML `defaultColor` on the `RGBColorPicker` in the Background section was a fourth independent copy
+- All four were updated together so the "Reset to Default" button, the initial render on first launch, and the QML picker's reset reference all agree on pure white
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+---
+
 ## 2026-03-31: Sidebar UI Restyle — Bright Neutral Theme, Icon Assets, and Tunable-Parameter Hierarchy
 
 ### Summary
