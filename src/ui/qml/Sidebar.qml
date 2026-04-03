@@ -317,14 +317,7 @@ Rectangle {
                 anchors.fill: parent
                 radius: 14
                 color: sidebar.tabFill
-                opacity: section.expansion
-
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 140
-                        easing.type: Easing.OutCubic
-                    }
-                }
+                opacity: section.expanded ? 1.0 : 0.0
             }
 
             RowLayout {
