@@ -154,7 +154,8 @@ bool buildUnitCellInstances(const data::Structure* structure, UnitCellInstanceDa
     for (int i = 0; i < kUnitCellEdgeCount; ++i) {
         outData.edges[i].start = corners[edgeIndices[i * 2 + 0]];
         outData.edges[i].end = corners[edgeIndices[i * 2 + 1]];
-        outData.edges[i].color = white;
+        outData.edges[i].startColor = white;
+        outData.edges[i].endColor = white;
     }
 
     for (int i = 0; i < kUnitCellJointCount; ++i) {

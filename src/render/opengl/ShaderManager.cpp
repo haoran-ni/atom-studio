@@ -148,23 +148,39 @@ const char* bondVertexShader = R"(
 layout(location = 0) in vec3 aPosition;    // Cylinder vertex
 layout(location = 1) in vec3 aStart;       // Bond start position (instanced)
 layout(location = 2) in vec3 aEnd;         // Bond end position (instanced)
-layout(location = 3) in vec4 aColor;       // Bond color (instanced)
+layout(location = 3) in vec4 aStartColor;  // Bond start color (instanced)
+layout(location = 4) in vec4 aEndColor;    // Bond end color (instanced)
+layout(location = 5) in vec2 aRadii;       // Bond start/end radii (instanced)
 
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 uniform float uBondRadius;
+uniform float uAtomScale;
 
 out vec3 vNormal;
 out vec3 vViewPos;
-out vec4 vColor;
+out vec4 vStartColor;
+out vec4 vEndColor;
+out float vBondT;
+out float vSplitT;
 
 void main() {
-    vColor = aColor;
+    vStartColor = aStartColor;
+    vEndColor = aEndColor;
+    vBondT = aPosition.z;
 
     // Calculate bond direction and length
     vec3 bondDir = aEnd - aStart;
     float bondLength = length(bondDir);
-    bondDir = normalize(bondDir);
+    bondDir = (bondLength > 1e-6) ? (bondDir / bondLength) : vec3(0.0, 0.0, 1.0);
+    if (bondLength > 1e-6) {
+        float scaledA = aRadii.x * uAtomScale;
+        float scaledB = aRadii.y * uAtomScale;
+        float splitDistance = 0.5 * (bondLength + scaledA - scaledB);
+        vSplitT = clamp(splitDistance / bondLength, 0.0, 1.0);
+    } else {
+        vSplitT = 0.5;
+    }
 
     // Create orthonormal basis for cylinder
     vec3 up = abs(bondDir.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
@@ -195,7 +211,10 @@ const char* bondFragmentShader = R"(
 
 in vec3 vNormal;
 in vec3 vViewPos;
-in vec4 vColor;
+in vec4 vStartColor;
+in vec4 vEndColor;
+in float vBondT;
+in float vSplitT;
 
 uniform mat4 uViewMatrix;
 uniform vec3 uLightDir;
@@ -208,16 +227,17 @@ out vec4 fragColor;
 
 void main() {
     vec3 normal = normalize(vNormal);
+    vec4 bondColor = (vBondT < vSplitT) ? vStartColor : vEndColor;
     // Light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
     vec3 viewDir = normalize(-vViewPos);
 
     // Ambient
-    vec3 ambient = uAmbient * vColor.rgb;
+    vec3 ambient = uAmbient * bondColor.rgb;
 
     // Diffuse
     float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = uDiffuse * diff * vColor.rgb;
+    vec3 diffuse = uDiffuse * diff * bondColor.rgb;
 
     // Specular
     vec3 halfDir = normalize(lightDir + viewDir);
@@ -225,7 +245,7 @@ void main() {
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, vColor.a);
+    fragColor = vec4(result, bondColor.a);
 }
 )";
 

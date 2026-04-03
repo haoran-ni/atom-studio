@@ -66,7 +66,9 @@ private:
     // Instance data
     QOpenGLBuffer m_instanceStartBuffer;  // vec3: start position
     QOpenGLBuffer m_instanceEndBuffer;    // vec3: end position
-    QOpenGLBuffer m_instanceColorBuffer;  // vec4: rgba
+    QOpenGLBuffer m_instanceStartColorBuffer;  // vec4: rgba
+    QOpenGLBuffer m_instanceEndColorBuffer;    // vec4: rgba
+    QOpenGLBuffer m_instanceRadiusBuffer;      // vec2: start/end radii
 
     size_t m_bondCount = 0;
     bool m_initialized = false;

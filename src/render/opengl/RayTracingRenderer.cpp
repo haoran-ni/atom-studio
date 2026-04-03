@@ -1,9 +1,9 @@
 #include "RayTracingRenderer.h"
+#include "../common/BondRenderData.h"
 #include "../common/Camera.h"
 #include "../common/BVH.h"
 #include "../common/RenderStateHash.h"
 #include "../../data/Structure.h"
-#include "../../data/BondList.h"
 #include <QDebug>
 #include <cassert>
 
@@ -66,9 +66,10 @@ uniform vec3 uBackgroundColor;
 uniform uint uFrameCount;
 
 // Bond data (texture buffer objects)
-uniform samplerBuffer uBondStartPositions; // vec4(x, y, z, 0)
-uniform samplerBuffer uBondEndPositions;   // vec4(x, y, z, 0)
-uniform samplerBuffer uBondColors;         // vec4(r, g, b, a)
+uniform samplerBuffer uBondStartPositions; // vec4(x, y, z, startRadius)
+uniform samplerBuffer uBondEndPositions;   // vec4(x, y, z, endRadius)
+uniform samplerBuffer uBondStartColors;    // vec4(r, g, b, a)
+uniform samplerBuffer uBondEndColors;      // vec4(r, g, b, a)
 uniform int uBondCount;
 uniform float uBondRadius;
 uniform bool uShowBonds;
@@ -392,13 +393,25 @@ void main() {
     } else {
         // Cylinder hit
         int bondIdx = hitIndex - uAtomCount;
-        vec4 bondColor = texelFetch(uBondColors, bondIdx);
-        vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
-        vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
+        vec4 startColor = texelFetch(uBondStartColors, bondIdx);
+        vec4 endColor = texelFetch(uBondEndColors, bondIdx);
+        vec4 startPos = texelFetch(uBondStartPositions, bondIdx);
+        vec4 endPos = texelFetch(uBondEndPositions, bondIdx);
+        vec3 pa = startPos.xyz;
+        vec3 pb = endPos.xyz;
         vec3 ba = pb - pa;
-        float h = dot(hitPos - pa, ba) / dot(ba, ba);
+        float baLen2 = dot(ba, ba);
+        float h = (baLen2 > 1e-8) ? (dot(hitPos - pa, ba) / baLen2) : 0.0;
         normal = normalize(hitPos - pa - h * ba);
-        surfaceColor = bondColor.rgb;
+        float splitT = 0.5;
+        if (baLen2 > 1e-8) {
+            float bondLength = sqrt(baLen2);
+            float scaledA = startPos.w * uAtomScale;
+            float scaledB = endPos.w * uAtomScale;
+            float splitDistance = 0.5 * (bondLength + scaledA - scaledB);
+            splitT = clamp(splitDistance / bondLength, 0.0, 1.0);
+        }
+        surfaceColor = (h < splitT ? startColor : endColor).rgb;
         biasRadius = uBondRadius;
     }
 
@@ -533,8 +546,10 @@ bool RayTracingRenderer::initialize() {
     glGenTextures(1, &m_bondStartTex);
     glGenBuffers(1, &m_bondEndBuf);
     glGenTextures(1, &m_bondEndTex);
-    glGenBuffers(1, &m_bondColorBuf);
-    glGenTextures(1, &m_bondColorTex);
+    glGenBuffers(1, &m_bondStartColorBuf);
+    glGenTextures(1, &m_bondStartColorTex);
+    glGenBuffers(1, &m_bondEndColorBuf);
+    glGenTextures(1, &m_bondEndColorTex);
 
     m_initialized = true;
     return true;
@@ -568,8 +583,10 @@ void RayTracingRenderer::cleanup() {
     if (m_bondStartTex) { glDeleteTextures(1, &m_bondStartTex); m_bondStartTex = 0; }
     if (m_bondEndBuf) { glDeleteBuffers(1, &m_bondEndBuf); m_bondEndBuf = 0; }
     if (m_bondEndTex) { glDeleteTextures(1, &m_bondEndTex); m_bondEndTex = 0; }
-    if (m_bondColorBuf) { glDeleteBuffers(1, &m_bondColorBuf); m_bondColorBuf = 0; }
-    if (m_bondColorTex) { glDeleteTextures(1, &m_bondColorTex); m_bondColorTex = 0; }
+    if (m_bondStartColorBuf) { glDeleteBuffers(1, &m_bondStartColorBuf); m_bondStartColorBuf = 0; }
+    if (m_bondStartColorTex) { glDeleteTextures(1, &m_bondStartColorTex); m_bondStartColorTex = 0; }
+    if (m_bondEndColorBuf) { glDeleteBuffers(1, &m_bondEndColorBuf); m_bondEndColorBuf = 0; }
+    if (m_bondEndColorTex) { glDeleteTextures(1, &m_bondEndColorTex); m_bondEndColorTex = 0; }
 
     m_structure = nullptr;
     m_bvhNodeCount = 0;
@@ -813,80 +830,45 @@ void RayTracingRenderer::uploadSceneData() {
 
     // ── Bond TBOs ──────────────────────────────────────────────
 
-    const auto& bonds = m_structure->bonds();
-    m_bondCount = static_cast<int>(bonds.bondCount());
+    m_bondCount = static_cast<int>(bondRenderSegmentCount(m_structure));
 
     // Temporary arrays for bond positions (also used for BVH)
-    std::vector<float> bondStartData;
-    std::vector<float> bondEndData;
+    PackedBondRenderData packedBonds;
 
     if (m_bondCount > 0) {
-        bondStartData.resize(static_cast<size_t>(m_bondCount) * 4);
-        bondEndData.resize(static_cast<size_t>(m_bondCount) * 4);
-        std::vector<float> bondColorData(static_cast<size_t>(m_bondCount) * 4);
-
-        const float* px = m_structure->positionsX();
-        const float* py = m_structure->positionsY();
-        const float* pz = m_structure->positionsZ();
-        const float* cr = m_structure->colorsR();
-        const float* cg = m_structure->colorsG();
-        const float* cb = m_structure->colorsB();
-        const auto& lattice = m_structure->lattice();
-        const auto& mat = lattice.matrix;
-
-        for (int i = 0; i < m_bondCount; ++i) {
-            const auto& bond = bonds.bond(static_cast<size_t>(i));
-            uint32_t a1 = bond.atomIndex1;
-            uint32_t a2 = bond.atomIndex2;
-            size_t idx = static_cast<size_t>(i);
-
-            bondStartData[idx * 4 + 0] = px[a1];
-            bondStartData[idx * 4 + 1] = py[a1];
-            bondStartData[idx * 4 + 2] = pz[a1];
-            bondStartData[idx * 4 + 3] = 0.0f;
-
-            float ex = px[a2];
-            float ey = py[a2];
-            float ez = pz[a2];
-            if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
-                ex += static_cast<float>(bond.imageX * mat[0][0] + bond.imageY * mat[1][0] + bond.imageZ * mat[2][0]);
-                ey += static_cast<float>(bond.imageX * mat[0][1] + bond.imageY * mat[1][1] + bond.imageZ * mat[2][1]);
-                ez += static_cast<float>(bond.imageX * mat[0][2] + bond.imageY * mat[1][2] + bond.imageZ * mat[2][2]);
-            }
-            bondEndData[idx * 4 + 0] = ex;
-            bondEndData[idx * 4 + 1] = ey;
-            bondEndData[idx * 4 + 2] = ez;
-            bondEndData[idx * 4 + 3] = 0.0f;
-
-            bondColorData[idx * 4 + 0] = (cr[a1] + cr[a2]) * 0.5f;
-            bondColorData[idx * 4 + 1] = (cg[a1] + cg[a2]) * 0.5f;
-            bondColorData[idx * 4 + 2] = (cb[a1] + cb[a2]) * 0.5f;
-            bondColorData[idx * 4 + 3] = 1.0f;
-        }
+        packedBonds = packBondRenderData(m_structure, BondPositionPacking::XYZW4);
 
         glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartBuf);
         glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(bondStartData.size() * sizeof(float)),
-                     bondStartData.data(), GL_STATIC_DRAW);
+                     static_cast<GLsizeiptr>(packedBonds.startPositions.size() * sizeof(float)),
+                     packedBonds.startPositions.data(), GL_STATIC_DRAW);
         glActiveTexture(GL_TEXTURE6);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondStartTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondStartBuf);
 
         glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndBuf);
         glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(bondEndData.size() * sizeof(float)),
-                     bondEndData.data(), GL_STATIC_DRAW);
+                     static_cast<GLsizeiptr>(packedBonds.endPositions.size() * sizeof(float)),
+                     packedBonds.endPositions.data(), GL_STATIC_DRAW);
         glActiveTexture(GL_TEXTURE7);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondEndTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndBuf);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondColorBuf);
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartColorBuf);
         glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(bondColorData.size() * sizeof(float)),
-                     bondColorData.data(), GL_STATIC_DRAW);
+                     static_cast<GLsizeiptr>(packedBonds.startColors.size() * sizeof(float)),
+                     packedBonds.startColors.data(), GL_STATIC_DRAW);
         glActiveTexture(GL_TEXTURE8);
-        glBindTexture(GL_TEXTURE_BUFFER, m_bondColorTex);
-        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondColorBuf);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondStartColorTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondStartColorBuf);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndColorBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(packedBonds.endColors.size() * sizeof(float)),
+                     packedBonds.endColors.data(), GL_STATIC_DRAW);
+        glActiveTexture(GL_TEXTURE9);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondEndColorTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndColorBuf);
     }
 
     // ── Unified BVH (atoms + bonds) ───────────────────────────
@@ -912,12 +894,12 @@ void RayTracingRenderer::uploadSceneData() {
     // Bond bounds (capsule AABB; maxRadius = 0 since bondRadius is baked in)
     float bondR = m_settings.bondRadius;
     for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
-        float sx = bondStartData[i * 4 + 0];
-        float sy = bondStartData[i * 4 + 1];
-        float sz = bondStartData[i * 4 + 2];
-        float ex = bondEndData[i * 4 + 0];
-        float ey = bondEndData[i * 4 + 1];
-        float ez = bondEndData[i * 4 + 2];
+        float sx = packedBonds.startPositions[i * 4 + 0];
+        float sy = packedBonds.startPositions[i * 4 + 1];
+        float sz = packedBonds.startPositions[i * 4 + 2];
+        float ex = packedBonds.endPositions[i * 4 + 0];
+        float ey = packedBonds.endPositions[i * 4 + 1];
+        float ez = packedBonds.endPositions[i * 4 + 2];
         size_t pi = static_cast<size_t>(m_atomCount) + i;
         primBounds[pi] = {
             std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
@@ -1047,8 +1029,12 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uBondEndPositions", 7);
 
     glActiveTexture(GL_TEXTURE8);
-    glBindTexture(GL_TEXTURE_BUFFER, m_bondColorTex);
-    m_rtShader->setUniformValue("uBondColors", 8);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondStartColorTex);
+    m_rtShader->setUniformValue("uBondStartColors", 8);
+
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondEndColorTex);
+    m_rtShader->setUniformValue("uBondEndColors", 9);
 
     m_rtShader->setUniformValue("uAtomCount", m_atomCount);
     m_rtShader->setUniformValue("uBondCount", m_bondCount);

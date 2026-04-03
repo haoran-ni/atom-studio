@@ -306,14 +306,16 @@ void MetalViewportAxesRenderer::render(void* encoderPtr,
             BondInstance& inst = cylinderInstances[static_cast<size_t>(cylinderCount++)];
             inst.start = origin;
             inst.end = shaftEnd;
-            inst.color = axis.color;
+            inst.startColor = axis.color;
+            inst.endColor = axis.color;
         }
 
         if (headLen > 0.0f && coneCount < static_cast<int>(coneInstances.size())) {
             BondInstance& inst = coneInstances[static_cast<size_t>(coneCount++)];
             inst.start = shaftEnd;
             inst.end = origin + sdir * len;
-            inst.color = axis.color;
+            inst.startColor = axis.color;
+            inst.endColor = axis.color;
         }
     }
 

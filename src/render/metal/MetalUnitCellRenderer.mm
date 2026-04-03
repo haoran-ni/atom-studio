@@ -142,7 +142,8 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
     // Keep colors dynamic so UI RGB sliders update without geometry rebuild.
     BondInstance* edgeData = static_cast<BondInstance*>([m_impl->edgeInstanceBuffer contents]);
     for (int i = 0; i < m_edgeCount; ++i) {
-        edgeData[i].color = unitCellColor;
+        edgeData[i].startColor = unitCellColor;
+        edgeData[i].endColor = unitCellColor;
     }
 
     SphereInstance* jointData = static_cast<SphereInstance*>([m_impl->jointInstanceBuffer contents]);

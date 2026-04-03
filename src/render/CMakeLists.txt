@@ -5,6 +5,8 @@
 # Common sources (always built, backend-agnostic)
 # ---------------------------------------------------------------------------
 set(RENDER_COMMON_SOURCES
+    common/BondRenderData.cpp
+    common/BondRenderData.h
     common/BVH.cpp
     common/BVH.h
     common/Camera.cpp

@@ -41,7 +41,11 @@ struct BondInstance {
     float  _pad0;
     float3 end;
     float  _pad1;
-    float4 color;
+    float4 startColor;
+    float4 endColor;
+    float  startRadius;
+    float  endRadius;
+    float2 _pad2;
 };
 
 struct LineVertex {
@@ -234,7 +238,10 @@ struct BondVertexOut {
     float4 position [[position]];
     float3 normal;
     float3 viewPos;
-    float4 color;
+    float4 startColor;
+    float4 endColor;
+    float  bondT;
+    float  splitT;
 };
 
 vertex BondVertexOut bond_vertex(
@@ -247,11 +254,20 @@ vertex BondVertexOut bond_vertex(
     BondVertexOut out;
 
     BondInstance bond = instances[iid];
-    out.color = bond.color;
+    out.startColor = bond.startColor;
+    out.endColor = bond.endColor;
 
     float3 bondDir = bond.end - bond.start;
     float bondLength = length(bondDir);
-    bondDir = normalize(bondDir);
+    bondDir = (bondLength > 1e-6f) ? (bondDir / bondLength) : float3(0.0f, 0.0f, 1.0f);
+    if (bondLength > 1e-6f) {
+        float scaledA = bond.startRadius * scene.atomScale;
+        float scaledB = bond.endRadius * scene.atomScale;
+        float splitDistance = 0.5f * (bondLength + scaledA - scaledB);
+        out.splitT = clamp(splitDistance / bondLength, 0.0f, 1.0f);
+    } else {
+        out.splitT = 0.5f;
+    }
 
     // Orthonormal basis
     float3 up = abs(bondDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
@@ -259,6 +275,7 @@ vertex BondVertexOut bond_vertex(
     up = cross(bondDir, right);
 
     float3 vert = cylinderVertices[vid];
+    out.bondT = vert.z;
     float3 localPos = right * vert.x * scene.bondRadius +
                       up * vert.y * scene.bondRadius +
                       bondDir * vert.z * bondLength;
@@ -281,18 +298,19 @@ fragment float4 bond_fragment(
     constant SceneUniforms& scene [[buffer(0)]])
 {
     float3 normal = normalize(in.normal);
+    float4 bondColor = (in.bondT < in.splitT) ? in.startColor : in.endColor;
     // Light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
     float3 viewDir = normalize(-in.viewPos);
 
-    float3 ambient = scene.ambient * in.color.rgb;
+    float3 ambient = scene.ambient * bondColor.rgb;
     float diff = max(dot(normal, lightDir), 0.0);
-    float3 diffuse = scene.diffuse * diff * in.color.rgb;
+    float3 diffuse = scene.diffuse * diff * bondColor.rgb;
     float3 halfDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    return float4(ambient + diffuse + specular, in.color.a);
+    return float4(ambient + diffuse + specular, bondColor.a);
 }
 
 // -------------------------------------------------------
@@ -314,7 +332,7 @@ vertex AxesOverlayVertexOut axes_overlay_vertex(
     AxesOverlayVertexOut out;
 
     BondInstance inst = instances[iid];
-    out.color = inst.color;
+    out.color = inst.startColor;
 
     float3 axisVec = inst.end - inst.start;
     float axisLength = length(axisVec);
@@ -795,7 +813,8 @@ fragment float4 rt_fragment(
     device const uint* bvhPrimIndices [[buffer(6)]],
     device const float4* bondStartPositions [[buffer(7)]],
     device const float4* bondEndPositions [[buffer(8)]],
-    device const float4* bondColors [[buffer(9)]])
+    device const float4* bondStartColors [[buffer(9)]],
+    device const float4* bondEndColors [[buffer(10)]])
 {
     // Initialize RNG
     uint rng_state = pcg(
@@ -856,13 +875,25 @@ fragment float4 rt_fragment(
     } else {
         // Cylinder hit
         int bondIdx = hitIndex - rt.atomCount;
-        float4 bondColor = bondColors[bondIdx];
-        float3 pa = bondStartPositions[bondIdx].xyz;
-        float3 pb = bondEndPositions[bondIdx].xyz;
+        float4 startColor = bondStartColors[bondIdx];
+        float4 endColor = bondEndColors[bondIdx];
+        float4 startPos = bondStartPositions[bondIdx];
+        float4 endPos = bondEndPositions[bondIdx];
+        float3 pa = startPos.xyz;
+        float3 pb = endPos.xyz;
         float3 ba = pb - pa;
-        float h = dot(hitPos - pa, ba) / dot(ba, ba);
+        float baLen2 = dot(ba, ba);
+        float h = (baLen2 > 1e-8f) ? (dot(hitPos - pa, ba) / baLen2) : 0.0f;
         normal = normalize(hitPos - pa - h * ba);
-        surfaceColor = bondColor.rgb;
+        float splitT = 0.5f;
+        if (baLen2 > 1e-8f) {
+            float bondLength = sqrt(baLen2);
+            float scaledA = startPos.w * rt.atomScale;
+            float scaledB = endPos.w * rt.atomScale;
+            float splitDistance = 0.5f * (bondLength + scaledA - scaledB);
+            splitT = clamp(splitDistance / bondLength, 0.0f, 1.0f);
+        }
+        surfaceColor = (h < splitT ? startColor : endColor).rgb;
         biasRadius = rt.bondRadius;
     }
 

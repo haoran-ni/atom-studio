@@ -4,6 +4,74 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-03: Bond Rendering Cleanup and Radius-Aware Bi-Color Split
+
+### Summary
+Reworked bond coloring so each bond is rendered as two atom-colored halves instead of a single averaged color, then refined the split point to account for the connected atom sphere radii. The split is no longer fixed at the geometric midpoint: it is now computed from the bond length and the two endpoint radii using the scaled radii currently active in the viewport, so changing the atom radius control also changes the bond color transition in both raster and ray-traced rendering. In the same session, duplicated bond CPU-preparation logic was extracted into a shared render helper so OpenGL and Metal no longer independently rebuild periodic bond endpoints and per-end colors.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/common/BondRenderData.h` | Added shared bond render-data types for resolved bond endpoints, per-end colors, per-end radii, and packed upload buffers |
+| `src/render/common/BondRenderData.cpp` | Centralized bond endpoint expansion across periodic images and packing of start/end positions, radii, and colors for renderer upload |
+| `src/render/CMakeLists.txt` | Added the shared bond render-data helper to the render library build |
+| `src/render/opengl/BondRenderer.h` | Added an instanced radius buffer for raster bond rendering |
+| `src/render/opengl/BondRenderer.cpp` | Switched bond upload to shared packed bond data; uploads per-end colors and per-end radii; passes `uAtomScale` to the bond shader |
+| `src/render/opengl/ShaderManager.cpp` | Bond raster shader now uses per-end colors and computes a radius-aware split point instead of a hardcoded midpoint |
+| `src/render/opengl/RayTracingRenderer.h` | Documented RT bond endpoint buffers as carrying radii in the `w` channel |
+| `src/render/opengl/RayTracingRenderer.cpp` | RT bond upload now uses shared packed bond data; ray-traced bond shading computes the split from bond length plus scaled endpoint radii |
+| `src/render/metal/MetalTypes.h` | Extended `BondInstance` with per-end radii for raster bond rendering |
+| `src/render/metal/MetalBondRenderer.mm` | Switched Metal bond upload to the shared bond render-data helper and fills per-end radii/colors |
+| `src/render/metal/MetalShaderLibrary.mm` | Metal bond raster and RT shaders now compute a radius-aware color split from bond length and scaled endpoint radii |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Metal RT bond upload now uses shared packed bond data; endpoint buffers carry radii in `w` |
+| `src/render/metal/MetalGizmoRenderer.mm` | Updated reused `BondInstance` setup to remain valid after the bond-instance layout grew per-end radii |
+| `src/render/metal/MetalViewportAxesRenderer.mm` | Same `BondInstance` compatibility update for viewport axes overlay segments |
+| `src/render/metal/MetalUnitCellShared.cpp` | Same `BondInstance` compatibility update for unit-cell edge instances |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Same `BondInstance` compatibility update for dynamic unit-cell edge recoloring |
+
+### Architecture Decisions
+
+#### 1. Bond Color Split Is Computed in Shader Space, Not Baked on the CPU
+- The final split depends on the live atom radius control (`atomScale`), so baking the split point into bond instance data would require a bond-data rebuild every time the atom size slider changes
+- Instead, the CPU uploads stable per-end bond geometry data: start/end positions, start/end colors, and start/end unscaled atom radii
+- Raster and RT shaders compute `splitDistance = (L + scaledA - scaledB) / 2` at draw time, which keeps the split responsive to runtime atom scale changes
+
+#### 2. Shared Bond CPU Preparation Lives in `src/render/common/`
+- OpenGL raster, OpenGL RT, Metal raster, and Metal RT were all independently walking the bond list, resolving periodic images, and extracting per-end color data
+- That duplication is now centralized in `BondRenderData`, which produces a canonical resolved segment representation and packed arrays suited for backend upload
+- Backend code still owns the API-specific upload step, but no longer owns the chemistry/structure-to-segment expansion logic
+
+#### 3. RT Reuses Existing Position Buffer Layout
+- The RT bond endpoint buffers were already `vec4` / `float4`; previously the `w` lane was unused
+- Rather than add extra RT buffers just for radii, the per-end unscaled radius is now stored in `bondStartPositions.w` and `bondEndPositions.w`
+- This keeps the RT interface compact and avoids unnecessary additional bindings
+
+#### 4. `BondInstance` Is Functionally a Generic Segment Payload
+- Metal’s `BondInstance` is reused by actual chemical bonds, the rotation gizmo, viewport axes, and unit-cell edge rendering
+- The struct was extended with per-end radii because it is the generic “oriented segment” payload used by the bond pipeline
+- Non-bond uses retain their current appearance because their start/end radii and colors are initialized compatibly
+
+### Radius-Aware Bond Split Rule
+- Let the resolved bond length be `L`
+- Let the two atom radii after applying the atom scale control be `A` and `B`
+- The split point is placed at distance `(L + A - B) / 2` from atom A and `(L + B - A) / 2` from atom B
+- In shader form, this is converted to `splitT = clamp(((L + A - B) / 2) / L, 0, 1)` when `L > 0`, with a `0.5` fallback for degenerate bonds
+
+### Build Commands
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+- Built successfully after the initial bi-colored bond implementation across OpenGL and Metal raster/RT paths
+- Built successfully again after extracting shared bond CPU preparation into `BondRenderData`
+- Built successfully after adding the radius-aware split rule and per-end radius payloads
+- Confirmed `RenderStateHash` already includes `atomScale`, so RT accumulation should invalidate correctly when atom radii change
+- Did not perform a final manual viewport visual verification in this session; runtime inspection of the bond split behavior remains recommended
+
+---
+
 ## 2026-04-01: Export Images Feature — Background Alpha, Sidebar Files Section, and Image Save Pipeline
 
 ### Summary

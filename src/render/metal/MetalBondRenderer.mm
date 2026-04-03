@@ -2,8 +2,8 @@
 #include "MetalBondRenderer.h"
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
+#include "../common/BondRenderData.h"
 #include "../../data/Structure.h"
-#include "../../data/BondList.h"
 #include <QDebug>
 #include <vector>
 #include <cmath>
@@ -110,42 +110,18 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
         return;
     }
 
-    const auto& bonds = structure->bonds();
-    m_bondCount = bonds.bondCount();
+    std::vector<BondRenderSegment> segments = collectBondRenderSegments(structure);
+    m_bondCount = segments.size();
 
     std::vector<BondInstance> instances(m_bondCount);
-    const float* px = structure->positionsX();
-    const float* py = structure->positionsY();
-    const float* pz = structure->positionsZ();
-    const float* cr = structure->colorsR();
-    const float* cg = structure->colorsG();
-    const float* cb = structure->colorsB();
-    const auto& lattice = structure->lattice();
-    const auto& m = lattice.matrix;
-
     for (size_t i = 0; i < m_bondCount; ++i) {
-        const auto& bond = bonds.bond(i);
-        uint32_t a1 = bond.atomIndex1;
-        uint32_t a2 = bond.atomIndex2;
-
-        // Apply periodic image shift to atom j's position
-        float ex = px[a2];
-        float ey = py[a2];
-        float ez = pz[a2];
-        if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
-            ex += static_cast<float>(bond.imageX * m[0][0] + bond.imageY * m[1][0] + bond.imageZ * m[2][0]);
-            ey += static_cast<float>(bond.imageX * m[0][1] + bond.imageY * m[1][1] + bond.imageZ * m[2][1]);
-            ez += static_cast<float>(bond.imageX * m[0][2] + bond.imageY * m[1][2] + bond.imageZ * m[2][2]);
-        }
-
-        instances[i].start = simd_make_float3(px[a1], py[a1], pz[a1]);
-        instances[i].end   = simd_make_float3(ex, ey, ez);
-        instances[i].color = simd_make_float4(
-            (cr[a1] + cr[a2]) * 0.5f,
-            (cg[a1] + cg[a2]) * 0.5f,
-            (cb[a1] + cb[a2]) * 0.5f,
-            1.0f
-        );
+        const BondRenderSegment& segment = segments[i];
+        instances[i].start = simd_make_float3(segment.startX, segment.startY, segment.startZ);
+        instances[i].end   = simd_make_float3(segment.endX, segment.endY, segment.endZ);
+        instances[i].startColor = simd_make_float4(segment.startColorR, segment.startColorG, segment.startColorB, segment.startColorA);
+        instances[i].endColor = simd_make_float4(segment.endColorR, segment.endColorG, segment.endColorB, segment.endColorA);
+        instances[i].startRadius = segment.startRadius;
+        instances[i].endRadius = segment.endRadius;
     }
 
     NSUInteger size = m_bondCount * sizeof(BondInstance);

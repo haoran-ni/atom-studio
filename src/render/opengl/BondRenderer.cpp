@@ -1,9 +1,9 @@
 #include "BondRenderer.h"
 #include "ShaderManager.h"
+#include "../common/BondRenderData.h"
 #include "../common/Camera.h"
 #include "../common/RenderSettings.h"
 #include "../../data/Structure.h"
-#include "../../data/BondList.h"
 
 #include <QOpenGLShaderProgram>
 #include <QDebug>
@@ -16,7 +16,9 @@ BondRenderer::BondRenderer()
     , m_cylinderIBO(QOpenGLBuffer::IndexBuffer)
     , m_instanceStartBuffer(QOpenGLBuffer::VertexBuffer)
     , m_instanceEndBuffer(QOpenGLBuffer::VertexBuffer)
-    , m_instanceColorBuffer(QOpenGLBuffer::VertexBuffer)
+    , m_instanceStartColorBuffer(QOpenGLBuffer::VertexBuffer)
+    , m_instanceEndColorBuffer(QOpenGLBuffer::VertexBuffer)
+    , m_instanceRadiusBuffer(QOpenGLBuffer::VertexBuffer)
 {
 }
 
@@ -42,7 +44,8 @@ bool BondRenderer::initialize(ShaderManager* shaderManager) {
 
     if (!m_cylinderVBO.create() || !m_cylinderIBO.create() ||
         !m_instanceStartBuffer.create() || !m_instanceEndBuffer.create() ||
-        !m_instanceColorBuffer.create()) {
+        !m_instanceStartColorBuffer.create() || !m_instanceEndColorBuffer.create() ||
+        !m_instanceRadiusBuffer.create()) {
         qCritical() << "BondRenderer: Failed to create buffers";
         return false;
     }
@@ -54,7 +57,9 @@ bool BondRenderer::initialize(ShaderManager* shaderManager) {
 }
 
 void BondRenderer::cleanup() {
-    m_instanceColorBuffer.destroy();
+    m_instanceRadiusBuffer.destroy();
+    m_instanceEndColorBuffer.destroy();
+    m_instanceStartColorBuffer.destroy();
     m_instanceEndBuffer.destroy();
     m_instanceStartBuffer.destroy();
     m_cylinderIBO.destroy();
@@ -136,70 +141,52 @@ void BondRenderer::setBondData(const data::Structure* structure) {
     const auto& bonds = structure->bonds();
     m_bondCount = bonds.bondCount();
 
-    std::vector<float> startData(m_bondCount * 3);
-    std::vector<float> endData(m_bondCount * 3);
-    std::vector<float> colorData(m_bondCount * 4);
-
-    const float* px = structure->positionsX();
-    const float* py = structure->positionsY();
-    const float* pz = structure->positionsZ();
-    const float* cr = structure->colorsR();
-    const float* cg = structure->colorsG();
-    const float* cb = structure->colorsB();
-    const auto& lattice = structure->lattice();
-    const auto& m = lattice.matrix;
-
+    const PackedBondRenderData packed = packBondRenderData(structure, BondPositionPacking::XYZ3);
+    std::vector<float> radiusData(m_bondCount * 2);
     for (size_t i = 0; i < m_bondCount; ++i) {
-        const auto& bond = bonds.bond(i);
-        uint32_t a1 = bond.atomIndex1;
-        uint32_t a2 = bond.atomIndex2;
-
-        startData[i * 3 + 0] = px[a1];
-        startData[i * 3 + 1] = py[a1];
-        startData[i * 3 + 2] = pz[a1];
-
-        // Apply periodic image shift to atom j's position
-        float ex = px[a2];
-        float ey = py[a2];
-        float ez = pz[a2];
-        if (bond.imageX != 0 || bond.imageY != 0 || bond.imageZ != 0) {
-            ex += static_cast<float>(bond.imageX * m[0][0] + bond.imageY * m[1][0] + bond.imageZ * m[2][0]);
-            ey += static_cast<float>(bond.imageX * m[0][1] + bond.imageY * m[1][1] + bond.imageZ * m[2][1]);
-            ez += static_cast<float>(bond.imageX * m[0][2] + bond.imageY * m[1][2] + bond.imageZ * m[2][2]);
-        }
-        endData[i * 3 + 0] = ex;
-        endData[i * 3 + 1] = ey;
-        endData[i * 3 + 2] = ez;
-
-        // Average color of two atoms
-        colorData[i * 4 + 0] = (cr[a1] + cr[a2]) * 0.5f;
-        colorData[i * 4 + 1] = (cg[a1] + cg[a2]) * 0.5f;
-        colorData[i * 4 + 2] = (cb[a1] + cb[a2]) * 0.5f;
-        colorData[i * 4 + 3] = 1.0f;
+        radiusData[i * 2 + 0] = packed.startRadii[i];
+        radiusData[i * 2 + 1] = packed.endRadii[i];
     }
 
     // Upload to GPU
     m_cylinderVAO.bind();
 
     m_instanceStartBuffer.bind();
-    m_instanceStartBuffer.allocate(startData.data(), startData.size() * sizeof(float));
+    m_instanceStartBuffer.allocate(packed.startPositions.data(),
+                                   static_cast<int>(packed.startPositions.size() * sizeof(float)));
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glVertexAttribDivisor(1, 1);
 
     m_instanceEndBuffer.bind();
-    m_instanceEndBuffer.allocate(endData.data(), endData.size() * sizeof(float));
+    m_instanceEndBuffer.allocate(packed.endPositions.data(),
+                                 static_cast<int>(packed.endPositions.size() * sizeof(float)));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glVertexAttribDivisor(2, 1);
 
-    m_instanceColorBuffer.bind();
-    m_instanceColorBuffer.allocate(colorData.data(), colorData.size() * sizeof(float));
+    m_instanceStartColorBuffer.bind();
+    m_instanceStartColorBuffer.allocate(packed.startColors.data(),
+                                        static_cast<int>(packed.startColors.size() * sizeof(float)));
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glVertexAttribDivisor(3, 1);
 
-    m_instanceColorBuffer.release();
+    m_instanceEndColorBuffer.bind();
+    m_instanceEndColorBuffer.allocate(packed.endColors.data(),
+                                      static_cast<int>(packed.endColors.size() * sizeof(float)));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
+    glVertexAttribDivisor(4, 1);
+
+    m_instanceRadiusBuffer.bind();
+    m_instanceRadiusBuffer.allocate(radiusData.data(),
+                                    static_cast<int>(radiusData.size() * sizeof(float)));
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribDivisor(5, 1);
+
+    m_instanceRadiusBuffer.release();
     m_cylinderVAO.release();
 }
 
@@ -214,6 +201,7 @@ void BondRenderer::render(const Camera& camera, const RenderSettings& settings) 
     shader->setUniformValue("uViewMatrix", camera.viewMatrix());
     shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
     shader->setUniformValue("uBondRadius", settings.bondRadius);
+    shader->setUniformValue("uAtomScale", settings.atomScale);
 
     // Light direction: world space → view space for shader
     QVector3D worldLightDir = settings.lightDirWorld();
