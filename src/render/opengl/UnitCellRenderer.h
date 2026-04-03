@@ -4,6 +4,7 @@
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLFunctions>
 #include <array>
+#include <vector>
 
 namespace atom::data {
 class Structure;
@@ -55,6 +56,7 @@ private:
     QOpenGLBuffer m_edgeStartBuffer;   // instance start (vec3)
     QOpenGLBuffer m_edgeEndBuffer;     // instance end (vec3)
     QOpenGLBuffer m_edgeColorBuffer;   // instance color (vec4)
+    QOpenGLBuffer m_edgeRadiusBuffer;  // instance radii (vec2)
     int m_cylinderIndexCount = 0;
 
     // Corner joints (8 billboard-sphere instances)

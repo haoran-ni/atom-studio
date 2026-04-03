@@ -76,6 +76,7 @@ struct RTUniforms {
     int32_t       bvhNodeCount;
     int32_t       bondCount;
     float         bondRadius;
+    int32_t       showAtoms;
     int32_t       showBonds;
     int32_t       isPerspective;
 };
@@ -90,6 +91,10 @@ struct RTUnitCellUniforms {
     float         occlusionBias;
     float         unitCellRadius;
     simd_float4   unitCellColor;
+    int32_t       bondCount;
+    float         bondRadius;
+    int32_t       showAtoms;
+    int32_t       showBonds;
     int32_t       isPerspective;
     float         cameraForwardX;
     float         cameraForwardY;

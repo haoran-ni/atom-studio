@@ -145,12 +145,13 @@ void main() {
 const char* bondVertexShader = R"(
 #version 410 core
 
-layout(location = 0) in vec3 aPosition;    // Cylinder vertex
+layout(location = 0) in vec3 aPosition;    // Cylinder vertex position
 layout(location = 1) in vec3 aStart;       // Bond start position (instanced)
 layout(location = 2) in vec3 aEnd;         // Bond end position (instanced)
 layout(location = 3) in vec4 aStartColor;  // Bond start color (instanced)
 layout(location = 4) in vec4 aEndColor;    // Bond end color (instanced)
 layout(location = 5) in vec2 aRadii;       // Bond start/end radii (instanced)
+layout(location = 6) in vec3 aLocalNormal; // Unit-cylinder local normal
 
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
@@ -198,8 +199,10 @@ void main() {
     vViewPos = viewPos.xyz;
 
     // Transform normal
-    vec3 localNormal = normalize(vec3(aPosition.x, aPosition.y, 0.0));
-    vec3 worldNormal = right * localNormal.x + up * localNormal.y;
+    vec3 localNormal = normalize(aLocalNormal);
+    vec3 worldNormal = right * localNormal.x +
+                       up * localNormal.y +
+                       bondDir * localNormal.z;
     vNormal = mat3(uViewMatrix) * worldNormal;
 
     gl_Position = uProjectionMatrix * viewPos;

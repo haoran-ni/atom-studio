@@ -640,6 +640,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     // 4. Build render settings from viewport properties
     m_renderSettings.backgroundColor = m_backgroundColor;
     m_renderSettings.showBonds = m_showBonds;
+    m_renderSettings.showAtoms = !(m_showBonds && m_atomScale <= 0.1001f);
     m_renderSettings.showUnitCell = m_showUnitCell;
     m_renderSettings.unitCellThickness = m_unitCellThickness;
     m_renderSettings.unitCellColor = m_unitCellColor;

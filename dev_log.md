@@ -4,6 +4,61 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-03: Bond Caps, Hidden-Atom Bond Mode, and Ray-Traced Unit-Cell Depth Fixes
+
+### Summary
+Extended bond rendering so rasterized bonds use capped cylinder meshes instead of open tubes, with cap colors inherited naturally from the existing per-end bond coloring. Added a viewport rule that hides atoms entirely when bond rendering is enabled and the atom scale slider reaches its minimum value (`0.1`), so the smallest-radius bond view becomes a bond-only representation. On the ray-tracing side, fixed two related bond issues: unit-cell overlay depth against bonds in Metal RT, and blurry bond intersections in orthographic RT after cap support was added. The final RT implementation keeps orthographic-stable bond intersections, supports bond end caps, and preserves correct unit-cell occlusion even when atoms are hidden.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/opengl/CylinderMesh.cpp` | Rebuilt the shared OpenGL cylinder mesh as a capped cylinder with explicit cap normals |
+| `src/render/opengl/ShaderManager.cpp` | Updated bond raster shading to consume mesh-supplied local normals so bond caps shade correctly |
+| `src/render/opengl/UnitCellRenderer.cpp` | Switched unit-cell edge geometry to the capped cylinder mesh layout and bound the added normal/radius attributes |
+| `src/render/opengl/RayTracingRenderer.cpp` | Added capped-cylinder RT intersection with explicit hit classification; restored orthographic-stable bond side-wall intersection; added `uShowAtoms` handling |
+| `src/render/metal/MetalTypes.h` | Extended RT uniform structs with bond/unit-cell overlay state needed for bond occlusion and explicit atom visibility flags |
+| `src/render/metal/MetalUnitCellShared.h` | Expanded the RT unit-cell uniform builder interface to accept bond counts for overlay occlusion |
+| `src/render/metal/MetalUnitCellShared.cpp` | Added capped cylinder mesh generation for Metal unit-cell edges and filled the expanded RT overlay uniforms |
+| `src/render/metal/MetalShaderLibrary.mm` | Updated raster bond vertex shading for cap normals; added capped-cylinder RT intersection details; fixed unit-cell overlay occlusion to test bonds and honor `showAtoms` separately from BVH counts |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Bound bond buffers into the RT unit-cell overlay pass; passed explicit atom/bond visibility state without corrupting BVH primitive indexing |
+| `src/ui/components/OpenGLViewport.cpp` | Hid atoms automatically when bonds are shown at minimum atom scale |
+| `src/ui/components/MetalViewport.mm` | Same hidden-atom-at-minimum-scale behavior for the Metal viewport |
+
+### Architecture Decisions
+
+#### 1. Bond Caps Reuse Existing Per-End Color Logic
+- The raster bond mesh now includes cap vertices whose axial coordinate remains at `0` or `1`
+- Because the shader already chooses color from bond position along the segment, cap colors stay consistent with the corresponding atom-colored bond end without adding new cap-specific color paths
+
+#### 2. Hidden Atoms Are a Visibility Rule, Not a Geometry Rewrite
+- When the atom scale reaches the smallest value while bonds are shown, the viewport now disables atom rendering through `RenderSettings.showAtoms`
+- This keeps atom buffers, bond buffers, and scene construction intact while changing only what is rendered
+
+#### 3. RT Bond Caps Must Not Replace the Orthographic-Stable Side-Wall Solver
+- A simpler capped-cylinder RT intersection reintroduced blurry bonds in orthographic mode
+- The fix was to keep the older numerically stable side-wall intersection for the cylinder body and layer start/end cap plane tests on top
+- RT shading now uses explicit hit classification (`side`, `start cap`, `end cap`) so cap normals are selected robustly
+
+#### 4. Unit-Cell RT Occlusion Must Use Real Scene Counts Plus Explicit Visibility Flags
+- The Metal RT unit-cell overlay originally rendered above bonds because it only tested atom occlusion
+- A first fix added bond occlusion correctly, but a later hidden-atoms workaround broke overlay traversal by zeroing `atomCount`, which no longer matched BVH primitive indexing
+- The final design keeps real atom and bond counts in RT overlay uniforms and uses separate `showAtoms` / `showBonds` flags to decide which primitive classes can occlude the unit cell
+
+### Build Commands
+```bash
+cmake --build build
+```
+
+### Testing
+- Built successfully after adding capped bond geometry and shader normal updates
+- Built successfully after adding hidden-atom behavior at minimum atom scale
+- Built successfully after the first Metal RT unit-cell overlay bond-occlusion fix
+- Built successfully after restoring orthographic-stable capped-cylinder RT bond intersections
+- Built successfully after fixing the hidden-atoms RT overlay regression by separating BVH counts from visibility flags
+- Did not perform a final manual in-app visual verification in this session; the remaining recommended check is RT rendering with `atom scale = 0.1` and `Show Bonds` enabled in both perspective and orthographic views
+
+---
+
 ## 2026-04-03: Bond Rendering Cleanup and Radius-Aware Bi-Color Split
 
 ### Summary

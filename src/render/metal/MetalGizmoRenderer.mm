@@ -2,10 +2,10 @@
 #include "MetalGizmoRenderer.h"
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
+#include "MetalUnitCellShared.h"
 #include <QDebug>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <vector>
 
 namespace atom::render::metal {
@@ -15,53 +15,6 @@ namespace {
 constexpr int kGizmoCylinderSegments = 16;
 constexpr int kGizmoAxisSegmentCount = 6;
 constexpr float kGizmoRadiusToLength = 0.05f;
-
-void buildCappedUnitCylinderMesh(int segments,
-                                 std::vector<float>& vertices,
-                                 std::vector<uint32_t>& indices) {
-    vertices.clear();
-    indices.clear();
-
-    const float pi = 3.14159265358979323846f;
-    for (int i = 0; i <= segments; ++i) {
-        const float angle = (2.0f * pi * i) / segments;
-        const float x = std::cos(angle);
-        const float y = std::sin(angle);
-
-        // Side wall ring vertices (unit cylinder aligned to +Z from 0 to 1).
-        vertices.push_back(x); vertices.push_back(y); vertices.push_back(0.0f); // bottom
-        vertices.push_back(x); vertices.push_back(y); vertices.push_back(1.0f); // top
-    }
-
-    // Side triangles.
-    for (int i = 0; i < segments; ++i) {
-        const int b0 = i * 2;
-        const int t0 = i * 2 + 1;
-        const int b1 = (i + 1) * 2;
-        const int t1 = (i + 1) * 2 + 1;
-
-        indices.push_back(b0); indices.push_back(b1); indices.push_back(t0);
-        indices.push_back(t0); indices.push_back(b1); indices.push_back(t1);
-    }
-
-    const uint32_t bottomCenter = static_cast<uint32_t>(vertices.size() / 3);
-    vertices.push_back(0.0f); vertices.push_back(0.0f); vertices.push_back(0.0f);
-    const uint32_t topCenter = static_cast<uint32_t>(vertices.size() / 3);
-    vertices.push_back(0.0f); vertices.push_back(0.0f); vertices.push_back(1.0f);
-
-    // Cap triangles (CCW front faces with outward normals in local space).
-    for (int i = 0; i < segments; ++i) {
-        const uint32_t b0 = static_cast<uint32_t>(i * 2);
-        const uint32_t t0 = static_cast<uint32_t>(i * 2 + 1);
-        const uint32_t b1 = static_cast<uint32_t>((i + 1) * 2);
-        const uint32_t t1 = static_cast<uint32_t>((i + 1) * 2 + 1);
-
-        // Bottom cap faces -Z (reverse order when viewed from +Z).
-        indices.push_back(bottomCenter); indices.push_back(b1); indices.push_back(b0);
-        // Top cap faces +Z.
-        indices.push_back(topCenter); indices.push_back(t0); indices.push_back(t1);
-    }
-}
 
 } // namespace
 
@@ -92,13 +45,13 @@ bool MetalGizmoRenderer::initialize(void* device, MetalShaderLibrary* shaderLibr
         return false;
     }
 
-    std::vector<float> vertices;
+    std::vector<BondMeshVertex> vertices;
     std::vector<uint32_t> indices;
     buildCappedUnitCylinderMesh(kGizmoCylinderSegments, vertices, indices);
 
     m_impl->cylinderVertexBuffer = [m_impl->device
         newBufferWithBytes:vertices.data()
-                    length:vertices.size() * sizeof(float)
+                    length:vertices.size() * sizeof(BondMeshVertex)
                    options:MTLResourceStorageModeShared];
 
     m_impl->cylinderIndexBuffer = [m_impl->device

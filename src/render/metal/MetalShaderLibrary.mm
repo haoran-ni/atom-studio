@@ -78,6 +78,7 @@ struct RTUniforms {
     int      bvhNodeCount;
     int      bondCount;
     float    bondRadius;
+    int      showAtoms;
     int      showBonds;
     int      isPerspective;
 };
@@ -96,6 +97,10 @@ struct RTUnitCellUniforms {
     float    occlusionBias;
     float    unitCellRadius;
     float4   unitCellColor;
+    int      bondCount;
+    float    bondRadius;
+    int      showAtoms;
+    int      showBonds;
     int      isPerspective;
     float    cameraForwardX;
     float    cameraForwardY;
@@ -244,11 +249,16 @@ struct BondVertexOut {
     float  splitT;
 };
 
+struct BondMeshVertex {
+    packed_float3 position;
+    packed_float3 normal;
+};
+
 vertex BondVertexOut bond_vertex(
     uint vid [[vertex_id]],
     uint iid [[instance_id]],
     constant SceneUniforms& scene [[buffer(0)]],
-    constant packed_float3* cylinderVertices [[buffer(1)]],
+    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
     constant BondInstance* instances [[buffer(2)]])
 {
     BondVertexOut out;
@@ -274,19 +284,21 @@ vertex BondVertexOut bond_vertex(
     float3 right = normalize(cross(up, bondDir));
     up = cross(bondDir, right);
 
-    float3 vert = cylinderVertices[vid];
-    out.bondT = vert.z;
-    float3 localPos = right * vert.x * scene.bondRadius +
-                      up * vert.y * scene.bondRadius +
-                      bondDir * vert.z * bondLength;
+    BondMeshVertex vert = cylinderVertices[vid];
+    out.bondT = vert.position.z;
+    float3 localPos = right * vert.position.x * scene.bondRadius +
+                      up * vert.position.y * scene.bondRadius +
+                      bondDir * vert.position.z * bondLength;
 
     float3 worldPos = bond.start + localPos;
     float4 viewPos = scene.viewMatrix * float4(worldPos, 1.0);
     out.viewPos = viewPos.xyz;
 
     // Normal
-    float3 localNormal = normalize(float3(vert.x, vert.y, 0.0));
-    float3 worldNormal = right * localNormal.x + up * localNormal.y;
+    float3 localNormal = normalize(float3(vert.normal));
+    float3 worldNormal = right * localNormal.x +
+                         up * localNormal.y +
+                         bondDir * localNormal.z;
     out.normal = (scene.viewMatrix * float4(worldNormal, 0.0)).xyz;
 
     out.position = scene.projectionMatrix * viewPos;
@@ -395,7 +407,7 @@ struct RTUnitCellVertexOut {
 
 bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                  device const float4* atomPositions,
-                 int atomCount, float atomScale,
+                 int atomCount, float atomScale, bool showAtoms,
                  device const float4* bondStartPositions,
                  device const float4* bondEndPositions,
                  int bondCount, float bondRadius, bool showBonds,
@@ -459,12 +471,16 @@ fragment float4 rt_unit_cell_fragment(
     device const float4* bvhNodeMinData [[buffer(3)]],
     device const float4* bvhNodeMaxData [[buffer(4)]],
     device const uint4* bvhNodeMeta [[buffer(5)]],
-    device const uint* bvhPrimIndices [[buffer(6)]])
+    device const uint* bvhPrimIndices [[buffer(6)]],
+    device const float4* bondStartPositions [[buffer(7)]],
+    device const float4* bondEndPositions [[buffer(8)]])
 {
-    // Cast a ray from camera toward the unit-cell fragment and hide it if an atom
-    // is intersected first. This keeps atom-only occlusion while unit cell
-    // remains outside RT accumulation.
-    if (unitCell.atomCount > 0 && unitCell.bvhNodeCount > 0) {
+    // Cast a ray from camera toward the unit-cell fragment and hide it if any
+    // RT scene primitive is intersected first. The unit cell remains outside
+    // RT accumulation, but its visibility still follows the scene depth.
+    if ((((unitCell.showAtoms != 0) && unitCell.atomCount > 0) ||
+         ((unitCell.showBonds != 0) && unitCell.bondCount > 0)) &&
+        unitCell.bvhNodeCount > 0) {
         float3 ro, rd;
         float maxT;
 
@@ -489,8 +505,9 @@ fragment float4 rt_unit_cell_fragment(
 
         if (maxT > 0.0 &&
             traceAnyHit(ro, rd, maxT,
-                        atomPositions, unitCell.atomCount, unitCell.atomScale,
-                        atomPositions, atomPositions, 0, 0.0, false,
+                        atomPositions, unitCell.atomCount, unitCell.atomScale, unitCell.showAtoms != 0,
+                        bondStartPositions, bondEndPositions,
+                        unitCell.bondCount, unitCell.bondRadius, unitCell.showBonds != 0,
                         bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                         unitCell.bvhNodeCount)) {
             discard_fragment();
@@ -536,40 +553,98 @@ float rand01(thread uint& rng_state) {
     return float(rng_state) / 4294967296.0;
 }
 
-float intersectCylinder(float3 ro, float3 rd, float3 pa, float3 pb, float radius) {
+constant int CYL_HIT_NONE = 0;
+constant int CYL_HIT_SIDE = 1;
+constant int CYL_HIT_START_CAP = 2;
+constant int CYL_HIT_END_CAP = 3;
+
+struct CylinderHit {
+    float t;
+    float axial;
+    int kind;
+};
+
+CylinderHit intersectCappedCylinderDetailed(float3 ro, float3 rd, float3 pa, float3 pb, float radius) {
+    CylinderHit result;
+    result.t = -1.0;
+    result.axial = 0.0;
+    result.kind = CYL_HIT_NONE;
+
     float3 ba = pb - pa;
     float baba = dot(ba, ba);
-    if (baba < 1e-8) return -1.0;
+    if (baba < 1e-8) return result;
 
     float3 oc = ro - pa;
     float bard = dot(ba, rd);
     float baoc = dot(ba, oc);
 
-    // Stable formulation: project rd and oc perpendicular to the cylinder axis,
-    // then project out the ray direction to get a pure lateral distance.
-    // Avoids catastrophic cancellation when |oc| >> radius (ortho camera at large distance).
+    // Stable side-wall intersection: avoid catastrophic cancellation in
+    // orthographic view where |oc| can be much larger than the bond radius.
     float3 rd_perp = rd - (bard / baba) * ba;
     float3 oc_perp = oc - (baoc / baba) * ba;
 
-    float a  = dot(rd_perp, rd_perp);
-    if (a < 1e-8) return -1.0;     // ray nearly parallel to cylinder axis
+    float a = dot(rd_perp, rd_perp);
+    if (a > 1e-8) {
+        float hb = dot(oc_perp, rd_perp);
+        float3 q = oc_perp - (hb / a) * rd_perp;
+        float disc = a * (radius * radius - dot(q, q));
+        if (disc >= 0.0) {
+            float sqrtDisc = sqrt(disc);
 
-    float hb = dot(oc_perp, rd_perp);
-    float3 q  = oc_perp - (hb / a) * rd_perp;  // lateral distance in ba⊥ subspace
-    float disc = a * (radius * radius - dot(q, q));
-    if (disc < 0.0) return -1.0;
+            float t0 = (-hb - sqrtDisc) / a;
+            float y0 = baoc + t0 * bard;
+            if (t0 > 0.0 && y0 > 0.0 && y0 < baba) {
+                result.t = t0;
+                result.axial = clamp(y0 / baba, 0.0f, 1.0f);
+                result.kind = CYL_HIT_SIDE;
+            }
 
-    float sqrtDisc = sqrt(disc);
+            float t1 = (-hb + sqrtDisc) / a;
+            float y1 = baoc + t1 * bard;
+            if (t1 > 0.0 && y1 > 0.0 && y1 < baba &&
+                (result.t < 0.0 || t1 < result.t)) {
+                result.t = t1;
+                result.axial = clamp(y1 / baba, 0.0f, 1.0f);
+                result.kind = CYL_HIT_SIDE;
+            }
+        }
+    }
 
-    float t = (-hb - sqrtDisc) / a;
-    float y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.0) return t;
+    float axisLen = sqrt(baba);
+    float3 axis = ba / axisLen;
+    float axisDenom = dot(rd, axis);
+    if (abs(axisDenom) > 1e-8) {
+        float tCap0 = dot(pa - ro, axis) / axisDenom;
+        if (tCap0 > 0.0) {
+            float3 hit = ro + rd * tCap0 - pa;
+            float3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0 || tCap0 < result.t)) {
+                result.t = tCap0;
+                result.axial = 0.0;
+                result.kind = CYL_HIT_START_CAP;
+            }
+        }
 
-    t = (-hb + sqrtDisc) / a;
-    y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.0) return t;
+        float tCap1 = dot(pb - ro, axis) / axisDenom;
+        if (tCap1 > 0.0) {
+            float3 hit = ro + rd * tCap1 - pb;
+            float3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0 || tCap1 < result.t)) {
+                result.t = tCap1;
+                result.axial = 1.0;
+                result.kind = CYL_HIT_END_CAP;
+            }
+        }
+    }
 
-    return -1.0;
+    return result;
+}
+
+float intersectCylinder(float3 ro, float3 rd, float3 pa, float3 pb, float radius) {
+    CylinderHit hit = intersectCappedCylinderDetailed(ro, rd, pa, pb, radius);
+    return hit.t;
 }
 
 float intersectSphere(float3 ro, float3 rd, float3 center, float radius) {
@@ -626,7 +701,7 @@ bool testNodeAABB(int nodeIndex,
 
 void traceClosest(float3 ro, float3 rd,
                   device const float4* atomPositions,
-                  int atomCount, float atomScale,
+                  int atomCount, float atomScale, bool showAtoms,
                   device const float4* bondStartPositions,
                   device const float4* bondEndPositions,
                   int bondCount, float bondRadius, bool showBonds,
@@ -658,6 +733,7 @@ void traceClosest(float3 ro, float3 rd,
                 if (primIndex >= uint(totalPrims)) continue;
 
                 if (primIndex < uint(atomCount)) {
+                    if (!showAtoms) continue;
                     float4 atom = atomPositions[primIndex];
                     float r = atom.w * atomScale;
                     float t = intersectSphere(ro, rd, atom.xyz, r);
@@ -710,7 +786,7 @@ void traceClosest(float3 ro, float3 rd,
 
 bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                  device const float4* atomPositions,
-                 int atomCount, float atomScale,
+                 int atomCount, float atomScale, bool showAtoms,
                  device const float4* bondStartPositions,
                  device const float4* bondEndPositions,
                  int bondCount, float bondRadius, bool showBonds,
@@ -739,6 +815,7 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                 if (primIndex >= uint(totalPrims)) continue;
 
                 if (primIndex < uint(atomCount)) {
+                    if (!showAtoms) continue;
                     float4 atom = atomPositions[primIndex];
                     float r = atom.w * atomScale;
                     float3 oc = ro - atom.xyz;
@@ -844,12 +921,13 @@ fragment float4 rt_fragment(
     }
 
     bool showBonds = rt.showBonds != 0;
+    bool showAtoms = rt.showAtoms != 0;
 
     // Trace primary ray
     float hitT;
     int hitIndex;
     traceClosest(rayOrigin, rayDir, atomPositions,
-                 rt.atomCount, rt.atomScale,
+                 rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
                  rt.bondCount, rt.bondRadius, showBonds,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
@@ -883,11 +961,21 @@ fragment float4 rt_fragment(
         float3 pb = endPos.xyz;
         float3 ba = pb - pa;
         float baLen2 = dot(ba, ba);
-        float h = (baLen2 > 1e-8f) ? (dot(hitPos - pa, ba) / baLen2) : 0.0f;
-        normal = normalize(hitPos - pa - h * ba);
+        float bondLength = (baLen2 > 1e-8f) ? sqrt(baLen2) : 0.0f;
+        float3 bondDir = (bondLength > 1e-8f) ? (ba / bondLength) : float3(0.0f, 0.0f, 1.0f);
+        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, rt.bondRadius);
+        float h = bondHit.axial;
+        if (bondHit.kind == CYL_HIT_START_CAP) {
+            normal = -bondDir;
+        } else if (bondHit.kind == CYL_HIT_END_CAP) {
+            normal = bondDir;
+        } else {
+            float axial = dot(hitPos - pa, bondDir);
+            h = (bondLength > 1e-8f) ? clamp(axial / bondLength, 0.0f, 1.0f) : h;
+            normal = normalize(hitPos - (pa + bondDir * axial));
+        }
         float splitT = 0.5f;
-        if (baLen2 > 1e-8f) {
-            float bondLength = sqrt(baLen2);
+        if (bondLength > 1e-8f) {
             float scaledA = startPos.w * rt.atomScale;
             float scaledB = endPos.w * rt.atomScale;
             float splitDistance = 0.5f * (bondLength + scaledA - scaledB);
@@ -915,7 +1003,7 @@ fragment float4 rt_fragment(
     float shadow = 1.0;
     if (rt.enableShadows) {
         if (traceAnyHit(biasedOrigin, lightDir, 10000.0,
-                        atomPositions, rt.atomCount, rt.atomScale,
+                        atomPositions, rt.atomCount, rt.atomScale, showAtoms,
                         bondStartPositions, bondEndPositions,
                         rt.bondCount, rt.bondRadius, showBonds,
                         bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
@@ -931,7 +1019,7 @@ fragment float4 rt_fragment(
         for (int i = 0; i < rt.aoSamples; i++) {
             float3 aoDir = cosineWeightedHemisphere(normal, rng_state);
             if (traceAnyHit(biasedOrigin, aoDir, rt.aoRadius,
-                            atomPositions, rt.atomCount, rt.atomScale,
+                            atomPositions, rt.atomCount, rt.atomScale, showAtoms,
                             bondStartPositions, bondEndPositions,
                             rt.bondCount, rt.bondRadius, showBonds,
                             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,

@@ -72,6 +72,7 @@ uniform samplerBuffer uBondStartColors;    // vec4(r, g, b, a)
 uniform samplerBuffer uBondEndColors;      // vec4(r, g, b, a)
 uniform int uBondCount;
 uniform float uBondRadius;
+uniform bool uShowAtoms;
 uniform bool uShowBonds;
 
 // Feature toggles
@@ -119,36 +120,97 @@ float intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius) {
 
 // ---------- Ray-cylinder intersection ----------
 
-// Finite cylinder from pa to pb with given radius. Returns t or -1.
-float intersectCylinder(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float radius) {
+const int CYL_HIT_NONE = 0;
+const int CYL_HIT_SIDE = 1;
+const int CYL_HIT_START_CAP = 2;
+const int CYL_HIT_END_CAP = 3;
+
+struct CylinderHit {
+    float t;
+    float axial;
+    int kind;
+};
+
+CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float radius) {
+    CylinderHit result;
+    result.t = -1.0;
+    result.axial = 0.0;
+    result.kind = CYL_HIT_NONE;
+
     vec3 ba = pb - pa;
     float baba = dot(ba, ba);
-    if (baba < 1e-8) return -1.0;
+    if (baba < 1e-8) return result;
 
     vec3 oc = ro - pa;
     float bard = dot(ba, rd);
     float baoc = dot(ba, oc);
 
-    float k2 = baba - bard * bard;
-    float k1 = baba * dot(oc, rd) - baoc * bard;
-    float k0 = baba * dot(oc, oc) - baoc * baoc - radius * radius * baba;
+    // Stable side-wall intersection: avoid catastrophic cancellation in
+    // orthographic view where |oc| can be much larger than the bond radius.
+    vec3 rdPerp = rd - (bard / baba) * ba;
+    vec3 ocPerp = oc - (baoc / baba) * ba;
+    float a = dot(rdPerp, rdPerp);
+    if (a > 1e-8) {
+        float hb = dot(ocPerp, rdPerp);
+        vec3 q = ocPerp - (hb / a) * rdPerp;
+        float disc = a * (radius * radius - dot(q, q));
+        if (disc >= 0.0) {
+            float sqrtDisc = sqrt(disc);
 
-    float disc = k1 * k1 - k2 * k0;
-    if (disc < 0.0) return -1.0;
+            float t0 = (-hb - sqrtDisc) / a;
+            float y0 = baoc + t0 * bard;
+            if (t0 > 0.001 && y0 > 0.0 && y0 < baba) {
+                result.t = t0;
+                result.axial = clamp(y0 / baba, 0.0, 1.0);
+                result.kind = CYL_HIT_SIDE;
+            }
 
-    float sqrtDisc = sqrt(disc);
+            float t1 = (-hb + sqrtDisc) / a;
+            float y1 = baoc + t1 * bard;
+            if (t1 > 0.001 && y1 > 0.0 && y1 < baba &&
+                (result.t < 0.0 || t1 < result.t)) {
+                result.t = t1;
+                result.axial = clamp(y1 / baba, 0.0, 1.0);
+                result.kind = CYL_HIT_SIDE;
+            }
+        }
+    }
 
-    // Front hit
-    float t = (-k1 - sqrtDisc) / k2;
-    float y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.001) return t;
+    float axisLen = sqrt(baba);
+    vec3 axis = ba / axisLen;
+    float axisDenom = dot(rd, axis);
+    if (abs(axisDenom) > 1e-8) {
+        float tCap0 = dot(pa - ro, axis) / axisDenom;
+        if (tCap0 > 0.001) {
+            vec3 hit = ro + rd * tCap0 - pa;
+            vec3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0 || tCap0 < result.t)) {
+                result.t = tCap0;
+                result.axial = 0.0;
+                result.kind = CYL_HIT_START_CAP;
+            }
+        }
 
-    // Back hit
-    t = (-k1 + sqrtDisc) / k2;
-    y = baoc + t * bard;
-    if (y > 0.0 && y < baba && t > 0.001) return t;
+        float tCap1 = dot(pb - ro, axis) / axisDenom;
+        if (tCap1 > 0.001) {
+            vec3 hit = ro + rd * tCap1 - pb;
+            vec3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0 || tCap1 < result.t)) {
+                result.t = tCap1;
+                result.axial = 1.0;
+                result.kind = CYL_HIT_END_CAP;
+            }
+        }
+    }
 
-    return -1.0;
+    return result;
+}
+
+float intersectCylinder(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float radius) {
+    CylinderHit hit = intersectCappedCylinderDetailed(ro, rd, pa, pb, radius);
+    return hit.t;
 }
 
 // ---------- Scene traversal ----------
@@ -200,6 +262,7 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
                 if (primIndex >= uint(totalPrims)) continue;
 
                 if (primIndex < uint(uAtomCount)) {
+                    if (!uShowAtoms) continue;
                     vec4 atom = texelFetch(uAtomPositions, int(primIndex));
                     float r = atom.w * uAtomScale;
                     float t = intersectSphere(ro, rd, atom.xyz, r);
@@ -271,6 +334,7 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
                 if (primIndex >= uint(totalPrims)) continue;
 
                 if (primIndex < uint(uAtomCount)) {
+                    if (!uShowAtoms) continue;
                     vec4 atom = texelFetch(uAtomPositions, int(primIndex));
                     float r = atom.w * uAtomScale;
                     vec3 oc = ro - atom.xyz;
@@ -401,11 +465,21 @@ void main() {
         vec3 pb = endPos.xyz;
         vec3 ba = pb - pa;
         float baLen2 = dot(ba, ba);
-        float h = (baLen2 > 1e-8) ? (dot(hitPos - pa, ba) / baLen2) : 0.0;
-        normal = normalize(hitPos - pa - h * ba);
+        float bondLength = (baLen2 > 1e-8) ? sqrt(baLen2) : 0.0;
+        vec3 bondDir = (bondLength > 1e-8) ? (ba / bondLength) : vec3(0.0, 0.0, 1.0);
+        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, uBondRadius);
+        float h = bondHit.axial;
+        if (bondHit.kind == CYL_HIT_START_CAP) {
+            normal = -bondDir;
+        } else if (bondHit.kind == CYL_HIT_END_CAP) {
+            normal = bondDir;
+        } else {
+            float axial = dot(hitPos - pa, bondDir);
+            h = (bondLength > 1e-8) ? clamp(axial / bondLength, 0.0, 1.0) : h;
+            normal = normalize(hitPos - (pa + bondDir * axial));
+        }
         float splitT = 0.5;
-        if (baLen2 > 1e-8) {
-            float bondLength = sqrt(baLen2);
+        if (bondLength > 1e-8) {
             float scaledA = startPos.w * uAtomScale;
             float scaledB = endPos.w * uAtomScale;
             float splitDistance = 0.5 * (bondLength + scaledA - scaledB);
@@ -1041,6 +1115,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uBVHNodeCount", m_bvhNodeCount);
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
     m_rtShader->setUniformValue("uBondRadius", m_settings.bondRadius);
+    m_rtShader->setUniformValue("uShowAtoms", m_settings.showAtoms);
     m_rtShader->setUniformValue("uShowBonds", m_settings.showBonds);
 
     // Light direction is already in world space

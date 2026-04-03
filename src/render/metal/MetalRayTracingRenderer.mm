@@ -654,6 +654,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.bvhNodeCount = m_bvhNodeCount;
     rt.bondCount = m_bondCount;
     rt.bondRadius = m_settings.bondRadius;
+    rt.showAtoms = m_settings.showAtoms ? 1 : 0;
     rt.showBonds = m_settings.showBonds ? 1 : 0;
     rt.isPerspective = camera.isPerspective() ? 1 : 0;
 
@@ -755,7 +756,10 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
 
     if (m_settings.showUnitCell && hasUnitCellOverlayData()) {
         const RTUnitCellUniforms unitCell = makeRTUnitCellUniforms(
-            camera, m_settings, m_atomCount, m_bvhNodeCount);
+            camera, m_settings,
+            m_atomCount,
+            m_bondCount,
+            m_bvhNodeCount);
         encodeUnitCellOverlayDraws((__bridge void*)encoder, unitCell);
     }
 
@@ -799,7 +803,10 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
 
     RTUnitCellUniforms unitCell{};
     if (drawUnitCell) {
-        unitCell = makeRTUnitCellUniforms(camera, m_settings, m_atomCount, m_bvhNodeCount);
+        unitCell = makeRTUnitCellUniforms(camera, m_settings,
+                                          m_atomCount,
+                                          m_bondCount,
+                                          m_bvhNodeCount);
     }
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
@@ -880,6 +887,8 @@ void MetalRayTracingRenderer::encodeUnitCellOverlayDraws(
     [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
     [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
     [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
+    [encoder setFragmentBuffer:m_impl->bondStartBuffer offset:0 atIndex:7];
+    [encoder setFragmentBuffer:m_impl->bondEndBuffer offset:0 atIndex:8];
 
     // Edge cylinders.
     {

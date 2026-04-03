@@ -21,6 +21,8 @@ set(RENDER_COMMON_SOURCES
 # OpenGL backend (available on all platforms as fallback / current default)
 # ---------------------------------------------------------------------------
 set(RENDER_OPENGL_SOURCES
+    opengl/CylinderMesh.cpp
+    opengl/CylinderMesh.h
     opengl/ShaderManager.cpp
     opengl/ShaderManager.h
     opengl/SphereRenderer.cpp

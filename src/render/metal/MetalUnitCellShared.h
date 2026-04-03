@@ -29,6 +29,19 @@ struct UnitCellInstanceData {
     std::array<SphereInstance, kUnitCellJointCount> joints{};
 };
 
+struct BondMeshVertex {
+    float positionX;
+    float positionY;
+    float positionZ;
+    float normalX;
+    float normalY;
+    float normalZ;
+};
+
+void buildCappedUnitCylinderMesh(int segments,
+                                 std::vector<BondMeshVertex>& vertices,
+                                 std::vector<uint32_t>& indices);
+
 void buildUnitCylinderMesh(int segments,
                            std::vector<float>& vertices,
                            std::vector<uint32_t>& indices);
@@ -45,6 +58,7 @@ UnitCellStyle makeUnitCellStyle(const RenderSettings& settings);
 RTUnitCellUniforms makeRTUnitCellUniforms(const Camera& camera,
                                           const RenderSettings& settings,
                                           int atomCount,
+                                          int bondCount,
                                           int bvhNodeCount,
                                           float occlusionBias = 0.001f);
 

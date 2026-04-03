@@ -159,6 +159,8 @@ public:
         // Build render settings from viewport properties
         viewport->m_renderSettings.backgroundColor = viewport->m_backgroundColor;
         viewport->m_renderSettings.showBonds = viewport->m_showBonds;
+        viewport->m_renderSettings.showAtoms =
+            !(viewport->m_showBonds && viewport->m_atomScale <= 0.1001f);
         viewport->m_renderSettings.showUnitCell = viewport->m_showUnitCell;
         viewport->m_renderSettings.unitCellThickness = viewport->m_unitCellThickness;
         viewport->m_renderSettings.unitCellColor = viewport->m_unitCellColor;

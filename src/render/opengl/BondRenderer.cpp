@@ -1,4 +1,5 @@
 #include "BondRenderer.h"
+#include "CylinderMesh.h"
 #include "ShaderManager.h"
 #include "../common/BondRenderData.h"
 #include "../common/Camera.h"
@@ -7,8 +8,6 @@
 
 #include <QOpenGLShaderProgram>
 #include <QDebug>
-#include <cmath>
-
 namespace atom::render {
 
 BondRenderer::BondRenderer()
@@ -70,59 +69,24 @@ void BondRenderer::cleanup() {
 }
 
 void BondRenderer::createCylinderGeometry(int segments) {
-    // Create a unit cylinder along Z axis from 0 to 1
-    // Vertices are on unit circle in XY plane
-    std::vector<float> vertices;
+    std::vector<CylinderMeshVertex> vertices;
     std::vector<unsigned int> indices;
+    buildCappedUnitCylinderMesh(segments, vertices, indices);
 
-    const float PI = 3.14159265358979323846f;
-
-    // Generate vertices for caps and sides
-    for (int i = 0; i <= segments; ++i) {
-        float angle = (2.0f * PI * i) / segments;
-        float x = std::cos(angle);
-        float y = std::sin(angle);
-
-        // Bottom ring (z = 0)
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(0.0f);
-
-        // Top ring (z = 1)
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(1.0f);
-    }
-
-    m_cylinderVertexCount = (segments + 1) * 2;
-
-    // Generate indices for side triangles
-    for (int i = 0; i < segments; ++i) {
-        int b0 = i * 2;
-        int t0 = i * 2 + 1;
-        int b1 = (i + 1) * 2;
-        int t1 = (i + 1) * 2 + 1;
-
-        // Two triangles per segment
-        indices.push_back(b0);
-        indices.push_back(b1);
-        indices.push_back(t0);
-
-        indices.push_back(t0);
-        indices.push_back(b1);
-        indices.push_back(t1);
-    }
-
-    m_cylinderIndexCount = indices.size();
+    m_cylinderVertexCount = static_cast<int>(vertices.size());
+    m_cylinderIndexCount = static_cast<int>(indices.size());
 
     // Upload to GPU
     m_cylinderVAO.bind();
 
     m_cylinderVBO.bind();
-    m_cylinderVBO.allocate(vertices.data(), vertices.size() * sizeof(float));
+    m_cylinderVBO.allocate(vertices.data(), static_cast<int>(vertices.size() * sizeof(CylinderMeshVertex)));
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex), nullptr);
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex),
+                          reinterpret_cast<const void*>(3 * sizeof(float)));
 
     m_cylinderIBO.bind();
     m_cylinderIBO.allocate(indices.data(), indices.size() * sizeof(unsigned int));

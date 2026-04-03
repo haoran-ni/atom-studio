@@ -2,11 +2,11 @@
 #include "MetalBondRenderer.h"
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
+#include "MetalUnitCellShared.h"
 #include "../common/BondRenderData.h"
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <vector>
-#include <cmath>
 
 namespace atom::render::metal {
 
@@ -52,47 +52,15 @@ void MetalBondRenderer::cleanup() {
 }
 
 void MetalBondRenderer::createCylinderGeometry(int segments) {
-    // Unit cylinder along Z from 0 to 1, XY on unit circle
-    std::vector<float> vertices;
+    std::vector<BondMeshVertex> vertices;
     std::vector<uint32_t> indices;
-
-    const float PI = 3.14159265358979323846f;
-
-    for (int i = 0; i <= segments; ++i) {
-        float angle = (2.0f * PI * i) / segments;
-        float x = std::cos(angle);
-        float y = std::sin(angle);
-
-        // Bottom ring (z = 0)
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(0.0f);
-
-        // Top ring (z = 1)
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(1.0f);
-    }
-
-    for (int i = 0; i < segments; ++i) {
-        int b0 = i * 2;
-        int t0 = i * 2 + 1;
-        int b1 = (i + 1) * 2;
-        int t1 = (i + 1) * 2 + 1;
-
-        indices.push_back(b0);
-        indices.push_back(b1);
-        indices.push_back(t0);
-        indices.push_back(t0);
-        indices.push_back(b1);
-        indices.push_back(t1);
-    }
+    buildCappedUnitCylinderMesh(segments, vertices, indices);
 
     m_cylinderIndexCount = static_cast<int>(indices.size());
 
     m_impl->cylinderVertexBuffer = [m_impl->device
         newBufferWithBytes:vertices.data()
-                    length:vertices.size() * sizeof(float)
+                    length:vertices.size() * sizeof(BondMeshVertex)
                    options:MTLResourceStorageModeShared];
 
     m_impl->cylinderIndexBuffer = [m_impl->device

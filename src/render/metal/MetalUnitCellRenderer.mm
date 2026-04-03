@@ -66,15 +66,15 @@ void MetalUnitCellRenderer::cleanup() {
 }
 
 void MetalUnitCellRenderer::createCylinderGeometry(int segments) {
-    std::vector<float> vertices;
+    std::vector<BondMeshVertex> vertices;
     std::vector<uint32_t> indices;
-    buildUnitCylinderMesh(segments, vertices, indices);
+    buildCappedUnitCylinderMesh(segments, vertices, indices);
 
     m_cylinderIndexCount = static_cast<int>(indices.size());
 
     m_impl->cylinderVertexBuffer = [m_impl->device
         newBufferWithBytes:vertices.data()
-                    length:vertices.size() * sizeof(float)
+                    length:vertices.size() * sizeof(BondMeshVertex)
                    options:MTLResourceStorageModeShared];
 
     m_impl->cylinderIndexBuffer = [m_impl->device

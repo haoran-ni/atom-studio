@@ -28,6 +28,77 @@ static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
 
 } // namespace
 
+void buildCappedUnitCylinderMesh(int segments,
+                                 std::vector<BondMeshVertex>& vertices,
+                                 std::vector<uint32_t>& indices) {
+    vertices.clear();
+    indices.clear();
+
+    if (segments < 3) {
+        return;
+    }
+
+    vertices.reserve(static_cast<size_t>((segments + 1) * 4 + 2));
+    indices.reserve(static_cast<size_t>(segments) * 12);
+
+    const float pi = 3.14159265358979323846f;
+    for (int i = 0; i <= segments; ++i) {
+        const float angle = (2.0f * pi * static_cast<float>(i)) / static_cast<float>(segments);
+        const float x = std::cos(angle);
+        const float y = std::sin(angle);
+
+        vertices.push_back({x, y, 0.0f, x, y, 0.0f});
+        vertices.push_back({x, y, 1.0f, x, y, 0.0f});
+    }
+
+    const uint32_t bottomCapStart = static_cast<uint32_t>(vertices.size());
+    for (int i = 0; i <= segments; ++i) {
+        const float angle = (2.0f * pi * static_cast<float>(i)) / static_cast<float>(segments);
+        const float x = std::cos(angle);
+        const float y = std::sin(angle);
+        vertices.push_back({x, y, 0.0f, 0.0f, 0.0f, -1.0f});
+    }
+
+    const uint32_t topCapStart = static_cast<uint32_t>(vertices.size());
+    for (int i = 0; i <= segments; ++i) {
+        const float angle = (2.0f * pi * static_cast<float>(i)) / static_cast<float>(segments);
+        const float x = std::cos(angle);
+        const float y = std::sin(angle);
+        vertices.push_back({x, y, 1.0f, 0.0f, 0.0f, 1.0f});
+    }
+
+    const uint32_t bottomCenter = static_cast<uint32_t>(vertices.size());
+    vertices.push_back({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f});
+    const uint32_t topCenter = static_cast<uint32_t>(vertices.size());
+    vertices.push_back({0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f});
+
+    for (int i = 0; i < segments; ++i) {
+        const uint32_t b0 = static_cast<uint32_t>(i * 2);
+        const uint32_t t0 = static_cast<uint32_t>(i * 2 + 1);
+        const uint32_t b1 = static_cast<uint32_t>((i + 1) * 2);
+        const uint32_t t1 = static_cast<uint32_t>((i + 1) * 2 + 1);
+
+        indices.push_back(b0);
+        indices.push_back(b1);
+        indices.push_back(t0);
+        indices.push_back(t0);
+        indices.push_back(b1);
+        indices.push_back(t1);
+
+        const uint32_t cb0 = bottomCapStart + static_cast<uint32_t>(i);
+        const uint32_t cb1 = bottomCapStart + static_cast<uint32_t>(i + 1);
+        indices.push_back(bottomCenter);
+        indices.push_back(cb1);
+        indices.push_back(cb0);
+
+        const uint32_t ct0 = topCapStart + static_cast<uint32_t>(i);
+        const uint32_t ct1 = topCapStart + static_cast<uint32_t>(i + 1);
+        indices.push_back(topCenter);
+        indices.push_back(ct0);
+        indices.push_back(ct1);
+    }
+}
+
 void buildUnitCylinderMesh(int segments,
                            std::vector<float>& vertices,
                            std::vector<uint32_t>& indices) {
@@ -177,6 +248,7 @@ UnitCellStyle makeUnitCellStyle(const RenderSettings& settings) {
 RTUnitCellUniforms makeRTUnitCellUniforms(const Camera& camera,
                                           const RenderSettings& settings,
                                           int atomCount,
+                                          int bondCount,
                                           int bvhNodeCount,
                                           float occlusionBias) {
     RTUnitCellUniforms unitCell{};
@@ -192,6 +264,10 @@ RTUnitCellUniforms makeRTUnitCellUniforms(const Camera& camera,
     const UnitCellStyle style = makeUnitCellStyle(settings);
     unitCell.unitCellRadius = style.radius;
     unitCell.unitCellColor = style.color;
+    unitCell.bondCount = settings.showBonds ? bondCount : 0;
+    unitCell.bondRadius = settings.bondRadius;
+    unitCell.showAtoms = settings.showAtoms ? 1 : 0;
+    unitCell.showBonds = settings.showBonds ? 1 : 0;
 
     unitCell.isPerspective = camera.isPerspective() ? 1 : 0;
     const QVector3D fwd = camera.forwardVector();

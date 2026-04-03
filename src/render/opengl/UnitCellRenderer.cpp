@@ -1,4 +1,5 @@
 #include "UnitCellRenderer.h"
+#include "CylinderMesh.h"
 #include "ShaderManager.h"
 #include "../common/Camera.h"
 #include "../common/RenderSettings.h"
@@ -10,7 +11,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <vector>
 
 namespace atom::render {
@@ -21,6 +21,7 @@ UnitCellRenderer::UnitCellRenderer()
     , m_edgeStartBuffer(QOpenGLBuffer::VertexBuffer)
     , m_edgeEndBuffer(QOpenGLBuffer::VertexBuffer)
     , m_edgeColorBuffer(QOpenGLBuffer::VertexBuffer)
+    , m_edgeRadiusBuffer(QOpenGLBuffer::VertexBuffer)
     , m_jointQuadVBO(QOpenGLBuffer::VertexBuffer)
     , m_jointPosRadiusBuffer(QOpenGLBuffer::VertexBuffer)
     , m_jointColorBuffer(QOpenGLBuffer::VertexBuffer)
@@ -48,7 +49,8 @@ bool UnitCellRenderer::initialize(ShaderManager* shaderManager) {
     }
 
     if (!m_cylinderVBO.create() || !m_cylinderIBO.create() ||
-        !m_edgeStartBuffer.create() || !m_edgeEndBuffer.create() || !m_edgeColorBuffer.create() ||
+        !m_edgeStartBuffer.create() || !m_edgeEndBuffer.create() ||
+        !m_edgeColorBuffer.create() || !m_edgeRadiusBuffer.create() ||
         !m_jointQuadVBO.create() || !m_jointPosRadiusBuffer.create() || !m_jointColorBuffer.create()) {
         qCritical() << "UnitCellRenderer: Failed to create buffers";
         return false;
@@ -58,15 +60,21 @@ bool UnitCellRenderer::initialize(ShaderManager* shaderManager) {
     createJointBillboardGeometry();
 
     // Cylinder-edge VAO layout:
-    // location 0: cylinder vertex (vec3)
+    // location 0: cylinder vertex position (vec3)
     // location 1: edge start (vec3), instanced
     // location 2: edge end (vec3), instanced
-    // location 3: edge color (vec4), instanced
+    // location 3: edge start color (vec4), instanced
+    // location 4: edge end color (vec4), instanced
+    // location 5: edge radii (vec2), instanced
+    // location 6: local normal (vec3)
     m_cylinderVAO.bind();
 
     m_cylinderVBO.bind();
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex), nullptr);
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex),
+                          reinterpret_cast<const void*>(3 * sizeof(float)));
 
     m_edgeStartBuffer.bind();
     glEnableVertexAttribArray(1);
@@ -82,6 +90,14 @@ bool UnitCellRenderer::initialize(ShaderManager* shaderManager) {
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glVertexAttribDivisor(3, 1);
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
+    glVertexAttribDivisor(4, 1);
+
+    m_edgeRadiusBuffer.bind();
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribDivisor(5, 1);
 
     m_cylinderIBO.bind();
     m_cylinderVAO.release();
@@ -119,6 +135,7 @@ void UnitCellRenderer::cleanup() {
     m_jointVAO.destroy();
 
     m_edgeColorBuffer.destroy();
+    m_edgeRadiusBuffer.destroy();
     m_edgeEndBuffer.destroy();
     m_edgeStartBuffer.destroy();
     m_cylinderIBO.destroy();
@@ -132,44 +149,14 @@ void UnitCellRenderer::cleanup() {
 }
 
 void UnitCellRenderer::createCylinderGeometry(int segments) {
-    std::vector<float> vertices;
+    std::vector<CylinderMeshVertex> vertices;
     std::vector<unsigned int> indices;
-
-    const float pi = 3.14159265358979323846f;
-    for (int i = 0; i <= segments; ++i) {
-        float angle = (2.0f * pi * i) / segments;
-        float x = std::cos(angle);
-        float y = std::sin(angle);
-
-        // Unit cylinder aligned to +Z from z=0 to z=1.
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(0.0f);
-
-        vertices.push_back(x);
-        vertices.push_back(y);
-        vertices.push_back(1.0f);
-    }
-
-    for (int i = 0; i < segments; ++i) {
-        int b0 = i * 2;
-        int t0 = i * 2 + 1;
-        int b1 = (i + 1) * 2;
-        int t1 = (i + 1) * 2 + 1;
-
-        indices.push_back(b0);
-        indices.push_back(b1);
-        indices.push_back(t0);
-
-        indices.push_back(t0);
-        indices.push_back(b1);
-        indices.push_back(t1);
-    }
+    buildCappedUnitCylinderMesh(segments, vertices, indices);
 
     m_cylinderIndexCount = static_cast<int>(indices.size());
 
     m_cylinderVBO.bind();
-    m_cylinderVBO.allocate(vertices.data(), static_cast<int>(vertices.size() * sizeof(float)));
+    m_cylinderVBO.allocate(vertices.data(), static_cast<int>(vertices.size() * sizeof(CylinderMeshVertex)));
 
     m_cylinderIBO.bind();
     m_cylinderIBO.allocate(indices.data(), static_cast<int>(indices.size() * sizeof(unsigned int)));
@@ -253,11 +240,14 @@ void UnitCellRenderer::setUnitCellData(const data::Structure* structure) {
     }
 
     std::array<float, 12 * 4> edgeColors;
+    std::array<float, 12 * 2> edgeRadii;
     for (int i = 0; i < m_edgeCount; ++i) {
         edgeColors[i * 4 + 0] = 1.0f;
         edgeColors[i * 4 + 1] = 1.0f;
         edgeColors[i * 4 + 2] = 1.0f;
         edgeColors[i * 4 + 3] = 1.0f;
+        edgeRadii[i * 2 + 0] = 1.0f;
+        edgeRadii[i * 2 + 1] = 1.0f;
     }
 
     std::array<float, 8 * 4> jointColors;
@@ -275,6 +265,8 @@ void UnitCellRenderer::setUnitCellData(const data::Structure* structure) {
     m_edgeEndBuffer.allocate(m_edgeEnds.data(), m_edgeCount * 3 * static_cast<int>(sizeof(float)));
     m_edgeColorBuffer.bind();
     m_edgeColorBuffer.allocate(edgeColors.data(), m_edgeCount * 4 * static_cast<int>(sizeof(float)));
+    m_edgeRadiusBuffer.bind();
+    m_edgeRadiusBuffer.allocate(edgeRadii.data(), m_edgeCount * 2 * static_cast<int>(sizeof(float)));
     m_cylinderVAO.release();
 
     m_jointVAO.bind();
