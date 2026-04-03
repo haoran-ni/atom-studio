@@ -186,6 +186,7 @@ float MetalViewport::unitCellThickness() const { return m_unitCellThickness; }
 QColor MetalViewport::unitCellColor() const { return m_unitCellColor; }
 float MetalViewport::atomScale() const { return m_atomScale; }
 int MetalViewport::atomColorScheme() const { return m_atomColorScheme; }
+float MetalViewport::bondRadius() const { return m_bondRadius; }
 int MetalViewport::rendererMode() const { return m_rendererMode; }
 int MetalViewport::sampleCount() const { return m_sampleCount; }
 int MetalViewport::maxRTSamples() const { return m_maxRTSamples; }
@@ -346,6 +347,16 @@ void MetalViewport::setBondScale(float scale) {
     emit bondScaleChanged();
     if (m_structure) {
         startBondDetection();
+    }
+}
+
+void MetalViewport::setBondRadius(float radius) {
+    if (!std::isfinite(radius)) return;
+    const float clamped = std::clamp(radius, 0.01f, 0.6f);
+    if (!qFuzzyCompare(m_bondRadius, clamped)) {
+        m_bondRadius = clamped;
+        emit bondRadiusChanged();
+        update();
     }
 }
 
@@ -645,6 +656,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.unitCellThickness = m_unitCellThickness;
     m_renderSettings.unitCellColor = m_unitCellColor;
     m_renderSettings.atomScale = m_atomScale;
+    m_renderSettings.bondRadius = m_bondRadius;
     m_renderSettings.maxRTSamples = m_maxRTSamples;
     m_renderSettings.enableAmbientOcclusion = m_enableAO;
     m_renderSettings.enableShadows = m_enableShadows;

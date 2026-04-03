@@ -11,10 +11,13 @@
         <file alias="InfoOverlayBox.qml">../src/ui/qml/InfoOverlayBox.qml</file>
     </qresource>
     <qresource prefix="/icons">
+        <file alias="atom.svg">icons/atom.svg</file>
         <file alias="background.svg">icons/background.svg</file>
+        <file alias="bond.svg">icons/bond.svg</file>
         <file alias="camera.svg">icons/camera.svg</file>
         <file alias="export.svg">icons/export.svg</file>
         <file alias="files.svg">icons/files.svg</file>
+        <file alias="guide.svg">icons/guide.svg</file>
         <file alias="import.svg">icons/import.svg</file>
         <file alias="chevron-down.svg">icons/chevron-down.svg</file>
         <file alias="chevron-left.svg">icons/chevron-left.svg</file>
@@ -24,6 +27,7 @@
         <file alias="manipulation.svg">icons/manipulation.svg</file>
         <file alias="render.svg">icons/render.svg</file>
         <file alias="reset.svg">icons/reset.svg</file>
+        <file alias="structure.svg">icons/structure.svg</file>
         <file alias="unit-cell.svg">icons/unit-cell.svg</file>
         <file alias="visualization.svg">icons/visualization.svg</file>
     </qresource>

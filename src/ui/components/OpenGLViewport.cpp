@@ -165,6 +165,7 @@ public:
         viewport->m_renderSettings.unitCellThickness = viewport->m_unitCellThickness;
         viewport->m_renderSettings.unitCellColor = viewport->m_unitCellColor;
         viewport->m_renderSettings.atomScale = viewport->m_atomScale;
+        viewport->m_renderSettings.bondRadius = viewport->m_bondRadius;
         viewport->m_renderSettings.maxRTSamples = viewport->m_maxRTSamples;
         viewport->m_renderSettings.enableAmbientOcclusion = viewport->m_enableAO;
         viewport->m_renderSettings.enableShadows = viewport->m_enableShadows;
@@ -271,6 +272,10 @@ float OpenGLViewport::atomScale() const {
 
 int OpenGLViewport::atomColorScheme() const {
     return m_atomColorScheme;
+}
+
+float OpenGLViewport::bondRadius() const {
+    return m_bondRadius;
 }
 
 int OpenGLViewport::rendererMode() const {
@@ -387,6 +392,16 @@ void OpenGLViewport::setBondScale(float scale) {
     emit bondScaleChanged();
     if (m_structure) {
         startBondDetection();
+    }
+}
+
+void OpenGLViewport::setBondRadius(float radius) {
+    if (!std::isfinite(radius)) return;
+    const float clamped = std::clamp(radius, 0.01f, 0.6f);
+    if (!qFuzzyCompare(m_bondRadius, clamped)) {
+        m_bondRadius = clamped;
+        emit bondRadiusChanged();
+        update();
     }
 }
 

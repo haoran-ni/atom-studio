@@ -45,6 +45,7 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float atomScale READ atomScale WRITE setAtomScale NOTIFY atomScaleChanged)
     Q_PROPERTY(int atomColorScheme READ atomColorScheme WRITE setAtomColorScheme NOTIFY atomColorSchemeChanged)
     Q_PROPERTY(float bondScale READ bondScale WRITE setBondScale NOTIFY bondScaleChanged)
+    Q_PROPERTY(float bondRadius READ bondRadius WRITE setBondRadius NOTIFY bondRadiusChanged)
     Q_PROPERTY(int rendererMode READ rendererMode WRITE setRendererMode NOTIFY rendererModeChanged)
     Q_PROPERTY(int sampleCount READ sampleCount NOTIFY sampleCountChanged)
     Q_PROPERTY(int maxRTSamples READ maxRTSamples WRITE setMaxRTSamples NOTIFY maxRTSamplesChanged)
@@ -85,6 +86,7 @@ public:
     float atomScale() const;
     int atomColorScheme() const;
     float bondScale() const;
+    float bondRadius() const;
     int rendererMode() const;
     int sampleCount() const;
     int maxRTSamples() const;
@@ -121,6 +123,7 @@ public slots:
     void setAtomScale(float scale);
     void setAtomColorScheme(int scheme);
     void setBondScale(float scale);
+    void setBondRadius(float radius);
     void setRendererMode(int mode);
     void setMaxRTSamples(int samples);
     void setEnableAO(bool enable);
@@ -154,6 +157,7 @@ signals:
     void atomScaleChanged();
     void atomColorSchemeChanged();
     void bondScaleChanged();
+    void bondRadiusChanged();
     void rendererModeChanged();
     void sampleCountChanged();
     void maxRTSamplesChanged();
@@ -206,6 +210,7 @@ private:
     float m_atomScale = 1.0f;
     int m_atomColorScheme = 0;  // 0 = Jmol, 1 = CPK
     float m_bondScale = 1.1f;
+    float m_bondRadius = 0.1f;
     int m_rendererMode = 0;       // 0 = Raster, 1 = RayTracing
     int m_sampleCount = 0;
     int m_maxRTSamples = 1000;

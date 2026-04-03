@@ -485,7 +485,7 @@ Rectangle {
 
                 SidebarSection {
                     id: structureInfoSection
-                    title: qsTr("Structure Info")
+                    title: qsTr("Info")
                     iconSource: "qrc:/icons/info.svg"
                     expanded: false
                     Layout.fillWidth: true
@@ -547,8 +547,8 @@ Rectangle {
 
                 SidebarSection {
                     id: structureManipulationSection
-                    title: qsTr("Structure Manipulation")
-                    iconSource: "qrc:/icons/manipulation.svg"
+                    title: qsTr("Structure")
+                    iconSource: "qrc:/icons/structure.svg"
                     Layout.fillWidth: true
 
                     content: Component {
@@ -720,9 +720,9 @@ Rectangle {
                 }
 
                 SidebarSection {
-                    id: visualizationSection
-                    title: qsTr("Visualization")
-                    iconSource: "qrc:/icons/visualization.svg"
+                    id: atomsSection
+                    title: qsTr("Atoms")
+                    iconSource: "qrc:/icons/atom.svg"
                     Layout.fillWidth: true
 
                     content: Component {
@@ -765,6 +765,7 @@ Rectangle {
 
 
                             SidebarBranchRow {
+                                lastItem: true
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Atom Scale")
@@ -782,20 +783,47 @@ Rectangle {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    id: bondsSection
+                    title: qsTr("Bonds")
+                    iconSource: "qrc:/icons/bond.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Show Bonds")
+                                        checked: sidebar.viewport ? sidebar.viewport.showBonds : false
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.showBonds = checked
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             SidebarBranchRow {
                                 content: Component {
                                     NumericSliderControl {
-                                        title: qsTr("Bond Scale")
+                                        title: qsTr("Bond Radius")
                                         statusHintTarget: sidebar
-                                        from: 0.5
-                                        to: 2.0
-                                        defaultValue: 1.1
+                                        from: 0.01
+                                        to: 0.6
+                                        defaultValue: 0.1
                                         decimals: 2
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.1
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.bondRadius : 0.1
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
-                                                sidebar.viewport.bondScale = newValue
+                                                sidebar.viewport.bondRadius = newValue
                                             }
                                         }
                                     }
@@ -805,12 +833,17 @@ Rectangle {
                             SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
-                                    SidebarCheckBox {
-                                        text: qsTr("Show Bonds")
-                                        checked: sidebar.viewport ? sidebar.viewport.showBonds : false
-                                        onCheckedChanged: {
+                                    NumericSliderControl {
+                                        title: qsTr("Neighborlist Cutoff Scale")
+                                        statusHintTarget: sidebar
+                                        from: 0.5
+                                        to: 2.0
+                                        defaultValue: 1.1
+                                        decimals: 2
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.bondScale : 1.1
+                                        onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
-                                                sidebar.viewport.showBonds = checked
+                                                sidebar.viewport.bondScale = newValue
                                             }
                                         }
                                     }
@@ -1374,6 +1407,98 @@ Rectangle {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.backgroundColor = backgroundColorPicker.defaultColor
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    id: quickGuideSection
+                    title: qsTr("Quick Guide")
+                    iconSource: "qrc:/icons/guide.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 4
+
+                                        Label {
+                                            text: qsTr("Mouse Controls")
+                                            color: sidebar.textStrong
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Label {
+                                            text: qsTr("Left mouse button: rotate the structure.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Label {
+                                            text: qsTr("Right mouse button: pan across the scene.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Label {
+                                            text: qsTr("Mouse wheel or trackpad scroll: zoom in or out.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 4
+
+                                        Label {
+                                            text: qsTr("Common Actions")
+                                            color: sidebar.textStrong
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Label {
+                                            text: qsTr("Double-click in the viewport to reset the camera view.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Label {
+                                            text: qsTr("Use the Camera tab to switch projection mode and jump to standard view directions.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Label {
+                                            text: qsTr("Use the Atoms, Bonds, and Unit Cell tabs to adjust what is shown and how the structure is rendered.")
+                                            color: sidebar.textBody
+                                            font.pixelSize: 13
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
                                         }
                                     }
                                 }

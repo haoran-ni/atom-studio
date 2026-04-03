@@ -20,7 +20,6 @@ Rectangle {
 
     function restoreExportState(state) {
         infoOverlay.visible = state.previousInfoOverlayVisible
-        cameraHintsOverlay.visible = state.previousCameraHintsVisible
         axisOverlay.visible = state.previousAxisOverlayVisible
         if (state.hadViewport && viewportPanel.viewport
                 && viewportPanel.viewport.showViewportAxes !== undefined) {
@@ -101,19 +100,6 @@ Rectangle {
             color: "#88ccff"
             font.pixelSize: 10
         }
-    }
-
-    // Camera controls hint (bottom-right)
-    InfoOverlayBox {
-        id: cameraHintsOverlay
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 10
-
-        Label { text: "LMB: Rotate";   color: "#ffffff"; font.pixelSize: 10 }
-        Label { text: "RMB: Pan";      color: "#ffffff"; font.pixelSize: 10 }
-        Label { text: "Scroll: Zoom";  color: "#ffffff"; font.pixelSize: 10 }
-        Label { text: "DblClick: Reset"; color: "#ffffff"; font.pixelSize: 10 }
     }
 
     // Axis indicator (UI overlay only; not part of raster/ray tracing)
@@ -347,7 +333,6 @@ Rectangle {
                 filePath: filePath,
                 hadViewport: hadViewport,
                 previousInfoOverlayVisible: infoOverlay.visible,
-                previousCameraHintsVisible: cameraHintsOverlay.visible,
                 previousAxisOverlayVisible: axisOverlay.visible,
                 previousViewportAxesVisible: hadViewport
                                              && viewportPanel.viewport.showViewportAxes !== undefined
@@ -362,7 +347,6 @@ Rectangle {
                                     : 0
             }
             infoOverlay.visible = false
-            cameraHintsOverlay.visible = false
             if (!includeAxes) axisOverlay.visible = false
             if (!includeAxes && hadViewport && viewportPanel.viewport.showViewportAxes !== undefined) {
                 viewportPanel.viewport.showViewportAxes = false

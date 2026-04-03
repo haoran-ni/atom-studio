@@ -4,6 +4,58 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-03: Sidebar Refactor, Bond Radius Control, and Quick Guide Migration
+
+### Summary
+Refactored the sidebar so atom and bond controls are split into dedicated sections instead of sharing the old `Visualization` tab. The existing `Bond Scale` control was renamed to `Neighborlist Cutoff Scale` to reflect its real purpose in bond detection, and a new `Bond Radius` slider was added to expose the actual rendered bond thickness with a tunable range of `0.01` to `0.6` Angstroms. The sidebar was also reorganized and renamed in several places: `Structure Manipulation` became `Structure`, `Structure Info` became `Info`, and a new `Quick Guide` section was added at the end of the sidebar after `Background`. The viewport’s floating lower-right help overlay was removed, with its controls guidance rewritten as structured explanatory text inside the new sidebar guide section.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/ui/components/OpenGLViewport.h` | Added a user-facing `bondRadius` property for the OpenGL viewport |
+| `src/ui/components/OpenGLViewport.cpp` | Propagated the new bond radius into `RenderSettings` and clamped the UI-editable range to `0.01`–`0.6` |
+| `src/ui/components/MetalViewport.h` | Added the matching `bondRadius` property for the Metal viewport |
+| `src/ui/components/MetalViewport.mm` | Propagated the new bond radius into `RenderSettings` and matched the UI clamp range |
+| `src/ui/qml/Sidebar.qml` | Split `Visualization` into `Atoms` and `Bonds`; renamed `Structure Manipulation` to `Structure` and `Structure Info` to `Info`; added the `Quick Guide` section; reordered guide placement after `Background`; moved `Show Bonds` to the top of the Bonds section |
+| `src/ui/qml/ViewportPanel.qml` | Removed the floating viewport interaction help overlay and cleaned up image-export state that previously hid/restored it |
+| `resources/resources.qrc` | Added resource aliases for `atom.svg`, `bond.svg`, `structure.svg`, and `guide.svg` so the new sidebar sections can use their dedicated icons |
+
+### Architecture Decisions
+
+#### 1. Bond Detection Scale and Bond Render Radius Are Separate Controls
+- The existing `bondScale` viewport property already controlled neighbor-list bond detection, not visual thickness
+- Rather than overloading that setting, a new `bondRadius` viewport property was introduced and copied into `RenderSettings.bondRadius`
+- This keeps chemistry/topology detection independent from how bonds are drawn
+
+#### 2. Sidebar Labels Were Aligned With Actual Behavior
+- `Bond Scale` was misleading because it changed which atom pairs became bonded
+- Renaming it to `Neighborlist Cutoff Scale` makes the control match the underlying `NeighborList` rebuild path
+- The new `Bond Radius` slider now owns visual bond thickness explicitly
+
+#### 3. Interaction Help Lives in the Sidebar, Not on Top of the Viewport
+- The old floating viewport hint box consumed screen space and duplicated information continuously
+- The replacement `Quick Guide` section provides the same guidance in clearer language and with better structure
+- Removing the in-viewport block also simplified export-state handling, because the export path no longer needs to hide and restore that overlay
+
+#### 4. Sidebar Organization Was Split by Domain
+- Atom-specific controls now live in `Atoms`
+- Bond-specific controls now live in `Bonds`
+- Reference/help content now lives in `Quick Guide`
+- This reduces the overload of the previous `Visualization` section and makes the control grouping more predictable
+
+### Build Commands
+```bash
+cmake --build build
+```
+
+### Testing
+- Built successfully after adding the `bondRadius` viewport property and sidebar slider
+- Built successfully after renaming and splitting sidebar sections into `Atoms` and `Bonds`
+- Built successfully after adding the `Quick Guide` sidebar section and removing the floating viewport help overlay
+- Did not perform a final manual UI verification in the app; recommended checks are the new section ordering, icon loading, and the `Bond Radius` / `Neighborlist Cutoff Scale` behavior in both viewport backends
+
+---
+
 ## 2026-04-03: Bond Caps, Hidden-Atom Bond Mode, and Ray-Traced Unit-Cell Depth Fixes
 
 ### Summary
