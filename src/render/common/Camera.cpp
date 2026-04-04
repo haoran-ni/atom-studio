@@ -70,8 +70,12 @@ void Camera::zoom(float factor) {
     if (m_perspective) {
         m_distance *= factor;
         m_distance = qBound(0.1f, m_distance, 100000.0f);
-        m_near = m_distance * 0.001f;
-        m_far  = m_distance * 10.0f;
+        m_near = qMax(0.01f, m_distance * 0.001f);
+        if (m_sceneExtent > 0.0f) {
+            m_far = m_distance + m_sceneExtent * 3.0f;
+        } else {
+            m_far = m_distance * 10.0f;
+        }
         m_viewDirty = true;
     }
     // Ortho: only shrink/grow the visible half-extent; distance and planes stay fixed
