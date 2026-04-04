@@ -80,7 +80,8 @@ void Camera::zoom(float factor) {
     }
     // Ortho: only shrink/grow the visible half-extent; distance and planes stay fixed
     m_orthoScale *= factor;
-    m_orthoScale = qBound(0.001f, m_orthoScale, 10000.0f);
+    float minOrthoScale = (m_sceneExtent > 0.0f) ? m_sceneExtent * 0.002f : 0.001f;
+    m_orthoScale = qBound(minOrthoScale, m_orthoScale, 10000.0f);
     m_projDirty = true;
 }
 
