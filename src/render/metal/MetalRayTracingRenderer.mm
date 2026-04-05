@@ -776,7 +776,7 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
         float len = camera.viewScale() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,
-                               m_settings.rotationCenterZ, len, /*depthTest=*/false);
+                               m_settings.rotationCenterZ, len, /*depthTest=*/true);
     }
 
     if (m_settings.showViewportAxes) {
@@ -856,7 +856,7 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
         float len = camera.viewScale() * 0.03f;
         m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
                                m_settings.rotationCenterX, m_settings.rotationCenterY,
-                               m_settings.rotationCenterZ, len, /*depthTest=*/false);
+                               m_settings.rotationCenterZ, len, /*depthTest=*/true);
     }
 
     if (drawViewportAxes) {

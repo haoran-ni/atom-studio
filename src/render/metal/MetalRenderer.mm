@@ -173,14 +173,14 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 
-    const bool needsViewportAxesOverlay = settings.showViewportAxes;
+    const bool needsOverlayPass = settings.showViewportAxes || settings.showRotationCenter;
 
     MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
     passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
     if (m_impl->msaaColorTexture) {
         passDesc.colorAttachments[0].texture = m_impl->msaaColorTexture;
         passDesc.colorAttachments[0].resolveTexture = m_impl->colorTexture;
-        passDesc.colorAttachments[0].storeAction = needsViewportAxesOverlay
+        passDesc.colorAttachments[0].storeAction = needsOverlayPass
             ? MTLStoreActionStoreAndMultisampleResolve
             : MTLStoreActionMultisampleResolve;
     } else {
@@ -204,7 +204,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         static_cast<double>(m_width), static_cast<double>(m_height),
         0.0, 1.0}];
 
-    // Render order: unit-cell object -> bonds -> spheres -> rotation center gizmo
+    // Render order: unit-cell object -> bonds -> spheres
     if (settings.showUnitCell) {
         m_unitCellRenderer.render((__bridge void*)encoder, uniforms, settings);
     }
@@ -214,16 +214,10 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     if (settings.showAtoms) {
         m_sphereRenderer.render((__bridge void*)encoder, uniforms);
     }
-    if (settings.showRotationCenter) {
-        float len = camera.viewScale() * 0.03f;
-        m_gizmoRenderer.render((__bridge void*)encoder, uniforms,
-                               settings.rotationCenterX, settings.rotationCenterY,
-                               settings.rotationCenterZ, len, /*depthTest=*/false);
-    }
 
     [encoder endEncoding];
 
-    if (needsViewportAxesOverlay) {
+    if (needsOverlayPass) {
         MTLRenderPassDescriptor* overlayPass = [MTLRenderPassDescriptor renderPassDescriptor];
         if (m_impl->msaaColorTexture) {
             overlayPass.colorAttachments[0].texture = m_impl->msaaColorTexture;
@@ -248,7 +242,16 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
             static_cast<double>(m_width), static_cast<double>(m_height),
             0.0, 1.0}];
 
-        m_viewportAxesRenderer.render((__bridge void*)overlayEncoder, camera, settings, m_width, m_height);
+        if (settings.showRotationCenter) {
+            float len = camera.viewScale() * 0.03f;
+            m_gizmoRenderer.render((__bridge void*)overlayEncoder, uniforms,
+                                   settings.rotationCenterX, settings.rotationCenterY,
+                                   settings.rotationCenterZ, len, /*depthTest=*/true);
+        }
+
+        if (settings.showViewportAxes) {
+            m_viewportAxesRenderer.render((__bridge void*)overlayEncoder, camera, settings, m_width, m_height);
+        }
         [overlayEncoder endEncoding];
     }
 

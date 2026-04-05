@@ -4,6 +4,74 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-05: Analytic Raster Bonds and Bond/Unit-Cell/Gizmo Renderer Separation
+
+### Summary
+Changed raster bond rendering from tessellated cylinder meshes to analytically intersected capped cylinders in shader code, while leaving the ray-tracing bond path analytic as before. After that exposed coupling between bond rendering and overlay/object rendering, refactored the renderer ownership so bonds, the unit-cell object, and the center gizmo no longer share the same rendering path. The unit cell remains a pure-color connected scene object with normal scene depth behavior, while the center gizmo now renders in dedicated overlay passes so it stays on top of the scene but still preserves correct self-occlusion.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/CMakeLists.txt` | Registered the new OpenGL gizmo renderer sources in the render target |
+| `src/render/opengl/BondRenderer.h` | Switched the OpenGL bond renderer interface from mesh-cylinder assumptions to analytic billboard impostor rendering |
+| `src/render/opengl/BondRenderer.cpp` | Replaced instanced bond-cylinder mesh draws with instanced quad impostors for analytic raster bonds |
+| `src/render/opengl/ShaderManager.h` | Continued exposing shared shader programs used by the separated OpenGL renderers |
+| `src/render/opengl/ShaderManager.cpp` | Rewrote the OpenGL bond shader as an analytic capped-cylinder shader and kept flat solid-cylinder overlay shading available for non-bond objects |
+| `src/render/opengl/GizmoRenderer.h` | Added a dedicated OpenGL center-gizmo renderer class |
+| `src/render/opengl/GizmoRenderer.cpp` | Implemented the OpenGL center-gizmo renderer as its own overlay cylinder renderer with self-occluding depth |
+| `src/render/opengl/UnitCellRenderer.cpp` | Detached unit-cell edge rendering from the bond shader so the unit cell uses its own pure-color cylinder path |
+| `src/render/opengl/OpenGLRenderer.h` | Added ownership of the dedicated OpenGL gizmo renderer |
+| `src/render/opengl/OpenGLRenderer.cpp` | Moved the OpenGL center gizmo into an overlay pass and preserved separate scene vs overlay responsibilities |
+| `src/render/opengl/RayTracingRenderer.h` | Added ownership of the dedicated OpenGL gizmo renderer for RT display overlays |
+| `src/render/opengl/RayTracingRenderer.cpp` | Rendered the OpenGL center gizmo as a separate topmost overlay in RT display passes with self-occlusion preserved |
+| `src/render/metal/MetalShaderLibrary.h` | Added a dedicated flat solid-cylinder pipeline accessor for unit-cell and gizmo rendering |
+| `src/render/metal/MetalShaderLibrary.mm` | Added the Metal flat solid-cylinder pipeline and separated it from the bond analytic pipeline |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Switched Metal unit-cell edge rendering off the bond pipeline onto the dedicated solid-cylinder pipeline |
+| `src/render/metal/MetalGizmoRenderer.mm` | Switched the Metal center gizmo off the bond pipeline onto the dedicated solid-cylinder pipeline |
+| `src/render/metal/MetalRenderer.mm` | Moved the Metal center gizmo out of the main scene pass into the overlay pass so it always appears on top |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Kept the Metal RT center gizmo in a separate overlay path with self-occluding depth behavior |
+| `src/ui/components/OpenGLViewport.h` | Added OpenGL viewport state for showing the transient rotation-center gizmo during orbit interaction |
+| `src/ui/components/OpenGLViewport.cpp` | Propagated rotation-center overlay state into `RenderSettings` and matched Metal’s left-drag gizmo visibility behavior |
+
+### Architecture Decisions
+
+#### 1. Analytic Bonds Belong Only to the Bond Renderer
+- Raster bonds were changed to analytic capped cylinders so they are mathematically smooth without adding more mesh segments
+- That analytic logic is now treated as bond-specific behavior, not as a generic cylinder behavior that other objects should inherit
+- This keeps future bond rendering changes isolated from unrelated scene objects
+
+#### 2. The Unit Cell Is Scene Geometry, Not a Bond Variant
+- The unit cell remains a connected pure-color object built from cylinders plus corner joints
+- It should participate in the main scene pass and write correct scene depth
+- Its edge cylinders therefore no longer borrow the bond shader or bond pipeline
+
+#### 3. The Center Gizmo Is Overlay Geometry, Not Scene Geometry
+- The center gizmo must always appear on top of the scene while still self-occluding correctly
+- The final design renders it in a dedicated overlay pass after clearing scene depth, rather than drawing it inside the main scene pass
+- This preserves internal depth relationships inside the gizmo without allowing scene depth to hide it
+
+#### 4. Separation Needed to Happen at the Shader/Pipeline Layer, Not Just the C++ Class Layer
+- Metal already had separate `MetalUnitCellRenderer` and `MetalGizmoRenderer` classes, but both still depended on `bondPipeline`
+- OpenGL already had a separate `UnitCellRenderer`, but its edges still depended on `bondShader`, and it had no separate gizmo renderer at all
+- The fix therefore introduced distinct ownership at the shader/pipeline level and, for OpenGL, added the missing dedicated gizmo renderer
+
+#### 5. Existing Geometry/Data Flow Was Preserved Where Reasonable
+- The unit cell still uses 12 cylinders and 8 corner joints
+- The center gizmo still uses 6 axis cylinders
+- The refactor avoided redesigning viewport state or scene-data packing; it mainly rerouted which renderer/shader path owns which object
+
+### Build Commands
+```bash
+cmake --build build -j4
+```
+
+### Testing
+- Built successfully after converting raster bonds to analytic capped-cylinder impostors
+- Built successfully after separating unit-cell and gizmo rendering ownership from the bond-owned path in both OpenGL and Metal
+- Did not perform a final live runtime verification in the app; recommended checks are raster vs RT bonds, unit-cell depth behavior, and center-gizmo overlay/self-occlusion in both backends
+
+---
+
 ## 2026-04-03: Sidebar Refactor, Bond Radius Control, and Quick Guide Migration
 
 ### Summary

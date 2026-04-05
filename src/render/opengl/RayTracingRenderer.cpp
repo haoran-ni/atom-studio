@@ -589,6 +589,10 @@ bool RayTracingRenderer::initialize() {
         qCritical() << "RayTracingRenderer: Failed to initialize overlay shader manager";
         return false;
     }
+    if (!m_gizmoRenderer.initialize(&m_overlayShaderManager)) {
+        qCritical() << "RayTracingRenderer: Failed to initialize gizmo renderer";
+        return false;
+    }
     if (!m_viewportAxesRenderer.initialize(&m_overlayShaderManager)) {
         qCritical() << "RayTracingRenderer: Failed to initialize viewport axes renderer";
         return false;
@@ -634,6 +638,7 @@ void RayTracingRenderer::cleanup() {
 
     m_rtShader.reset();
     m_displayShader.reset();
+    m_gizmoRenderer.cleanup();
     m_viewportAxesRenderer.cleanup();
     m_overlayShaderManager.cleanup();
 
@@ -1168,10 +1173,24 @@ void RayTracingRenderer::renderDisplayPass(const Camera& camera) {
 
     m_displayShader->release();
 
-    if (m_settings.showViewportAxes) {
+    if (m_settings.showRotationCenter || m_settings.showViewportAxes) {
         // Fresh depth for overlay so it stays on top of the displayed RT image
-        // while preserving true self-occlusion inside the gizmo geometry.
+        // while preserving true self-occlusion inside overlay geometry.
         glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        if (m_settings.showRotationCenter) {
+            const float len = camera.viewScale() * 0.03f;
+            m_gizmoRenderer.render(camera, m_settings,
+                                   m_settings.rotationCenterX,
+                                   m_settings.rotationCenterY,
+                                   m_settings.rotationCenterZ,
+                                   len);
+        }
+    }
+
+    if (m_settings.showViewportAxes) {
         m_viewportAxesRenderer.render(camera, m_settings, m_width, m_height);
     }
 }

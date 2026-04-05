@@ -12,8 +12,7 @@ namespace atom::render::metal {
 
 struct MetalBondRenderer::Impl {
     id<MTLDevice> device = nil;
-    id<MTLBuffer> cylinderVertexBuffer = nil;
-    id<MTLBuffer> cylinderIndexBuffer = nil;
+    id<MTLBuffer> quadVertexBuffer = nil;
     id<MTLBuffer> instanceBuffer = nil;      // N × BondInstance
 };
 
@@ -37,36 +36,31 @@ bool MetalBondRenderer::initialize(void* device, MetalShaderLibrary* shaderLibra
         return false;
     }
 
-    createCylinderGeometry(12);
+    createQuadGeometry();
     m_initialized = true;
     return true;
 }
 
 void MetalBondRenderer::cleanup() {
-    m_impl->cylinderVertexBuffer = nil;
-    m_impl->cylinderIndexBuffer = nil;
+    m_impl->quadVertexBuffer = nil;
     m_impl->instanceBuffer = nil;
     m_bondCount = 0;
-    m_cylinderIndexCount = 0;
     m_initialized = false;
 }
 
-void MetalBondRenderer::createCylinderGeometry(int segments) {
-    std::vector<BondMeshVertex> vertices;
-    std::vector<uint32_t> indices;
-    buildCappedUnitCylinderMesh(segments, vertices, indices);
+void MetalBondRenderer::createQuadGeometry() {
+    const float quadVertices[] = {
+        -1.0f, -1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+        -1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+    };
 
-    m_cylinderIndexCount = static_cast<int>(indices.size());
-
-    m_impl->cylinderVertexBuffer = [m_impl->device
-        newBufferWithBytes:vertices.data()
-                    length:vertices.size() * sizeof(BondMeshVertex)
-                   options:MTLResourceStorageModeShared];
-
-    m_impl->cylinderIndexBuffer = [m_impl->device
-        newBufferWithBytes:indices.data()
-                    length:indices.size() * sizeof(uint32_t)
-                   options:MTLResourceStorageModeShared];
+    m_impl->quadVertexBuffer = [m_impl->device newBufferWithBytes:quadVertices
+                                                           length:sizeof(quadVertices)
+                                                          options:MTLResourceStorageModeShared];
 }
 
 void MetalBondRenderer::setBondData(const data::Structure* structure) {
@@ -107,26 +101,21 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms) 
 
     [encoder setRenderPipelineState:pipeline];
     [encoder setDepthStencilState:depthState];
-    // Mesh indices are authored CCW; make winding explicit instead of relying on
-    // Metal's encoder default.
-    [encoder setFrontFacingWinding:MTLWindingCounterClockwise];
-    [encoder setCullMode:MTLCullModeBack];
+    [encoder setCullMode:MTLCullModeNone];
 
     [encoder setVertexBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
     [encoder setFragmentBytes:&uniforms length:sizeof(SceneUniforms) atIndex:0];
 
-    // buffer(1): cylinder mesh vertices
-    [encoder setVertexBuffer:m_impl->cylinderVertexBuffer offset:0 atIndex:1];
+    // buffer(1): quad vertices
+    [encoder setVertexBuffer:m_impl->quadVertexBuffer offset:0 atIndex:1];
 
     // buffer(2): per-bond instance data
     [encoder setVertexBuffer:m_impl->instanceBuffer offset:0 atIndex:2];
 
-    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                        indexCount:m_cylinderIndexCount
-                         indexType:MTLIndexTypeUInt32
-                       indexBuffer:m_impl->cylinderIndexBuffer
-                 indexBufferOffset:0
-                     instanceCount:m_bondCount];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:6
+              instanceCount:m_bondCount];
 }
 
 } // namespace atom::render::metal

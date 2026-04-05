@@ -39,6 +39,11 @@ bool OpenGLRenderer::initialize() {
         return false;
     }
 
+    if (!m_gizmoRenderer.initialize(&m_shaderManager)) {
+        qCritical() << "OpenGLRenderer: Failed to initialize gizmo renderer";
+        return false;
+    }
+
     if (!m_viewportAxesRenderer.initialize(&m_shaderManager)) {
         qCritical() << "OpenGLRenderer: Failed to initialize viewport axes renderer";
         return false;
@@ -58,6 +63,7 @@ bool OpenGLRenderer::initialize() {
 
 void OpenGLRenderer::cleanup() {
     m_viewportAxesRenderer.cleanup();
+    m_gizmoRenderer.cleanup();
     m_unitCellRenderer.cleanup();
     m_bondRenderer.cleanup();
     m_sphereRenderer.cleanup();
@@ -128,10 +134,21 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
     // Render atoms
     m_sphereRenderer.render(camera, settings);
 
-    // Viewport-corner XYZ axes overlay: clear depth so it stays on top of the scene,
-    // but keep depth testing enabled so the gizmo self-occludes correctly.
-    if (settings.showViewportAxes) {
+    // Overlay pass: clear scene depth so overlays stay on top while preserving
+    // correct self-occlusion inside overlay geometry.
+    if (settings.showRotationCenter || settings.showViewportAxes) {
         glClear(GL_DEPTH_BUFFER_BIT);
+        if (settings.showRotationCenter) {
+            const float len = camera.viewScale() * 0.03f;
+            m_gizmoRenderer.render(camera, settings,
+                                   settings.rotationCenterX,
+                                   settings.rotationCenterY,
+                                   settings.rotationCenterZ,
+                                   len);
+        }
+    }
+
+    if (settings.showViewportAxes) {
         m_viewportAxesRenderer.render(camera, settings, m_width, m_height);
     }
 }

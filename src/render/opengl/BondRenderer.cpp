@@ -1,5 +1,4 @@
 #include "BondRenderer.h"
-#include "CylinderMesh.h"
 #include "ShaderManager.h"
 #include "../common/BondRenderData.h"
 #include "../common/Camera.h"
@@ -11,8 +10,7 @@
 namespace atom::render {
 
 BondRenderer::BondRenderer()
-    : m_cylinderVBO(QOpenGLBuffer::VertexBuffer)
-    , m_cylinderIBO(QOpenGLBuffer::IndexBuffer)
+    : m_quadVBO(QOpenGLBuffer::VertexBuffer)
     , m_instanceStartBuffer(QOpenGLBuffer::VertexBuffer)
     , m_instanceEndBuffer(QOpenGLBuffer::VertexBuffer)
     , m_instanceStartColorBuffer(QOpenGLBuffer::VertexBuffer)
@@ -36,12 +34,12 @@ bool BondRenderer::initialize(ShaderManager* shaderManager) {
         return false;
     }
 
-    if (!m_cylinderVAO.create()) {
+    if (!m_quadVAO.create()) {
         qCritical() << "BondRenderer: Failed to create VAO";
         return false;
     }
 
-    if (!m_cylinderVBO.create() || !m_cylinderIBO.create() ||
+    if (!m_quadVBO.create() ||
         !m_instanceStartBuffer.create() || !m_instanceEndBuffer.create() ||
         !m_instanceStartColorBuffer.create() || !m_instanceEndColorBuffer.create() ||
         !m_instanceRadiusBuffer.create()) {
@@ -49,7 +47,7 @@ bool BondRenderer::initialize(ShaderManager* shaderManager) {
         return false;
     }
 
-    createCylinderGeometry(12);
+    createQuadGeometry();
 
     m_initialized = true;
     return true;
@@ -61,37 +59,32 @@ void BondRenderer::cleanup() {
     m_instanceStartColorBuffer.destroy();
     m_instanceEndBuffer.destroy();
     m_instanceStartBuffer.destroy();
-    m_cylinderIBO.destroy();
-    m_cylinderVBO.destroy();
-    m_cylinderVAO.destroy();
+    m_quadVBO.destroy();
+    m_quadVAO.destroy();
     m_bondCount = 0;
     m_initialized = false;
 }
 
-void BondRenderer::createCylinderGeometry(int segments) {
-    std::vector<CylinderMeshVertex> vertices;
-    std::vector<unsigned int> indices;
-    buildCappedUnitCylinderMesh(segments, vertices, indices);
+void BondRenderer::createQuadGeometry() {
+    static const float quadVertices[] = {
+        -1.0f, -1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+        -1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+    };
 
-    m_cylinderVertexCount = static_cast<int>(vertices.size());
-    m_cylinderIndexCount = static_cast<int>(indices.size());
+    m_quadVAO.bind();
 
-    // Upload to GPU
-    m_cylinderVAO.bind();
-
-    m_cylinderVBO.bind();
-    m_cylinderVBO.allocate(vertices.data(), static_cast<int>(vertices.size() * sizeof(CylinderMeshVertex)));
+    m_quadVBO.bind();
+    m_quadVBO.allocate(quadVertices, sizeof(quadVertices));
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex), nullptr);
-    glEnableVertexAttribArray(6);
-    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, sizeof(CylinderMeshVertex),
-                          reinterpret_cast<const void*>(3 * sizeof(float)));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 
-    m_cylinderIBO.bind();
-    m_cylinderIBO.allocate(indices.data(), indices.size() * sizeof(unsigned int));
-
-    m_cylinderVAO.release();
+    m_quadVBO.release();
+    m_quadVAO.release();
 }
 
 void BondRenderer::setBondData(const data::Structure* structure) {
@@ -113,7 +106,7 @@ void BondRenderer::setBondData(const data::Structure* structure) {
     }
 
     // Upload to GPU
-    m_cylinderVAO.bind();
+    m_quadVAO.bind();
 
     m_instanceStartBuffer.bind();
     m_instanceStartBuffer.allocate(packed.startPositions.data(),
@@ -151,7 +144,7 @@ void BondRenderer::setBondData(const data::Structure* structure) {
     glVertexAttribDivisor(5, 1);
 
     m_instanceRadiusBuffer.release();
-    m_cylinderVAO.release();
+    m_quadVAO.release();
 }
 
 void BondRenderer::render(const Camera& camera, const RenderSettings& settings) {
@@ -166,6 +159,7 @@ void BondRenderer::render(const Camera& camera, const RenderSettings& settings) 
     shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
     shader->setUniformValue("uBondRadius", settings.bondRadius);
     shader->setUniformValue("uAtomScale", settings.atomScale);
+    shader->setUniformValue("uIsPerspective", camera.isPerspective() ? 1 : 0);
 
     // Light direction: world space → view space for shader
     QVector3D worldLightDir = settings.lightDirWorld();
@@ -177,10 +171,11 @@ void BondRenderer::render(const Camera& camera, const RenderSettings& settings) 
     shader->setUniformValue("uSpecular", settings.specularStrength);
     shader->setUniformValue("uShininess", settings.shininess);
 
-    m_cylinderVAO.bind();
-    glDrawElementsInstanced(GL_TRIANGLES, m_cylinderIndexCount, GL_UNSIGNED_INT,
-                            nullptr, static_cast<GLsizei>(m_bondCount));
-    m_cylinderVAO.release();
+    glDisable(GL_CULL_FACE);
+    m_quadVAO.bind();
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<GLsizei>(m_bondCount));
+    m_quadVAO.release();
+    glEnable(GL_CULL_FACE);
 
     shader->release();
 }

@@ -163,7 +163,8 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
 
     // Draw edge cylinders.
     {
-        id<MTLRenderPipelineState> pipeline = (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->bondPipeline();
+        id<MTLRenderPipelineState> pipeline =
+            (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->solidCylinderPipeline();
         [encoder setRenderPipelineState:pipeline];
         [encoder setDepthStencilState:depthState];
         // Mesh indices are authored CCW; make winding explicit so back-face culling

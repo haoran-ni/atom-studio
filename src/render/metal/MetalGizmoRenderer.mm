@@ -131,7 +131,7 @@ void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
     gizmoUniforms.shininess = 1.0f;
 
     id<MTLRenderPipelineState> pipeline =
-        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->bondPipeline();
+        (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->solidCylinderPipeline();
     id<MTLDepthStencilState> depthState = depthTest
         ? (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthLessWriteState()
         : (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthDisabledState();

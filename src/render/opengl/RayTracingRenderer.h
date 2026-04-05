@@ -2,6 +2,7 @@
 
 #include "../common/Renderer.h"
 #include "ShaderManager.h"
+#include "GizmoRenderer.h"
 #include "ViewportAxesRenderer.h"
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
@@ -52,6 +53,7 @@ private:
     std::unique_ptr<QOpenGLShaderProgram> m_rtShader;
     std::unique_ptr<QOpenGLShaderProgram> m_displayShader;
     ShaderManager m_overlayShaderManager;
+    GizmoRenderer m_gizmoRenderer;
     ViewportAxesRenderer m_viewportAxesRenderer;
 
     // Full-screen quad

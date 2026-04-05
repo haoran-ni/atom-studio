@@ -24,13 +24,12 @@ public:
     size_t bondCount() const { return m_bondCount; }
 
 private:
-    void createCylinderGeometry(int segments);
+    void createQuadGeometry();
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     MetalShaderLibrary* m_shaderLibrary = nullptr;
     size_t m_bondCount = 0;
-    int m_cylinderIndexCount = 0;
     bool m_initialized = false;
 };
 

@@ -302,23 +302,12 @@ void UnitCellRenderer::render(const Camera& camera, const RenderSettings& settin
         jointColors[i * 4 + 3] = 1.0f;
     }
 
-    // Light direction: world space → view space for shader
-    QVector3D worldLightDir = settings.lightDirWorld();
-    QVector3D lightDir = (camera.viewMatrix() * QVector4D(worldLightDir, 0.0f)).toVector3D().normalized();
-
     // Draw edge cylinders.
-    if (QOpenGLShaderProgram* bondShader = m_shaderManager->bondShader()) {
-        bondShader->bind();
-        bondShader->setUniformValue("uViewMatrix", camera.viewMatrix());
-        bondShader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
-        bondShader->setUniformValue("uBondRadius", radius);
-        bondShader->setUniformValue("uLightDir", lightDir);
-
-        // Flat, unlit color for unit-cell object.
-        bondShader->setUniformValue("uAmbient", 1.0f);
-        bondShader->setUniformValue("uDiffuse", 0.0f);
-        bondShader->setUniformValue("uSpecular", 0.0f);
-        bondShader->setUniformValue("uShininess", 1.0f);
+    if (QOpenGLShaderProgram* solidShader = m_shaderManager->viewportAxesShader()) {
+        solidShader->bind();
+        solidShader->setUniformValue("uViewMatrix", camera.viewMatrix());
+        solidShader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
+        solidShader->setUniformValue("uBondRadius", radius);
 
         m_cylinderVAO.bind();
         m_edgeColorBuffer.bind();
@@ -330,10 +319,12 @@ void UnitCellRenderer::render(const Camera& camera, const RenderSettings& settin
                                 nullptr,
                                 m_edgeCount);
         m_cylinderVAO.release();
-        bondShader->release();
+        solidShader->release();
     }
 
     // Draw corner joints as sphere impostors so edge intersections are smooth.
+    QVector3D worldLightDir = settings.lightDirWorld();
+    QVector3D lightDir = (camera.viewMatrix() * QVector4D(worldLightDir, 0.0f)).toVector3D().normalized();
     if (QOpenGLShaderProgram* sphereShader = m_shaderManager->sphereShader()) {
         sphereShader->bind();
         sphereShader->setUniformValue("uViewMatrix", camera.viewMatrix());

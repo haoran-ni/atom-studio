@@ -241,24 +241,107 @@ fragment SphereFragmentOut sphere_fragment(
 
 struct BondVertexOut {
     float4 position [[position]];
-    float3 normal;
-    float3 viewPos;
+    float3 startView;
+    float3 endView;
     float4 startColor;
     float4 endColor;
-    float  bondT;
+    float3 viewPosOnQuad;
     float  splitT;
 };
 
-struct BondMeshVertex {
-    packed_float3 position;
-    packed_float3 normal;
+struct RasterCylinderHit {
+    float t;
+    float axial;
+    int kind;
 };
+
+constant int RASTER_CYL_HIT_NONE = 0;
+constant int RASTER_CYL_HIT_SIDE = 1;
+constant int RASTER_CYL_HIT_START_CAP = 2;
+constant int RASTER_CYL_HIT_END_CAP = 3;
+
+RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
+                                                        float3 pa, float3 pb,
+                                                        float radius) {
+    RasterCylinderHit result;
+    result.t = -1.0f;
+    result.axial = 0.0f;
+    result.kind = RASTER_CYL_HIT_NONE;
+
+    float3 ba = pb - pa;
+    float baba = dot(ba, ba);
+    if (baba < 1e-8f) return result;
+
+    float3 oc = ro - pa;
+    float bard = dot(ba, rd);
+    float baoc = dot(ba, oc);
+
+    float3 rdPerp = rd - (bard / baba) * ba;
+    float3 ocPerp = oc - (baoc / baba) * ba;
+    float a = dot(rdPerp, rdPerp);
+    if (a > 1e-8f) {
+        float hb = dot(ocPerp, rdPerp);
+        float3 q = ocPerp - (hb / a) * rdPerp;
+        float disc = a * (radius * radius - dot(q, q));
+        if (disc >= 0.0f) {
+            float sqrtDisc = sqrt(disc);
+
+            float t0 = (-hb - sqrtDisc) / a;
+            float y0 = baoc + t0 * bard;
+            if (t0 > 0.001f && y0 > 0.0f && y0 < baba) {
+                result.t = t0;
+                result.axial = clamp(y0 / baba, 0.0f, 1.0f);
+                result.kind = RASTER_CYL_HIT_SIDE;
+            }
+
+            float t1 = (-hb + sqrtDisc) / a;
+            float y1 = baoc + t1 * bard;
+            if (t1 > 0.001f && y1 > 0.0f && y1 < baba &&
+                (result.t < 0.0f || t1 < result.t)) {
+                result.t = t1;
+                result.axial = clamp(y1 / baba, 0.0f, 1.0f);
+                result.kind = RASTER_CYL_HIT_SIDE;
+            }
+        }
+    }
+
+    float axisLen = sqrt(baba);
+    float3 axis = ba / axisLen;
+    float axisDenom = dot(rd, axis);
+    if (fabs(axisDenom) > 1e-8f) {
+        float tCap0 = dot(pa - ro, axis) / axisDenom;
+        if (tCap0 > 0.001f) {
+            float3 hit = ro + rd * tCap0 - pa;
+            float3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0f || tCap0 < result.t)) {
+                result.t = tCap0;
+                result.axial = 0.0f;
+                result.kind = RASTER_CYL_HIT_START_CAP;
+            }
+        }
+
+        float tCap1 = dot(pb - ro, axis) / axisDenom;
+        if (tCap1 > 0.001f) {
+            float3 hit = ro + rd * tCap1 - pb;
+            float3 radial = hit - axis * dot(hit, axis);
+            if (dot(radial, radial) <= radius * radius &&
+                (result.t < 0.0f || tCap1 < result.t)) {
+                result.t = tCap1;
+                result.axial = 1.0f;
+                result.kind = RASTER_CYL_HIT_END_CAP;
+            }
+        }
+    }
+
+    return result;
+}
 
 vertex BondVertexOut bond_vertex(
     uint vid [[vertex_id]],
     uint iid [[instance_id]],
     constant SceneUniforms& scene [[buffer(0)]],
-    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
+    constant packed_float3* quadVertices [[buffer(1)]],
     constant BondInstance* instances [[buffer(2)]])
 {
     BondVertexOut out;
@@ -267,9 +350,13 @@ vertex BondVertexOut bond_vertex(
     out.startColor = bond.startColor;
     out.endColor = bond.endColor;
 
-    float3 bondDir = bond.end - bond.start;
+    float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
+    float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
+    out.startView = startView4.xyz;
+    out.endView = endView4.xyz;
+
+    float3 bondDir = out.endView - out.startView;
     float bondLength = length(bondDir);
-    bondDir = (bondLength > 1e-6f) ? (bondDir / bondLength) : float3(0.0f, 0.0f, 1.0f);
     if (bondLength > 1e-6f) {
         float scaledA = bond.startRadius * scene.atomScale;
         float scaledB = bond.endRadius * scene.atomScale;
@@ -279,41 +366,80 @@ vertex BondVertexOut bond_vertex(
         out.splitT = 0.5f;
     }
 
-    // Orthonormal basis
-    float3 up = abs(bondDir.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
-    float3 right = normalize(cross(up, bondDir));
-    up = cross(bondDir, right);
+    float3 center = 0.5f * (out.startView + out.endView);
+    float halfLength = 0.5f * bondLength;
+    float boundRadius = sqrt(halfLength * halfLength + scene.bondRadius * scene.bondRadius);
 
-    BondMeshVertex vert = cylinderVertices[vid];
-    out.bondT = vert.position.z;
-    float3 localPos = right * vert.position.x * scene.bondRadius +
-                      up * vert.position.y * scene.bondRadius +
-                      bondDir * vert.position.z * bondLength;
+    float billboardR;
+    if (scene.isPerspective) {
+        float dist = -center.z;
+        if (dist > boundRadius * 1.01f) {
+            billboardR = boundRadius * dist / sqrt(dist * dist - boundRadius * boundRadius);
+        } else {
+            billboardR = max(fabs(dist), boundRadius) * 100.0f;
+        }
+    } else {
+        billboardR = boundRadius;
+    }
+    billboardR *= 1.05f;
 
-    float3 worldPos = bond.start + localPos;
-    float4 viewPos = scene.viewMatrix * float4(worldPos, 1.0);
-    out.viewPos = viewPos.xyz;
+    float3 qv = quadVertices[vid];
+    float4 viewPos = float4(center, 1.0f);
+    viewPos.xy += qv.xy * billboardR;
 
-    // Normal
-    float3 localNormal = normalize(float3(vert.normal));
-    float3 worldNormal = right * localNormal.x +
-                         up * localNormal.y +
-                         bondDir * localNormal.z;
-    out.normal = (scene.viewMatrix * float4(worldNormal, 0.0)).xyz;
-
+    out.viewPosOnQuad = viewPos.xyz;
     out.position = scene.projectionMatrix * viewPos;
     return out;
 }
 
-fragment float4 bond_fragment(
+struct BondFragmentOut {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
+};
+
+fragment BondFragmentOut bond_fragment(
     BondVertexOut in [[stage_in]],
     constant SceneUniforms& scene [[buffer(0)]])
 {
-    float3 normal = normalize(in.normal);
-    float4 bondColor = (in.bondT < in.splitT) ? in.startColor : in.endColor;
+    BondFragmentOut out;
+
+    float3 rayOrigin;
+    float3 rayDir;
+    if (scene.isPerspective) {
+        rayOrigin = float3(0.0f);
+        rayDir = normalize(in.viewPosOnQuad);
+    } else {
+        rayOrigin = float3(in.viewPosOnQuad.xy, 0.0f);
+        rayDir = float3(0.0f, 0.0f, -1.0f);
+    }
+
+    RasterCylinderHit bondHit = intersectRasterCappedCylinderDetailed(
+        rayOrigin, rayDir, in.startView, in.endView, scene.bondRadius);
+    if (bondHit.t < 0.0f) discard_fragment();
+
+    float3 hitPos = rayOrigin + rayDir * bondHit.t;
+    float3 ba = in.endView - in.startView;
+    float baLen2 = dot(ba, ba);
+    if (baLen2 < 1e-8f) discard_fragment();
+
+    float bondLength = sqrt(baLen2);
+    float3 bondDir = ba / bondLength;
+    float3 normal;
+    float h = bondHit.axial;
+    if (bondHit.kind == RASTER_CYL_HIT_START_CAP) {
+        normal = -bondDir;
+    } else if (bondHit.kind == RASTER_CYL_HIT_END_CAP) {
+        normal = bondDir;
+    } else {
+        float axial = dot(hitPos - in.startView, bondDir);
+        h = clamp(axial / bondLength, 0.0f, 1.0f);
+        normal = normalize(hitPos - (in.startView + bondDir * axial));
+    }
+
+    float4 bondColor = (h < in.splitT) ? in.startColor : in.endColor;
     // Light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
-    float3 viewDir = normalize(-in.viewPos);
+    float3 viewDir = scene.isPerspective ? normalize(-hitPos) : float3(0.0f, 0.0f, 1.0f);
 
     float3 ambient = scene.ambient * bondColor.rgb;
     float diff = max(dot(normal, lightDir), 0.0);
@@ -322,7 +448,60 @@ fragment float4 bond_fragment(
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    return float4(ambient + diffuse + specular, bondColor.a);
+    out.color = float4(ambient + diffuse + specular, bondColor.a);
+    float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0f);
+    out.depth = clipPos.z / clipPos.w;
+    return out;
+}
+
+// -------------------------------------------------------
+// Solid Cylinder Mesh Shader (flat color; unit cell / gizmo)
+// -------------------------------------------------------
+
+struct SolidCylinderVertexOut {
+    float4 position [[position]];
+    float4 color;
+};
+
+struct SolidCylinderMeshVertex {
+    packed_float3 position;
+    packed_float3 normal;
+};
+
+vertex SolidCylinderVertexOut solid_cylinder_vertex(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant SolidCylinderMeshVertex* cylinderVertices [[buffer(1)]],
+    constant BondInstance* instances [[buffer(2)]])
+{
+    SolidCylinderVertexOut out;
+
+    BondInstance inst = instances[iid];
+    out.color = inst.startColor;
+
+    float3 axisVec = inst.end - inst.start;
+    float axisLength = length(axisVec);
+    float3 axisDir = (axisLength > 1e-8f) ? (axisVec / axisLength) : float3(0.0f, 0.0f, 1.0f);
+
+    float3 up = abs(axisDir.y) < 0.99f ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
+    SolidCylinderMeshVertex vert = cylinderVertices[vid];
+    float3 localPos = right * vert.position.x * scene.bondRadius +
+                      up * vert.position.y * scene.bondRadius +
+                      axisDir * vert.position.z * axisLength;
+
+    float3 worldPos = inst.start + localPos;
+    out.position = scene.projectionMatrix * (scene.viewMatrix * float4(worldPos, 1.0f));
+    return out;
+}
+
+fragment float4 solid_cylinder_fragment(
+    SolidCylinderVertexOut in [[stage_in]])
+{
+    return in.color;
 }
 
 // -------------------------------------------------------
@@ -1059,6 +1238,7 @@ struct MetalShaderLibrary::Impl {
     id<MTLLibrary> library = nil;
     id<MTLRenderPipelineState> spherePipeline = nil;
     id<MTLRenderPipelineState> bondPipeline = nil;
+    id<MTLRenderPipelineState> solidCylinderPipeline = nil;
     id<MTLRenderPipelineState> viewportAxesPipeline = nil;
     id<MTLRenderPipelineState> linePipeline = nil;
     id<MTLRenderPipelineState> rtPipeline = nil;
@@ -1167,6 +1347,34 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         m_impl->bondPipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!m_impl->bondPipeline) {
             qCritical() << "MetalShaderLibrary: bond pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
+    // --- Solid cylinder pipeline (flat color mesh; unit cell / gizmo) ---
+    {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"solid_cylinder_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"solid_cylinder_fragment"];
+        desc.rasterSampleCount = rasterSamples;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+
+        if (!desc.vertexFunction || !desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: solid cylinder shader functions not found";
+            return false;
+        }
+
+        m_impl->solidCylinderPipeline =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->solidCylinderPipeline) {
+            qCritical() << "MetalShaderLibrary: solid cylinder pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -1335,6 +1543,7 @@ void MetalShaderLibrary::cleanup() {
     if (m_impl) {
         m_impl->spherePipeline = nil;
         m_impl->bondPipeline = nil;
+        m_impl->solidCylinderPipeline = nil;
         m_impl->viewportAxesPipeline = nil;
         m_impl->linePipeline = nil;
         m_impl->rtPipeline = nil;
@@ -1355,6 +1564,10 @@ void* MetalShaderLibrary::spherePipeline() const {
 
 void* MetalShaderLibrary::bondPipeline() const {
     return (__bridge void*)m_impl->bondPipeline;
+}
+
+void* MetalShaderLibrary::solidCylinderPipeline() const {
+    return (__bridge void*)m_impl->solidCylinderPipeline;
 }
 
 void* MetalShaderLibrary::viewportAxesPipeline() const {

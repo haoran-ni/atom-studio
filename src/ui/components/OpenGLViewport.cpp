@@ -183,6 +183,10 @@ public:
         viewport->m_renderSettings.viewportAxesScreenY = viewport->m_viewportAxesY * static_cast<float>(dpr);
         viewport->m_renderSettings.viewportAxesScale = viewport->m_viewportAxesScale;
         viewport->m_renderSettings.viewportAxesPixelRatio = static_cast<float>(dpr);
+        viewport->m_renderSettings.showRotationCenter = viewport->m_showRotationCenter;
+        viewport->m_renderSettings.rotationCenterX = viewport->m_camera->target().x();
+        viewport->m_renderSettings.rotationCenterY = viewport->m_camera->target().y();
+        viewport->m_renderSettings.rotationCenterZ = viewport->m_camera->target().z();
 
         // Update FPS
         qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
@@ -763,6 +767,10 @@ bool OpenGLViewport::event(QEvent* event) {
 void OpenGLViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
     m_pressedButtons = event->buttons();
+    if (m_pressedButtons & Qt::LeftButton) {
+        m_showRotationCenter = true;
+        update();
+    }
     event->accept();
 }
 
@@ -789,6 +797,10 @@ void OpenGLViewport::mouseMoveEvent(QMouseEvent* event) {
 
 void OpenGLViewport::mouseReleaseEvent(QMouseEvent* event) {
     m_pressedButtons = event->buttons();
+    if (!(m_pressedButtons & Qt::LeftButton)) {
+        m_showRotationCenter = false;
+        update();
+    }
     event->accept();
 }
 

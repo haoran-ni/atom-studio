@@ -17,9 +17,9 @@ class Camera;
 struct RenderSettings;
 
 /**
- * @brief Renders bonds as cylinders
+ * @brief Renders bonds as analytic capped cylinders.
  *
- * Uses instanced rendering of cylinder geometry.
+ * Uses instanced billboard quads and shader-side ray/cylinder intersection.
  */
 class BondRenderer : protected QOpenGLFunctions {
 public:
@@ -52,16 +52,13 @@ public:
     size_t bondCount() const { return m_bondCount; }
 
 private:
-    void createCylinderGeometry(int segments);
+    void createQuadGeometry();
 
     ShaderManager* m_shaderManager = nullptr;
 
-    // Cylinder geometry (shared for all bonds)
-    QOpenGLVertexArrayObject m_cylinderVAO;
-    QOpenGLBuffer m_cylinderVBO;
-    QOpenGLBuffer m_cylinderIBO;
-    int m_cylinderVertexCount = 0;
-    int m_cylinderIndexCount = 0;
+    // Quad impostor geometry (shared for all bonds)
+    QOpenGLVertexArrayObject m_quadVAO;
+    QOpenGLBuffer m_quadVBO;
 
     // Instance data
     QOpenGLBuffer m_instanceStartBuffer;  // vec3: start position

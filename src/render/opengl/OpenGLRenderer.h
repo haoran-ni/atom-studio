@@ -4,6 +4,7 @@
 #include "ShaderManager.h"
 #include "SphereRenderer.h"
 #include "BondRenderer.h"
+#include "GizmoRenderer.h"
 #include "UnitCellRenderer.h"
 #include "ViewportAxesRenderer.h"
 
@@ -36,6 +37,7 @@ public:
     ShaderManager* shaderManager() { return &m_shaderManager; }
     SphereRenderer* sphereRenderer() { return &m_sphereRenderer; }
     BondRenderer* bondRenderer() { return &m_bondRenderer; }
+    GizmoRenderer* gizmoRenderer() { return &m_gizmoRenderer; }
     UnitCellRenderer* unitCellRenderer() { return &m_unitCellRenderer; }
 
     int viewportWidth() const { return m_width; }
@@ -47,6 +49,7 @@ private:
     ShaderManager m_shaderManager;
     SphereRenderer m_sphereRenderer;
     BondRenderer m_bondRenderer;
+    GizmoRenderer m_gizmoRenderer;
     UnitCellRenderer m_unitCellRenderer;
     ViewportAxesRenderer m_viewportAxesRenderer;
 

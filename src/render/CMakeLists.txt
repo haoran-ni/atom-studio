@@ -29,6 +29,8 @@ set(RENDER_OPENGL_SOURCES
     opengl/SphereRenderer.h
     opengl/BondRenderer.cpp
     opengl/BondRenderer.h
+    opengl/GizmoRenderer.cpp
+    opengl/GizmoRenderer.h
     opengl/UnitCellRenderer.cpp
     opengl/UnitCellRenderer.h
     opengl/ViewportAxesRenderer.cpp

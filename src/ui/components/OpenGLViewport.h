@@ -237,6 +237,7 @@ private:
     bool m_needsStructureUpdate = false;
     bool m_needsCameraUpdate = false;
     bool m_rendererModeChanged = false;
+    bool m_showRotationCenter = false;
 
     // Async bond detection
     struct BondResult {
