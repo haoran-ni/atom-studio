@@ -128,11 +128,16 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
     // Render unit-cell object (thick wireframe cuboid built from lattice)
     m_unitCellRenderer.render(camera, settings);
 
+    // Enable alpha-to-coverage for impostor edge AA (requires MSAA framebuffer)
+    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+
     // Render bonds
     m_bondRenderer.render(camera, settings);
 
     // Render atoms
     m_sphereRenderer.render(camera, settings);
+
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
     // Overlay pass: clear scene depth so overlays stay on top while preserving
     // correct self-occlusion inside overlay geometry.

@@ -83,6 +83,7 @@ void main() {
     float R = vRadius;
     vec3 hitPos;
     vec3 normal;
+    float edgeDist = 0.0;
 
     if (uIsPerspective != 0) {
         // Perspective ray-sphere intersection in view space
@@ -95,6 +96,7 @@ void main() {
         if (disc < 0.0) discard;
 
         float sqrtDisc = sqrt(disc);
+        edgeDist = disc;
         float t = b - sqrtDisc;
         if (t < 0.0) t = b + sqrtDisc;
         if (t < 0.0) discard;
@@ -110,11 +112,16 @@ void main() {
         if (disc < 0.0) discard;
 
         float sqrtDisc = sqrt(disc);
+        edgeDist = disc;
         // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z)
         hitPos = vec3(vViewPosOnQuad.xy, C.z + sqrtDisc);
     }
 
     normal = normalize(hitPos - C);
+
+    // Analytical edge anti-aliasing: fade alpha over ~1 pixel at silhouette
+    float pw = fwidth(edgeDist);
+    float edgeAlpha = (pw > 0.0) ? smoothstep(0.0, pw, edgeDist) : 1.0;
 
     // Lighting calculation — light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
@@ -133,7 +140,7 @@ void main() {
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, vColor.a);
+    fragColor = vec4(result, vColor.a * sqrt(edgeAlpha));
 
     // Update depth buffer for correct intersections
     vec4 clipPos = uProjectionMatrix * vec4(hitPos, 1.0);
@@ -236,6 +243,7 @@ const int CYL_HIT_END_CAP = 3;
 struct CylinderHit {
     float t;
     float axial;
+    float edgeMargin;
     int kind;
 };
 
@@ -243,6 +251,7 @@ CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, 
     CylinderHit result;
     result.t = -1.0;
     result.axial = 0.0;
+    result.edgeMargin = 0.0;
     result.kind = CYL_HIT_NONE;
 
     vec3 ba = pb - pa;
@@ -268,6 +277,7 @@ CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, 
             if (t0 > 0.001 && y0 > 0.0 && y0 < baba) {
                 result.t = t0;
                 result.axial = clamp(y0 / baba, 0.0, 1.0);
+                result.edgeMargin = disc;
                 result.kind = CYL_HIT_SIDE;
             }
 
@@ -277,6 +287,7 @@ CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, 
                 (result.t < 0.0 || t1 < result.t)) {
                 result.t = t1;
                 result.axial = clamp(y1 / baba, 0.0, 1.0);
+                result.edgeMargin = disc;
                 result.kind = CYL_HIT_SIDE;
             }
         }
@@ -290,10 +301,12 @@ CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, 
         if (tCap0 > 0.001) {
             vec3 hit = ro + rd * tCap0 - pa;
             vec3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
+            float radial2 = dot(radial, radial);
+            if (radial2 <= radius * radius &&
                 (result.t < 0.0 || tCap0 < result.t)) {
                 result.t = tCap0;
                 result.axial = 0.0;
+                result.edgeMargin = 0.0;
                 result.kind = CYL_HIT_START_CAP;
             }
         }
@@ -302,10 +315,12 @@ CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, 
         if (tCap1 > 0.001) {
             vec3 hit = ro + rd * tCap1 - pb;
             vec3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
+            float radial2 = dot(radial, radial);
+            if (radial2 <= radius * radius &&
                 (result.t < 0.0 || tCap1 < result.t)) {
                 result.t = tCap1;
                 result.axial = 1.0;
+                result.edgeMargin = 0.0;
                 result.kind = CYL_HIT_END_CAP;
             }
         }
@@ -347,6 +362,15 @@ void main() {
         normal = normalize(hitPos - (vStartView + bondDir * axial));
     }
 
+    // Analytical edge anti-aliasing: only for cylinder side hits (silhouette).
+    // Cap hits skip AA to avoid fwidth discontinuity at cap-side junctions.
+    float edgeAlpha = 1.0;
+    if (hit.kind == CYL_HIT_SIDE) {
+        float edgeDist = hit.edgeMargin;
+        float pw = fwidth(edgeDist);
+        edgeAlpha = (pw > 0.0) ? smoothstep(0.0, pw, edgeDist) : 1.0;
+    }
+
     vec4 bondColor = (h < vSplitT) ? vStartColor : vEndColor;
     // Light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
@@ -365,7 +389,7 @@ void main() {
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, bondColor.a);
+    fragColor = vec4(result, bondColor.a * sqrt(edgeAlpha));
 
     vec4 clipPos = uProjectionMatrix * vec4(hitPos, 1.0);
     float ndcDepth = clipPos.z / clipPos.w;

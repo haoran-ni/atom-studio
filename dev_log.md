@@ -4,6 +4,54 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-07: Analytical Edge Anti-Aliasing for Atom and Bond Impostors
+
+### Summary
+Added analytical edge anti-aliasing to the raster sphere and bond impostor shaders in both Metal and OpenGL backends. Atom spheres and bond cylinders are rendered as billboard quad impostors with ray intersection in the fragment shader; at the silhouette edge, fragments that fail the intersection are hard-discarded, producing aliased stair-step edges that 4x MSAA alone cannot fully smooth. The new approach computes how close each fragment is to the silhouette boundary using the ray intersection discriminant, then fades alpha smoothly over a ~1 pixel band via `smoothstep`. Alpha-to-coverage (A2C) was enabled on the sphere and bond pipelines so that the smooth alpha is converted into an MSAA sample coverage mask, eliminating background-colored outlines that pure alpha blending would produce. A `sqrt()` correction on the output alpha compensates for the double-dipping between A2C and alpha blending.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/metal/MetalShaderLibrary.mm` | Added `edgeMargin` field to `RasterCylinderHit` struct; stored cylinder discriminant for SIDE hits in intersection function; added analytical edge AA to `sphere_fragment` and `bond_fragment` using discriminant-based `smoothstep`; enabled `alphaToCoverageEnabled = YES` on sphere and bond pipeline descriptors; applied `sqrt()` correction to output alpha |
+| `src/render/opengl/ShaderManager.cpp` | Added `edgeMargin` field to `CylinderHit` struct; stored cylinder discriminant for SIDE hits in intersection function; added analytical edge AA to `sphereFragmentShader` and `bondFragmentShader` using discriminant-based `smoothstep` with `fwidth()`; applied `sqrt()` correction to output alpha |
+| `src/render/opengl/OpenGLRenderer.cpp` | Enabled `GL_SAMPLE_ALPHA_TO_COVERAGE` around bond and sphere rendering calls; disabled it before overlay passes |
+
+### Architecture Decisions
+
+#### 1. The Raw Discriminant Is the Edge Distance Proxy, Not Its Square Root
+- `sqrt(disc)` has a derivative that diverges as `disc→0`, making `fwidth(sqrt(disc))` blow up at the silhouette and weakening the AA effect
+- Using `disc` directly (polynomial in screen coordinates) gives smooth, finite derivatives everywhere, producing a clean 1-pixel transition
+
+#### 2. Alpha-to-Coverage Eliminates Background-Colored Outlines
+- Pure alpha blending at the silhouette writes semi-transparent pixels that blend with the background, creating a visible outline in the background color
+- A2C converts the smooth alpha into an MSAA sample coverage mask: covered samples are written at full opacity, and the background only appears through uncovered samples during MSAA resolve
+- The `sqrt(edgeAlpha)` correction compensates for the effective `alpha²` relationship when A2C and alpha blending both consume the output alpha
+
+#### 3. Edge AA Is Skipped for Bond Cap Hits
+- The `edgeMargin` field stores the cylinder discriminant for SIDE hits but a different quantity (`R²−radial²`) for CAP hits
+- At the boundary where a cap-hit fragment is adjacent to a side-hit fragment in the same 2×2 quad, `edgeMargin` jumps discontinuously, making `fwidth()` enormous and the cap fragment fully transparent
+- Cap edges are geometric creases (cap meets body) or face-on silhouettes, both handled adequately by MSAA alone
+- Edge AA is therefore only applied when `hit.kind == SIDE`; cap hits output `edgeAlpha = 1.0`
+
+#### 4. MSAA and Analytical AA Are Complementary
+- 4x MSAA smooths the billboard quad's geometric edges (the quad boundary itself)
+- Analytical AA smooths the impostor silhouette (the ray intersection boundary inside the quad)
+- Neither technique alone addresses both sources of aliasing; together they produce clean edges at negligible additional cost
+
+### Build Commands
+```bash
+cmake --build build
+```
+
+### Testing
+- Built successfully after all changes
+- Sphere edges appear smooth without background-colored outlines
+- Bond cylinder side edges appear smooth
+- Bond cap edges render without transparent artifacts after restricting AA to SIDE hits only
+- Verified in perspective mode on Metal backend
+
+---
+
 ## 2026-04-05: Analytic Raster Bonds and Bond/Unit-Cell/Gizmo Renderer Separation
 
 ### Summary
