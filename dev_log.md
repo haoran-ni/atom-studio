@@ -4,6 +4,61 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-04-08: Raster Bond Mesh Replacement in OpenGL and Metal
+
+### Summary
+Replaced the raster bond path in both OpenGL and Metal so bonds are no longer rendered as analytically intersected capped cylinders in raster mode. Raster bonds now use instanced polygonal capped-cylinder meshes while preserving the existing bond data model, the current center-to-center bond geometry, the existing global bond radius control, and the hard two-color split derived from the connected atoms. The ray-tracing bond path remains analytic and unchanged. The default raster bond tessellation was set to `20` segments.
+
+### Files Modified
+| File | Purpose |
+|------|---------|
+| `src/render/common/RenderSettings.h` | Changed the default bond cylinder tessellation from `16` to `20` segments |
+| `src/render/opengl/BondRenderer.h` | Switched the OpenGL bond renderer interface and owned resources from quad-impostor rendering to indexed cylinder-mesh rendering |
+| `src/render/opengl/BondRenderer.cpp` | Replaced OpenGL raster bond billboard draws with instanced capped-cylinder mesh draws and mesh caching by segment count |
+| `src/render/opengl/ShaderManager.cpp` | Replaced the OpenGL analytic raster bond shader with a lit mesh-bond shader that preserves the hard endpoint color split |
+| `src/render/metal/MetalBondRenderer.h` | Switched the Metal bond renderer interface to indexed mesh rendering and segment-aware geometry management |
+| `src/render/metal/MetalBondRenderer.mm` | Replaced Metal raster bond quad-impostor draws with instanced capped-cylinder mesh draws and geometry caching by segment count |
+| `src/render/metal/MetalRenderer.mm` | Passed raster bond tessellation settings through to the Metal bond renderer |
+| `src/render/metal/MetalShaderLibrary.mm` | Replaced the Metal analytic raster bond shader path with a lit mesh-bond shader while keeping the separate flat solid-cylinder path for unit cell and gizmo rendering |
+
+### Architecture Decisions
+
+#### 1. The Bond Data Model Stays Unchanged
+- The existing `Bond`, `BondList`, and `BondRenderSegment` flow already provides everything raster bonds need: endpoints, endpoint colors, endpoint radii, and periodic-image-corrected segment positions
+- The renderer change therefore happens entirely at the raster rendering layer instead of introducing a second bond object in `src/data`
+
+#### 2. The Existing Capped Unit-Cylinder Mesh Was Reused
+- The existing mesh generator already defines a suitable capped cylinder with separate side and cap normals
+- Reusing that mesh keeps OpenGL and Metal aligned and avoids introducing duplicate bond geometry definitions
+- The mesh is instanced from bond start to bond end, preserving the existing center-to-center bond geometry
+
+#### 3. Raster Bonds Keep the Previous Visual Semantics
+- Bonds still use the global `bondRadius` setting as their cylinder radius
+- Bonds still use a hard two-color split between the connected atoms rather than a smooth color interpolation
+- The split location is still derived from the endpoint radii and `atomScale`, matching the previous analytic raster behavior
+
+#### 4. Raster and Ray-Tracing Bond Paths Now Diverge Intentionally
+- Raster bonds are mesh-based so they can benefit from standard rasterization and MSAA-friendly polygon edges
+- Ray-traced bonds remain analytic cylinders, since that path was not part of the anti-aliasing problem being addressed
+- This keeps the raster fix isolated without disturbing RT traversal, shading, or BVH behavior
+
+#### 5. Bond Tessellation Is a Renderer Quality Setting
+- Raster bond geometry now rebuilds on demand from `RenderSettings.cylinderSegments`
+- The default was raised to `20` segments as the initial quality/performance tradeoff for mesh bonds
+- This keeps future tuning available without redesigning the bond data flow again
+
+### Build Commands
+```bash
+cmake --build build -j4
+```
+
+### Testing
+- Built successfully after replacing the OpenGL raster bond path with indexed capped-cylinder mesh rendering
+- Built successfully after replacing the Metal raster bond path with indexed capped-cylinder mesh rendering
+- Did not perform a final live runtime verification in the app; recommended checks are bond silhouette quality, faceting at the new `20`-segment default, hard two-color split correctness, cap shading, and parity between OpenGL and Metal raster modes
+
+---
+
 ## 2026-04-05: Analytic Raster Bonds and Bond/Unit-Cell/Gizmo Renderer Separation
 
 ### Summary

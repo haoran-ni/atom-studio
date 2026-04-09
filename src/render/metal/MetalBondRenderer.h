@@ -19,16 +19,19 @@ public:
     void cleanup();
 
     void setBondData(const data::Structure* structure);
-    void render(void* encoder, const SceneUniforms& uniforms);
+    void render(void* encoder, const SceneUniforms& uniforms, int cylinderSegments);
 
     size_t bondCount() const { return m_bondCount; }
 
 private:
-    void createQuadGeometry();
+    void createCylinderGeometry(int segments);
+    void ensureCylinderGeometry(int segments);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     MetalShaderLibrary* m_shaderLibrary = nullptr;
+    int m_cylinderIndexCount = 0;
+    int m_meshSegments = 0;
     size_t m_bondCount = 0;
     bool m_initialized = false;
 };

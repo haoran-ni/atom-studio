@@ -209,7 +209,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         m_unitCellRenderer.render((__bridge void*)encoder, uniforms, settings);
     }
     if (settings.showBonds) {
-        m_bondRenderer.render((__bridge void*)encoder, uniforms);
+        m_bondRenderer.render((__bridge void*)encoder, uniforms, settings.cylinderSegments);
     }
     if (settings.showAtoms) {
         m_sphereRenderer.render((__bridge void*)encoder, uniforms);

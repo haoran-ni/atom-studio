@@ -236,112 +236,29 @@ fragment SphereFragmentOut sphere_fragment(
 }
 
 // -------------------------------------------------------
-// Bond Cylinder Shader
+// Bond Mesh Shader
 // -------------------------------------------------------
+
+struct BondMeshVertex {
+    packed_float3 position;
+    packed_float3 normal;
+};
 
 struct BondVertexOut {
     float4 position [[position]];
-    float3 startView;
-    float3 endView;
+    float3 viewPos;
+    float3 normalView;
     float4 startColor;
     float4 endColor;
-    float3 viewPosOnQuad;
+    float  axial;
     float  splitT;
 };
-
-struct RasterCylinderHit {
-    float t;
-    float axial;
-    int kind;
-};
-
-constant int RASTER_CYL_HIT_NONE = 0;
-constant int RASTER_CYL_HIT_SIDE = 1;
-constant int RASTER_CYL_HIT_START_CAP = 2;
-constant int RASTER_CYL_HIT_END_CAP = 3;
-
-RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
-                                                        float3 pa, float3 pb,
-                                                        float radius) {
-    RasterCylinderHit result;
-    result.t = -1.0f;
-    result.axial = 0.0f;
-    result.kind = RASTER_CYL_HIT_NONE;
-
-    float3 ba = pb - pa;
-    float baba = dot(ba, ba);
-    if (baba < 1e-8f) return result;
-
-    float3 oc = ro - pa;
-    float bard = dot(ba, rd);
-    float baoc = dot(ba, oc);
-
-    float3 rdPerp = rd - (bard / baba) * ba;
-    float3 ocPerp = oc - (baoc / baba) * ba;
-    float a = dot(rdPerp, rdPerp);
-    if (a > 1e-8f) {
-        float hb = dot(ocPerp, rdPerp);
-        float3 q = ocPerp - (hb / a) * rdPerp;
-        float disc = a * (radius * radius - dot(q, q));
-        if (disc >= 0.0f) {
-            float sqrtDisc = sqrt(disc);
-
-            float t0 = (-hb - sqrtDisc) / a;
-            float y0 = baoc + t0 * bard;
-            if (t0 > 0.001f && y0 > 0.0f && y0 < baba) {
-                result.t = t0;
-                result.axial = clamp(y0 / baba, 0.0f, 1.0f);
-                result.kind = RASTER_CYL_HIT_SIDE;
-            }
-
-            float t1 = (-hb + sqrtDisc) / a;
-            float y1 = baoc + t1 * bard;
-            if (t1 > 0.001f && y1 > 0.0f && y1 < baba &&
-                (result.t < 0.0f || t1 < result.t)) {
-                result.t = t1;
-                result.axial = clamp(y1 / baba, 0.0f, 1.0f);
-                result.kind = RASTER_CYL_HIT_SIDE;
-            }
-        }
-    }
-
-    float axisLen = sqrt(baba);
-    float3 axis = ba / axisLen;
-    float axisDenom = dot(rd, axis);
-    if (fabs(axisDenom) > 1e-8f) {
-        float tCap0 = dot(pa - ro, axis) / axisDenom;
-        if (tCap0 > 0.001f) {
-            float3 hit = ro + rd * tCap0 - pa;
-            float3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
-                (result.t < 0.0f || tCap0 < result.t)) {
-                result.t = tCap0;
-                result.axial = 0.0f;
-                result.kind = RASTER_CYL_HIT_START_CAP;
-            }
-        }
-
-        float tCap1 = dot(pb - ro, axis) / axisDenom;
-        if (tCap1 > 0.001f) {
-            float3 hit = ro + rd * tCap1 - pb;
-            float3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
-                (result.t < 0.0f || tCap1 < result.t)) {
-                result.t = tCap1;
-                result.axial = 1.0f;
-                result.kind = RASTER_CYL_HIT_END_CAP;
-            }
-        }
-    }
-
-    return result;
-}
 
 vertex BondVertexOut bond_vertex(
     uint vid [[vertex_id]],
     uint iid [[instance_id]],
     constant SceneUniforms& scene [[buffer(0)]],
-    constant packed_float3* quadVertices [[buffer(1)]],
+    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
     constant BondInstance* instances [[buffer(2)]])
 {
     BondVertexOut out;
@@ -352,11 +269,16 @@ vertex BondVertexOut bond_vertex(
 
     float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
     float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
-    out.startView = startView4.xyz;
-    out.endView = endView4.xyz;
+    float3 startView = startView4.xyz;
+    float3 endView = endView4.xyz;
 
-    float3 bondDir = out.endView - out.startView;
+    float3 bondDir = endView - startView;
     float bondLength = length(bondDir);
+    float3 axisDir = (bondLength > 1e-6f) ? (bondDir / bondLength) : float3(0.0f, 0.0f, 1.0f);
+    float3 up = fabs(axisDir.y) < 0.99f ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
     if (bondLength > 1e-6f) {
         float scaledA = bond.startRadius * scene.atomScale;
         float scaledB = bond.endRadius * scene.atomScale;
@@ -366,80 +288,30 @@ vertex BondVertexOut bond_vertex(
         out.splitT = 0.5f;
     }
 
-    float3 center = 0.5f * (out.startView + out.endView);
-    float halfLength = 0.5f * bondLength;
-    float boundRadius = sqrt(halfLength * halfLength + scene.bondRadius * scene.bondRadius);
+    BondMeshVertex vert = cylinderVertices[vid];
+    float3 localPos = right * vert.position.x * scene.bondRadius +
+                      up * vert.position.y * scene.bondRadius +
+                      axisDir * vert.position.z * bondLength;
+    out.viewPos = startView + localPos;
 
-    float billboardR;
-    if (scene.isPerspective) {
-        float dist = -center.z;
-        if (dist > boundRadius * 1.01f) {
-            billboardR = boundRadius * dist / sqrt(dist * dist - boundRadius * boundRadius);
-        } else {
-            billboardR = max(fabs(dist), boundRadius) * 100.0f;
-        }
-    } else {
-        billboardR = boundRadius;
-    }
-    billboardR *= 1.05f;
-
-    float3 qv = quadVertices[vid];
-    float4 viewPos = float4(center, 1.0f);
-    viewPos.xy += qv.xy * billboardR;
-
-    out.viewPosOnQuad = viewPos.xyz;
-    out.position = scene.projectionMatrix * viewPos;
+    float3 localNormal = float3(vert.normal);
+    out.normalView = normalize(right * localNormal.x +
+                               up * localNormal.y +
+                               axisDir * localNormal.z);
+    out.axial = vert.position.z;
+    out.position = scene.projectionMatrix * float4(out.viewPos, 1.0f);
     return out;
 }
 
-struct BondFragmentOut {
-    float4 color [[color(0)]];
-    float depth [[depth(any)]];
-};
-
-fragment BondFragmentOut bond_fragment(
+fragment float4 bond_fragment(
     BondVertexOut in [[stage_in]],
     constant SceneUniforms& scene [[buffer(0)]])
 {
-    BondFragmentOut out;
-
-    float3 rayOrigin;
-    float3 rayDir;
-    if (scene.isPerspective) {
-        rayOrigin = float3(0.0f);
-        rayDir = normalize(in.viewPosOnQuad);
-    } else {
-        rayOrigin = float3(in.viewPosOnQuad.xy, 0.0f);
-        rayDir = float3(0.0f, 0.0f, -1.0f);
-    }
-
-    RasterCylinderHit bondHit = intersectRasterCappedCylinderDetailed(
-        rayOrigin, rayDir, in.startView, in.endView, scene.bondRadius);
-    if (bondHit.t < 0.0f) discard_fragment();
-
-    float3 hitPos = rayOrigin + rayDir * bondHit.t;
-    float3 ba = in.endView - in.startView;
-    float baLen2 = dot(ba, ba);
-    if (baLen2 < 1e-8f) discard_fragment();
-
-    float bondLength = sqrt(baLen2);
-    float3 bondDir = ba / bondLength;
-    float3 normal;
-    float h = bondHit.axial;
-    if (bondHit.kind == RASTER_CYL_HIT_START_CAP) {
-        normal = -bondDir;
-    } else if (bondHit.kind == RASTER_CYL_HIT_END_CAP) {
-        normal = bondDir;
-    } else {
-        float axial = dot(hitPos - in.startView, bondDir);
-        h = clamp(axial / bondLength, 0.0f, 1.0f);
-        normal = normalize(hitPos - (in.startView + bondDir * axial));
-    }
-
-    float4 bondColor = (h < in.splitT) ? in.startColor : in.endColor;
+    float3 normal = normalize(in.normalView);
+    float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
     // Light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
-    float3 viewDir = scene.isPerspective ? normalize(-hitPos) : float3(0.0f, 0.0f, 1.0f);
+    float3 viewDir = scene.isPerspective ? normalize(-in.viewPos) : float3(0.0f, 0.0f, 1.0f);
 
     float3 ambient = scene.ambient * bondColor.rgb;
     float diff = max(dot(normal, lightDir), 0.0);
@@ -448,10 +320,7 @@ fragment BondFragmentOut bond_fragment(
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    out.color = float4(ambient + diffuse + specular, bondColor.a);
-    float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0f);
-    out.depth = clipPos.z / clipPos.w;
-    return out;
+    return float4(ambient + diffuse + specular, bondColor.a);
 }
 
 // -------------------------------------------------------

@@ -145,12 +145,13 @@ void main() {
 const char* bondVertexShader = R"(
 #version 410 core
 
-layout(location = 0) in vec3 aPosition;    // Quad vertex position
+layout(location = 0) in vec3 aPosition;    // Mesh vertex position (unit radius; z in [0,1])
 layout(location = 1) in vec3 aStart;       // Bond start position (instanced)
 layout(location = 2) in vec3 aEnd;         // Bond end position (instanced)
 layout(location = 3) in vec4 aStartColor;  // Bond start color (instanced)
 layout(location = 4) in vec4 aEndColor;    // Bond end color (instanced)
 layout(location = 5) in vec2 aRadii;       // Bond start/end radii (instanced)
+layout(location = 6) in vec3 aLocalNormal; // Unit-cylinder local normal
 
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
@@ -158,21 +159,26 @@ uniform float uBondRadius;
 uniform float uAtomScale;
 uniform int uIsPerspective;
 
-flat out vec3 vStartView;
-flat out vec3 vEndView;
 flat out vec4 vStartColor;
 flat out vec4 vEndColor;
 flat out float vSplitT;
-out vec3 vViewPosOnQuad;
+out vec3 vViewPos;
+out vec3 vNormalView;
+out float vAxial;
 
 void main() {
     vStartColor = aStartColor;
     vEndColor = aEndColor;
-    vStartView = (uViewMatrix * vec4(aStart, 1.0)).xyz;
-    vEndView = (uViewMatrix * vec4(aEnd, 1.0)).xyz;
+    vec3 startView = (uViewMatrix * vec4(aStart, 1.0)).xyz;
+    vec3 endView = (uViewMatrix * vec4(aEnd, 1.0)).xyz;
 
-    vec3 bondDir = vEndView - vStartView;
+    vec3 bondDir = endView - startView;
     float bondLength = length(bondDir);
+    vec3 axisDir = (bondLength > 1e-6) ? (bondDir / bondLength) : vec3(0.0, 0.0, 1.0);
+    vec3 up = (abs(axisDir.y) < 0.99) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
     if (bondLength > 1e-6) {
         float scaledA = aRadii.x * uAtomScale;
         float scaledB = aRadii.y * uAtomScale;
@@ -182,175 +188,46 @@ void main() {
         vSplitT = 0.5;
     }
 
-    vec3 center = 0.5 * (vStartView + vEndView);
-    float halfLength = 0.5 * bondLength;
-    float boundRadius = sqrt(halfLength * halfLength + uBondRadius * uBondRadius);
+    vec3 localPos = right * aPosition.x * uBondRadius +
+                    up * aPosition.y * uBondRadius +
+                    axisDir * aPosition.z * bondLength;
+    vec3 viewPos = startView + localPos;
 
-    float billboardR;
-    if (uIsPerspective != 0) {
-        float dist = -center.z;
-        if (dist > boundRadius * 1.01) {
-            billboardR = boundRadius * dist / sqrt(dist * dist - boundRadius * boundRadius);
-        } else {
-            billboardR = max(abs(dist), boundRadius) * 100.0;
-        }
-    } else {
-        billboardR = boundRadius;
-    }
-    billboardR *= 1.05;
+    vViewPos = viewPos;
+    vNormalView = normalize(right * aLocalNormal.x +
+                            up * aLocalNormal.y +
+                            axisDir * aLocalNormal.z);
+    vAxial = aPosition.z;
 
-    vec4 viewPos = vec4(center, 1.0);
-    viewPos.xy += aPosition.xy * billboardR;
-    vViewPosOnQuad = viewPos.xyz;
-
-    gl_Position = uProjectionMatrix * viewPos;
+    gl_Position = uProjectionMatrix * vec4(viewPos, 1.0);
 }
 )";
 
 const char* bondFragmentShader = R"(
 #version 410 core
 
-flat in vec3 vStartView;
-flat in vec3 vEndView;
 flat in vec4 vStartColor;
 flat in vec4 vEndColor;
 flat in float vSplitT;
-in vec3 vViewPosOnQuad;
+in vec3 vViewPos;
+in vec3 vNormalView;
+in float vAxial;
 
-uniform mat4 uProjectionMatrix;
 uniform vec3 uLightDir;
 uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
 uniform float uShininess;
-uniform float uBondRadius;
 uniform int uIsPerspective;
 
 out vec4 fragColor;
 
-const int CYL_HIT_NONE = 0;
-const int CYL_HIT_SIDE = 1;
-const int CYL_HIT_START_CAP = 2;
-const int CYL_HIT_END_CAP = 3;
-
-struct CylinderHit {
-    float t;
-    float axial;
-    int kind;
-};
-
-CylinderHit intersectCappedCylinderDetailed(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float radius) {
-    CylinderHit result;
-    result.t = -1.0;
-    result.axial = 0.0;
-    result.kind = CYL_HIT_NONE;
-
-    vec3 ba = pb - pa;
-    float baba = dot(ba, ba);
-    if (baba < 1e-8) return result;
-
-    vec3 oc = ro - pa;
-    float bard = dot(ba, rd);
-    float baoc = dot(ba, oc);
-
-    vec3 rdPerp = rd - (bard / baba) * ba;
-    vec3 ocPerp = oc - (baoc / baba) * ba;
-    float a = dot(rdPerp, rdPerp);
-    if (a > 1e-8) {
-        float hb = dot(ocPerp, rdPerp);
-        vec3 q = ocPerp - (hb / a) * rdPerp;
-        float disc = a * (radius * radius - dot(q, q));
-        if (disc >= 0.0) {
-            float sqrtDisc = sqrt(disc);
-
-            float t0 = (-hb - sqrtDisc) / a;
-            float y0 = baoc + t0 * bard;
-            if (t0 > 0.001 && y0 > 0.0 && y0 < baba) {
-                result.t = t0;
-                result.axial = clamp(y0 / baba, 0.0, 1.0);
-                result.kind = CYL_HIT_SIDE;
-            }
-
-            float t1 = (-hb + sqrtDisc) / a;
-            float y1 = baoc + t1 * bard;
-            if (t1 > 0.001 && y1 > 0.0 && y1 < baba &&
-                (result.t < 0.0 || t1 < result.t)) {
-                result.t = t1;
-                result.axial = clamp(y1 / baba, 0.0, 1.0);
-                result.kind = CYL_HIT_SIDE;
-            }
-        }
-    }
-
-    float axisLen = sqrt(baba);
-    vec3 axis = ba / axisLen;
-    float axisDenom = dot(rd, axis);
-    if (abs(axisDenom) > 1e-8) {
-        float tCap0 = dot(pa - ro, axis) / axisDenom;
-        if (tCap0 > 0.001) {
-            vec3 hit = ro + rd * tCap0 - pa;
-            vec3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
-                (result.t < 0.0 || tCap0 < result.t)) {
-                result.t = tCap0;
-                result.axial = 0.0;
-                result.kind = CYL_HIT_START_CAP;
-            }
-        }
-
-        float tCap1 = dot(pb - ro, axis) / axisDenom;
-        if (tCap1 > 0.001) {
-            vec3 hit = ro + rd * tCap1 - pb;
-            vec3 radial = hit - axis * dot(hit, axis);
-            if (dot(radial, radial) <= radius * radius &&
-                (result.t < 0.0 || tCap1 < result.t)) {
-                result.t = tCap1;
-                result.axial = 1.0;
-                result.kind = CYL_HIT_END_CAP;
-            }
-        }
-    }
-
-    return result;
-}
-
 void main() {
-    vec3 ro;
-    vec3 rd;
-    if (uIsPerspective != 0) {
-        ro = vec3(0.0);
-        rd = normalize(vViewPosOnQuad);
-    } else {
-        ro = vec3(vViewPosOnQuad.xy, 0.0);
-        rd = vec3(0.0, 0.0, -1.0);
-    }
-
-    CylinderHit hit = intersectCappedCylinderDetailed(ro, rd, vStartView, vEndView, uBondRadius);
-    if (hit.t < 0.0) discard;
-
-    vec3 hitPos = ro + rd * hit.t;
-    vec3 ba = vEndView - vStartView;
-    float baLen2 = dot(ba, ba);
-    if (baLen2 < 1e-8) discard;
-
-    float bondLength = sqrt(baLen2);
-    vec3 bondDir = ba / bondLength;
-    vec3 normal;
-    float h = hit.axial;
-    if (hit.kind == CYL_HIT_START_CAP) {
-        normal = -bondDir;
-    } else if (hit.kind == CYL_HIT_END_CAP) {
-        normal = bondDir;
-    } else {
-        float axial = dot(hitPos - vStartView, bondDir);
-        h = clamp(axial / bondLength, 0.0, 1.0);
-        normal = normalize(hitPos - (vStartView + bondDir * axial));
-    }
-
-    vec4 bondColor = (h < vSplitT) ? vStartColor : vEndColor;
+    vec3 normal = normalize(vNormalView);
+    vec4 bondColor = (vAxial < vSplitT) ? vStartColor : vEndColor;
     // Light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
-    vec3 viewDir = (uIsPerspective != 0) ? normalize(-hitPos) : vec3(0.0, 0.0, 1.0);
+    vec3 viewDir = (uIsPerspective != 0) ? normalize(-vViewPos) : vec3(0.0, 0.0, 1.0);
 
     // Ambient
     vec3 ambient = uAmbient * bondColor.rgb;
@@ -366,10 +243,6 @@ void main() {
 
     vec3 result = ambient + diffuse + specular;
     fragColor = vec4(result, bondColor.a);
-
-    vec4 clipPos = uProjectionMatrix * vec4(hitPos, 1.0);
-    float ndcDepth = clipPos.z / clipPos.w;
-    gl_FragDepth = (ndcDepth + 1.0) * 0.5;
 }
 )";
 

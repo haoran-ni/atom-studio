@@ -58,7 +58,7 @@ struct RenderSettings {
     // Quality
     bool useSmoothShading = true;
     int sphereSegments = 32;          // For tessellated spheres (fallback)
-    int cylinderSegments = 16;        // For bond cylinders
+    int cylinderSegments = 20;        // For mesh bond cylinders
 
     // Effects
     bool enableAmbientOcclusion = false;
