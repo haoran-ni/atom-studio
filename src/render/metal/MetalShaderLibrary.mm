@@ -179,7 +179,6 @@ fragment SphereFragmentOut sphere_fragment(
     float R = in.radius;
     float3 hitPos;
     float3 normal;
-    float edgeDist = 0.0;
 
     if (scene.isPerspective) {
         // Perspective ray-sphere intersection in view space
@@ -192,7 +191,6 @@ fragment SphereFragmentOut sphere_fragment(
         if (disc < 0.0) discard_fragment();
 
         float sqrtDisc = sqrt(disc);
-        edgeDist = disc;
         float t = b - sqrtDisc;
         if (t < 0.0) t = b + sqrtDisc;
         if (t < 0.0) discard_fragment();
@@ -208,7 +206,6 @@ fragment SphereFragmentOut sphere_fragment(
         if (disc < 0.0) discard_fragment();
 
         float sqrtDisc = sqrt(disc);
-        edgeDist = disc;
         // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z).
         // If that surface is behind the camera (hz > 0), fall back to the back
         // surface — this guards against the camera entering the sphere volume.
@@ -218,10 +215,6 @@ fragment SphereFragmentOut sphere_fragment(
     }
 
     normal = normalize(hitPos - C);
-
-    // Analytical edge anti-aliasing: fade alpha over ~1 pixel at silhouette
-    float pw = abs(dfdx(edgeDist)) + abs(dfdy(edgeDist));
-    float edgeAlpha = (pw > 0.0) ? smoothstep(0.0, pw, edgeDist) : 1.0;
 
     // Blinn-Phong lighting — light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
@@ -234,7 +227,7 @@ fragment SphereFragmentOut sphere_fragment(
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    out.color = float4(ambient + diffuse + specular, in.color.a * sqrt(edgeAlpha));
+    out.color = float4(ambient + diffuse + specular, in.color.a);
 
     // Custom depth: Metal NDC depth is [0,1]
     float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0);
@@ -259,7 +252,6 @@ struct BondVertexOut {
 struct RasterCylinderHit {
     float t;
     float axial;
-    float edgeMargin;   // discriminant (SIDE) or R²-r² (CAP); 0 at silhouette
     int kind;
 };
 
@@ -274,7 +266,6 @@ RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
     RasterCylinderHit result;
     result.t = -1.0f;
     result.axial = 0.0f;
-    result.edgeMargin = 0.0f;
     result.kind = RASTER_CYL_HIT_NONE;
 
     float3 ba = pb - pa;
@@ -300,7 +291,6 @@ RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
             if (t0 > 0.001f && y0 > 0.0f && y0 < baba) {
                 result.t = t0;
                 result.axial = clamp(y0 / baba, 0.0f, 1.0f);
-                result.edgeMargin = disc;
                 result.kind = RASTER_CYL_HIT_SIDE;
             }
 
@@ -310,7 +300,6 @@ RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
                 (result.t < 0.0f || t1 < result.t)) {
                 result.t = t1;
                 result.axial = clamp(y1 / baba, 0.0f, 1.0f);
-                result.edgeMargin = disc;
                 result.kind = RASTER_CYL_HIT_SIDE;
             }
         }
@@ -324,12 +313,10 @@ RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
         if (tCap0 > 0.001f) {
             float3 hit = ro + rd * tCap0 - pa;
             float3 radial = hit - axis * dot(hit, axis);
-            float radial2 = dot(radial, radial);
-            if (radial2 <= radius * radius &&
+            if (dot(radial, radial) <= radius * radius &&
                 (result.t < 0.0f || tCap0 < result.t)) {
                 result.t = tCap0;
                 result.axial = 0.0f;
-                result.edgeMargin = 0.0f;
                 result.kind = RASTER_CYL_HIT_START_CAP;
             }
         }
@@ -338,12 +325,10 @@ RasterCylinderHit intersectRasterCappedCylinderDetailed(float3 ro, float3 rd,
         if (tCap1 > 0.001f) {
             float3 hit = ro + rd * tCap1 - pb;
             float3 radial = hit - axis * dot(hit, axis);
-            float radial2 = dot(radial, radial);
-            if (radial2 <= radius * radius &&
+            if (dot(radial, radial) <= radius * radius &&
                 (result.t < 0.0f || tCap1 < result.t)) {
                 result.t = tCap1;
                 result.axial = 1.0f;
-                result.edgeMargin = 0.0f;
                 result.kind = RASTER_CYL_HIT_END_CAP;
             }
         }
@@ -451,15 +436,6 @@ fragment BondFragmentOut bond_fragment(
         normal = normalize(hitPos - (in.startView + bondDir * axial));
     }
 
-    // Analytical edge anti-aliasing: only for cylinder side hits (silhouette).
-    // Cap hits skip AA to avoid fwidth discontinuity at cap-side junctions.
-    float edgeAlpha = 1.0;
-    if (bondHit.kind == RASTER_CYL_HIT_SIDE) {
-        float edgeDist = bondHit.edgeMargin;
-        float pw = abs(dfdx(edgeDist)) + abs(dfdy(edgeDist));
-        edgeAlpha = (pw > 0.0) ? smoothstep(0.0, pw, edgeDist) : 1.0;
-    }
-
     float4 bondColor = (h < in.splitT) ? in.startColor : in.endColor;
     // Light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
@@ -472,7 +448,7 @@ fragment BondFragmentOut bond_fragment(
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    out.color = float4(ambient + diffuse + specular, bondColor.a * sqrt(edgeAlpha));
+    out.color = float4(ambient + diffuse + specular, bondColor.a);
     float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0f);
     out.depth = clipPos.z / clipPos.w;
     return out;
@@ -1335,7 +1311,6 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
         desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        desc.alphaToCoverageEnabled = YES;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {
             qCritical() << "MetalShaderLibrary: sphere shader functions not found";
@@ -1363,7 +1338,6 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
         desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-        desc.alphaToCoverageEnabled = YES;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {
             qCritical() << "MetalShaderLibrary: bond shader functions not found";
