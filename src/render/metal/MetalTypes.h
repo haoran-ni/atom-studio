@@ -41,7 +41,8 @@ struct BondInstance {
     simd_float4 endColor;             // rgba
     float       startRadius;
     float       endRadius;
-    simd_float2 _pad2;
+    float       bondRadius;
+    float       _pad2;
 };
 
 // Line vertex (unit cell) — [[buffer(1)]] in line shader

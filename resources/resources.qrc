@@ -27,6 +27,7 @@
         <file alias="manipulation.svg">icons/manipulation.svg</file>
         <file alias="render.svg">icons/render.svg</file>
         <file alias="reset.svg">icons/reset.svg</file>
+        <file alias="selection.svg">icons/selection.svg</file>
         <file alias="structure.svg">icons/structure.svg</file>
         <file alias="unit-cell.svg">icons/unit-cell.svg</file>
         <file alias="visualization.svg">icons/visualization.svg</file>

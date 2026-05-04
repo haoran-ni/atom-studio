@@ -4,6 +4,83 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-05-04: Sidebar Selection Modes and Shared Selection Rendering
+
+### Summary
+
+Added a new `Selection` sidebar tab with three selection ranges: disabled selection, individual atom/bond selection, and connected molecule selection. Selection is click-toggle based in the active viewports, clears when the selection mode changes, and is reset by the existing `Reset to original` structure action.
+
+Selected atoms and bonds receive a yellow highlight overlay, and supported style operations now apply only to the active selection when selection is enabled. When selection is disabled, the existing behavior is preserved by treating all atoms and bonds as selected for style operations.
+
+Also fixed two regressions found during runtime validation:
+
+- Added the missing `FileController::loadingStarted` signal used by `Main.qml`.
+- Restored Metal ray-tracing unit-cell shader compatibility by adding a `traceAnyHit` overload for callers that still use a uniform bond radius.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `resources/icons/selection.svg` | Added the sidebar icon for the new Selection tab |
+| `resources/resources.qrc` | Registered the Selection tab icon in Qt resources |
+| `src/ui/qml/Sidebar.qml` | Added the Selection sidebar section and range dropdown |
+| `src/ui/components/StructureModel.h/.cpp` | Added selection mode state, selected-only style operations, and selection reset handling |
+| `src/ui/components/ViewportSelection.h/.cpp` | Added shared viewport click-selection behavior |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Integrated shared selection picking and selected-only style updates |
+| `src/ui/components/MetalViewport.h/.mm` | Integrated shared selection picking and selected-only style updates |
+| `src/data/Structure.h/.cpp` | Added atom selection state and structure-level selection helpers |
+| `src/data/BondList.h/.cpp` | Added bond selection state and per-bond radius storage |
+| `src/data/StructureOperations.h/.cpp` | Added unwrap-compatible connected selection graph helpers |
+| `src/render/common/Picking.h/.cpp` | Added shared CPU ray picking for atoms and bonds |
+| `src/render/common/BondRenderData.h/.cpp` | Added selected-object highlight packing and per-bond radius data |
+| `src/render/opengl/*Renderer*` | Applied selection highlighting and per-bond radii for OpenGL raster/ray tracing |
+| `src/render/metal/*Renderer*` | Applied selection highlighting and per-bond radii for Metal raster/ray tracing |
+| `src/render/CMakeLists.txt` | Added shared picking source to the render target |
+| `src/ui/CMakeLists.txt` | Added shared viewport selection source to the UI target |
+| `src/ui/components/FileController.h/.cpp` | Added the `loadingStarted` signal consumed by QML |
+
+### Architecture Decisions
+
+#### 1. Shared Selection State Lives in Data Models
+
+Selection state is stored directly on `Structure` and `BondList` instead of being renderer-specific. This keeps selection persistent across renderer changes and lets the UI model apply operations without duplicating selection bookkeeping in OpenGL, Metal, or ray tracing code.
+
+#### 2. Molecule Selection Reuses the Unwrap Connection Rules
+
+Connected molecule selection is computed through shared helpers in `StructureOperations`, using the same graph eligibility rules as molecule unwrapping. This keeps "select molecule" behavior aligned with the existing structural interpretation of connected components.
+
+#### 3. Picking and Click Handling Are Shared
+
+Atom and bond picking were moved into `src/render/common/Picking.*`, while selection click handling lives in `ViewportSelection.*`. OpenGL and Metal viewports now supply camera/settings data and delegate the selection decision to shared code.
+
+#### 4. Highlighting Is Packed Once for Renderers
+
+Selection highlighting is applied when atom and bond render data are packed. Raster and ray-tracing renderers consume the same highlighted colors, avoiding separate highlight rules per backend.
+
+#### 5. Bond Radius Is Now Per Bond
+
+Bond radius storage was added to `BondList` so selected-only bond radius changes can persist. Global bond radius updates still work by assigning the radius to every bond when selection is disabled.
+
+### Build Commands
+
+```bash
+cmake --build build
+```
+
+### Testing
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+Validation results:
+
+- Build completed successfully with the existing macOS OpenGL deprecation warnings.
+- All CTest tests passed: `4/4`.
+- Runtime launch verified that Metal shader compilation succeeds, Metal renderer initialization succeeds, and the previous QML `onLoadingStarted` warning is gone.
+
+---
+
 ## 2026-04-08: Raster Bond Mesh Replacement in OpenGL and Metal
 
 ### Summary

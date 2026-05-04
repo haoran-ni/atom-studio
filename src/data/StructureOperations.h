@@ -2,6 +2,7 @@
 
 #include "Structure.h"
 #include <memory>
+#include <vector>
 
 namespace atom::data {
 
@@ -42,5 +43,29 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
  * The structure is modified in-place.
  */
 void unwrapMolecules(Structure& s);
+
+/**
+ * @brief Connected component returned by the same bond graph used by unwrap.
+ */
+struct ConnectedSelection {
+    std::vector<size_t> atoms;
+    std::vector<size_t> bonds;
+};
+
+/**
+ * @brief Find the atom/bond component connected to an atom using unwrap's graph.
+ *
+ * If the atom is not eligible for that graph, the returned component contains
+ * only the atom.
+ */
+ConnectedSelection connectedSelectionFromAtom(const Structure& s, size_t atomIndex);
+
+/**
+ * @brief Find the atom/bond component connected to a bond using unwrap's graph.
+ *
+ * If the bond is not part of unwrap's graph, the returned component contains
+ * the bond and its two endpoint atoms.
+ */
+ConnectedSelection connectedSelectionFromBond(const Structure& s, size_t bondIndex);
 
 } // namespace atom::data

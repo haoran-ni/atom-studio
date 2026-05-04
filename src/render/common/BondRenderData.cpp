@@ -3,6 +3,8 @@
 #include "../../data/BondList.h"
 #include "../../data/Structure.h"
 
+#include <array>
+
 namespace atom::render {
 
 namespace {
@@ -26,6 +28,20 @@ void appendPackedColor(std::vector<float>& packed,
     packed.push_back(a);
 }
 
+std::array<float, 4> highlightedColor(float r, float g, float b, float a) {
+    constexpr float highlightR = 1.0f;
+    constexpr float highlightG = 0.86f;
+    constexpr float highlightB = 0.05f;
+    constexpr float mixAmount = 0.55f;
+
+    return {
+        r * (1.0f - mixAmount) + highlightR * mixAmount,
+        g * (1.0f - mixAmount) + highlightG * mixAmount,
+        b * (1.0f - mixAmount) + highlightB * mixAmount,
+        a
+    };
+}
+
 } // namespace
 
 size_t PackedBondRenderData::bondCount() const {
@@ -42,8 +58,36 @@ size_t bondRenderSegmentCount(const data::Structure* structure) {
     return structure->bonds().bondCount();
 }
 
+std::vector<float> packAtomRenderColors(const data::Structure* structure) {
+    std::vector<float> data;
+    if (!structure) return data;
+
+    const size_t count = structure->atomCount();
+    data.resize(count * 4);
+
+    const float* cr = structure->colorsR();
+    const float* cg = structure->colorsG();
+    const float* cb = structure->colorsB();
+    const float* ca = structure->colorsA();
+
+    for (size_t i = 0; i < count; ++i) {
+        std::array<float, 4> color = {cr[i], cg[i], cb[i], ca[i]};
+        if (structure->atomSelected(i)) {
+            color = highlightedColor(color[0], color[1], color[2], color[3]);
+        }
+
+        data[i * 4 + 0] = color[0];
+        data[i * 4 + 1] = color[1];
+        data[i * 4 + 2] = color[2];
+        data[i * 4 + 3] = color[3];
+    }
+
+    return data;
+}
+
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
-                                        const data::Bond& bond) {
+                                        const data::Bond& bond,
+                                        size_t bondIndex) {
     BondRenderSegment segment;
 
     const uint32_t a1 = bond.atomIndex1;
@@ -55,6 +99,7 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
     const float* cr = structure.colorsR();
     const float* cg = structure.colorsG();
     const float* cb = structure.colorsB();
+    const float* ca = structure.colorsA();
     const float* radii = structure.radii();
     const auto& mat = structure.lattice().matrix;
 
@@ -76,12 +121,24 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
 
     segment.startRadius = radii[a1];
     segment.endRadius = radii[a2];
-    segment.startColorR = cr[a1];
-    segment.startColorG = cg[a1];
-    segment.startColorB = cb[a1];
-    segment.endColorR = cr[a2];
-    segment.endColorG = cg[a2];
-    segment.endColorB = cb[a2];
+    std::array<float, 4> startColor = {cr[a1], cg[a1], cb[a1], ca[a1]};
+    std::array<float, 4> endColor = {cr[a2], cg[a2], cb[a2], ca[a2]};
+    const bool bondSelected = bondIndex < structure.bonds().bondCount() &&
+        structure.bonds().selected(bondIndex);
+    if (bondSelected) {
+        startColor = highlightedColor(startColor[0], startColor[1], startColor[2], startColor[3]);
+        endColor = highlightedColor(endColor[0], endColor[1], endColor[2], endColor[3]);
+    }
+
+    segment.startColorR = startColor[0];
+    segment.startColorG = startColor[1];
+    segment.startColorB = startColor[2];
+    segment.startColorA = startColor[3];
+    segment.endColorR = endColor[0];
+    segment.endColorG = endColor[1];
+    segment.endColorB = endColor[2];
+    segment.endColorA = endColor[3];
+    segment.bondRadius = structure.bonds().radius(bondIndex);
 
     return segment;
 }
@@ -94,7 +151,7 @@ std::vector<BondRenderSegment> collectBondRenderSegments(const data::Structure* 
     segments.reserve(count);
     const auto& bonds = structure->bonds();
     for (size_t i = 0; i < count; ++i) {
-        segments.push_back(makeBondRenderSegment(*structure, bonds.bond(i)));
+        segments.push_back(makeBondRenderSegment(*structure, bonds.bond(i), i));
     }
     return segments;
 }
@@ -114,6 +171,7 @@ PackedBondRenderData packBondRenderData(const data::Structure* structure,
     packed.endRadii.reserve(count);
     packed.startColors.reserve(count * 4);
     packed.endColors.reserve(count * 4);
+    packed.bondRadii.reserve(count);
 
     for (const BondRenderSegment& segment : segments) {
         appendPackedPosition(packed.startPositions, packing,
@@ -126,6 +184,7 @@ PackedBondRenderData packBondRenderData(const data::Structure* structure,
                           segment.startColorR, segment.startColorG, segment.startColorB, segment.startColorA);
         appendPackedColor(packed.endColors,
                           segment.endColorR, segment.endColorG, segment.endColorB, segment.endColorA);
+        packed.bondRadii.push_back(segment.bondRadius);
     }
 
     return packed;

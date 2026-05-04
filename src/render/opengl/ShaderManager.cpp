@@ -150,7 +150,7 @@ layout(location = 1) in vec3 aStart;       // Bond start position (instanced)
 layout(location = 2) in vec3 aEnd;         // Bond end position (instanced)
 layout(location = 3) in vec4 aStartColor;  // Bond start color (instanced)
 layout(location = 4) in vec4 aEndColor;    // Bond end color (instanced)
-layout(location = 5) in vec2 aRadii;       // Bond start/end radii (instanced)
+layout(location = 5) in vec3 aRadii;       // Bond start/end atom radii + bond radius (instanced)
 layout(location = 6) in vec3 aLocalNormal; // Unit-cylinder local normal
 
 uniform mat4 uViewMatrix;
@@ -188,8 +188,9 @@ void main() {
         vSplitT = 0.5;
     }
 
-    vec3 localPos = right * aPosition.x * uBondRadius +
-                    up * aPosition.y * uBondRadius +
+    float bondRadius = aRadii.z;
+    vec3 localPos = right * aPosition.x * bondRadius +
+                    up * aPosition.y * bondRadius +
                     axisDir * aPosition.z * bondLength;
     vec3 viewPos = startView + localPos;
 

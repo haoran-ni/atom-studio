@@ -79,6 +79,8 @@ private:
     GLuint m_bondStartColorTex = 0;  // Texture view (RGBA32F)
     GLuint m_bondEndColorBuf = 0;    // Buffer: vec4(r, g, b, a) per bond end
     GLuint m_bondEndColorTex = 0;    // Texture view (RGBA32F)
+    GLuint m_bondRadiusBuf = 0;      // Buffer: float radius per bond
+    GLuint m_bondRadiusTex = 0;      // Texture view (R32F)
 
     // BVH data via Texture Buffer Objects
     GLuint m_bvhNodeMinBuf = 0;   // Buffer: vec4(min.xyz, maxRadius) per node

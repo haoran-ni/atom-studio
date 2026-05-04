@@ -205,6 +205,18 @@ public:
      */
     void updateRadiiFromElements(float scale = 1.0f, bool useVdW = false);
 
+    // ========== Selection state ==========
+
+    bool atomSelected(size_t index) const { return m_selectedAtoms[index] != 0; }
+    void setAtomSelected(size_t index, bool selected);
+    void toggleAtomSelected(size_t index);
+    void clearAtomSelection();
+    void clearSelection();
+    size_t selectedAtomCount() const;
+    size_t selectedBondCount() const;
+    bool hasSelection() const;
+    const std::vector<uint8_t>& atomSelectionMask() const { return m_selectedAtoms; }
+
     // ========== Individual atom access ==========
 
     std::array<float, 3> position(size_t index) const;
@@ -311,6 +323,7 @@ private:
     std::vector<float> m_colorG;
     std::vector<float> m_colorB;
     std::vector<float> m_colorA;
+    std::vector<uint8_t> m_selectedAtoms;
 
     // Lattice
     Lattice m_lattice;

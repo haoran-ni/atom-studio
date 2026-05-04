@@ -1,5 +1,6 @@
 #include "OpenGLViewport.h"
 #include "StructureModel.h"
+#include "ViewportSelection.h"
 #include "../../render/common/Camera.h"
 #include "../../render/opengl/OpenGLRenderer.h"
 #include "../../render/opengl/RayTracingRenderer.h"
@@ -224,6 +225,8 @@ OpenGLViewport::OpenGLViewport(QQuickItem* parent)
         if (auto* model = StructureModel::instance()) {
             connect(model, &StructureModel::structureUpdated,
                     this, &OpenGLViewport::setStructure);
+            connect(model, &StructureModel::structureStyleChanged,
+                    this, &OpenGLViewport::onStructureStyleChanged);
         }
     });
 }
@@ -402,8 +405,18 @@ void OpenGLViewport::setBondScale(float scale) {
 void OpenGLViewport::setBondRadius(float radius) {
     if (!std::isfinite(radius)) return;
     const float clamped = std::clamp(radius, 0.01f, 0.6f);
+    if (auto* model = StructureModel::instance()) {
+        if (model->selectionEnabled()) {
+            model->applyBondRadiusToSelection(clamped);
+            return;
+        }
+    }
     if (!qFuzzyCompare(m_bondRadius, clamped)) {
         m_bondRadius = clamped;
+        if (m_structure) {
+            m_structure->bonds().setAllRadii(m_bondRadius);
+            m_needsStructureUpdate = true;
+        }
         emit bondRadiusChanged();
         update();
     }
@@ -448,6 +461,7 @@ void OpenGLViewport::onBondsReady() {
         BondResult result = m_bondWatcher->result();
         // Discard if the structure has changed since the task was launched.
         if (result.structure == m_structure && result.bonds) {
+            result.bonds->setAllRadii(m_bondRadius);
             m_structure->setBondList(std::move(result.bonds));
             m_needsStructureUpdate = true;
             emit bondCountChanged();
@@ -540,6 +554,12 @@ void OpenGLViewport::setUnitCellColor(const QColor& color) {
 }
 
 void OpenGLViewport::setAtomScale(float scale) {
+    if (auto* model = StructureModel::instance()) {
+        if (model->selectionEnabled()) {
+            model->applyAtomScaleToSelection(scale, m_atomScale);
+            return;
+        }
+    }
     if (!qFuzzyCompare(m_atomScale, scale)) {
         m_atomScale = scale;
         emit atomScaleChanged();
@@ -549,6 +569,12 @@ void OpenGLViewport::setAtomScale(float scale) {
 
 void OpenGLViewport::setAtomColorScheme(int scheme) {
     scheme = (scheme == 1) ? 1 : 0;
+    if (auto* model = StructureModel::instance()) {
+        if (model->selectionEnabled()) {
+            model->applyAtomColorSchemeToSelection(scheme);
+            return;
+        }
+    }
     if (m_atomColorScheme == scheme) return;
 
     m_atomColorScheme = scheme;
@@ -736,6 +762,11 @@ void OpenGLViewport::notifyFramePresented() {
     emit frameTokenChanged();
 }
 
+void OpenGLViewport::onStructureStyleChanged() {
+    m_needsStructureUpdate = true;
+    update();
+}
+
 bool OpenGLViewport::event(QEvent* event) {
     if (event->type() == QEvent::NativeGesture) {
         auto* ge = static_cast<QNativeGestureEvent*>(event);
@@ -766,6 +797,7 @@ bool OpenGLViewport::event(QEvent* event) {
 
 void OpenGLViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
+    m_mousePressPos = event->position();
     m_pressedButtons = event->buttons();
     if (m_pressedButtons & Qt::LeftButton) {
         m_showRotationCenter = true;
@@ -796,10 +828,30 @@ void OpenGLViewport::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void OpenGLViewport::mouseReleaseEvent(QMouseEvent* event) {
+    const bool leftReleased = (event->button() == Qt::LeftButton);
+    const QPointF releasePos = event->position();
     m_pressedButtons = event->buttons();
     if (!(m_pressedButtons & Qt::LeftButton)) {
         m_showRotationCenter = false;
         update();
+    }
+    if (leftReleased) {
+        const QPointF delta = releasePos - m_mousePressPos;
+        if (delta.manhattanLength() <= 4.0) {
+            if (auto* model = StructureModel::instance()) {
+                if (model->selectionEnabled() && m_structure) {
+                    render::RenderSettings pickSettings = m_renderSettings;
+                    pickSettings.showBonds = m_showBonds;
+                    pickSettings.showAtoms = !(m_showBonds && m_atomScale <= 0.1001f);
+                    pickSettings.atomScale = m_atomScale;
+                    pickSettings.bondRadius = m_bondRadius;
+                    handleViewportSelectionClick(*model, m_structure.get(), *m_camera,
+                                                 pickSettings, releasePos,
+                                                 static_cast<int>(width()),
+                                                 static_cast<int>(height()));
+                }
+            }
+        }
     }
     event->accept();
 }

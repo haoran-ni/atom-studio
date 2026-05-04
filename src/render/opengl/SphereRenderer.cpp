@@ -1,5 +1,6 @@
 #include "SphereRenderer.h"
 #include "ShaderManager.h"
+#include "../common/BondRenderData.h"
 #include "../common/Camera.h"
 #include "../common/RenderSettings.h"
 #include "../../data/Structure.h"
@@ -111,19 +112,8 @@ void SphereRenderer::setAtomData(const data::Structure* structure) {
         posRadiusData[i * 4 + 3] = radii[i];
     }
 
-    // Pack color data
-    std::vector<float> colorData(m_atomCount * 4);
-    const float* cr = structure->colorsR();
-    const float* cg = structure->colorsG();
-    const float* cb = structure->colorsB();
-    const float* ca = structure->colorsA();
-
-    for (size_t i = 0; i < m_atomCount; ++i) {
-        colorData[i * 4 + 0] = cr[i];
-        colorData[i * 4 + 1] = cg[i];
-        colorData[i * 4 + 2] = cb[i];
-        colorData[i * 4 + 3] = ca[i];
-    }
+    // Pack color data with transient selection highlight applied.
+    std::vector<float> colorData = packAtomRenderColors(structure);
 
     // Upload to GPU
     m_quadVAO.bind();

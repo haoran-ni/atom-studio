@@ -11,6 +11,8 @@ set(RENDER_COMMON_SOURCES
     common/BVH.h
     common/Camera.cpp
     common/Camera.h
+    common/Picking.cpp
+    common/Picking.h
     common/RenderStateHash.cpp
     common/RenderStateHash.h
     common/Renderer.h

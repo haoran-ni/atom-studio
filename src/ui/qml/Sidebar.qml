@@ -711,7 +711,54 @@ Rectangle {
                                         text: qsTr("Reset to Original")
                                         Layout.fillWidth: true
                                         enabled: StructureModel.hasStructure
-                                        onClicked: StructureModel.resetToOriginal()
+                                        onClicked: {
+                                            StructureModel.resetToOriginal()
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.atomScale = 1.0
+                                                sidebar.viewport.atomColorScheme = 0
+                                                sidebar.viewport.bondRadius = 0.1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    id: selectionSection
+                    title: qsTr("Selection")
+                    iconSource: "qrc:/icons/selection.svg"
+                    Layout.fillWidth: true
+
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label {
+                                            text: qsTr("Selection Range")
+                                            color: sidebar.textStrong
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                        }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: [
+                                                qsTr("No selection"),
+                                                qsTr("Select atoms/bonds"),
+                                                qsTr("Select molecules")
+                                            ]
+                                            currentIndex: StructureModel.selectionMode
+                                            enabled: StructureModel.hasStructure
+                                            onActivated: function(index) {
+                                                StructureModel.selectionMode = index
+                                            }
+                                        }
                                     }
                                 }
                             }

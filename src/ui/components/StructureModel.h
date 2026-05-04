@@ -5,10 +5,12 @@
 #include <QStringList>
 #include <QQmlEngine>
 #include <QtQml/qqmlregistration.h>
+#include <cstddef>
 #include <memory>
 
 namespace atom::data {
 class Structure;
+struct ConnectedSelection;
 }
 
 namespace atom::ui {
@@ -33,6 +35,10 @@ class StructureModel : public QObject {
     Q_PROPERTY(bool hasUnitCell READ hasUnitCell NOTIFY structureChanged)
     Q_PROPERTY(bool hasBonds READ hasBonds NOTIFY structureChanged)
     Q_PROPERTY(QString cellParameters READ cellParameters NOTIFY structureChanged)
+    Q_PROPERTY(int selectionMode READ selectionMode WRITE setSelectionMode NOTIFY selectionModeChanged)
+    Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionModeChanged)
+    Q_PROPERTY(int selectedAtomCount READ selectedAtomCount NOTIFY selectionChanged)
+    Q_PROPERTY(int selectedBondCount READ selectedBondCount NOTIFY selectionChanged)
 
 public:
     explicit StructureModel(QObject* parent = nullptr);
@@ -57,25 +63,48 @@ public:
     bool hasUnitCell() const;
     bool hasBonds() const;
     QString cellParameters() const;
+    int selectionMode() const;
+    bool selectionEnabled() const;
+    int selectedAtomCount() const;
+    int selectedBondCount() const;
+    bool hasActiveAtomSelection() const;
+    bool hasActiveBondSelection() const;
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
     Q_INVOKABLE void resetToOriginal();
     Q_INVOKABLE void replicateCell(int nx, int ny, int nz);
     Q_INVOKABLE void unwrapMolecules();
+    Q_INVOKABLE void setSelectionMode(int mode);
+    Q_INVOKABLE void clearSelection();
+    bool toggleAtomSelection(size_t atomIndex);
+    bool toggleBondSelection(size_t bondIndex);
+    bool toggleMoleculeSelectionFromAtom(size_t atomIndex);
+    bool toggleMoleculeSelectionFromBond(size_t bondIndex);
+    bool applyAtomScaleToSelection(float scale, float globalAtomScale);
+    bool applyAtomColorSchemeToSelection(int scheme);
+    bool applyBondRadiusToSelection(float radius);
     void clear();
     void notifyBondsUpdated();
 
 signals:
     void structureChanged();
+    void selectionModeChanged();
+    void selectionChanged();
+    void structureStyleChanged();
     void structureUpdated(std::shared_ptr<data::Structure> structure);
 
 private:
     void updateElementList();
+    void setSelectionModeInternal(int mode, bool emitChange);
+    bool setComponentSelection(const data::ConnectedSelection& component, bool selected);
+    bool componentFullySelected(const data::ConnectedSelection& component) const;
+    void emitSelectionResetSignals();
 
     std::shared_ptr<data::Structure> m_originalStructure;  // immutable — set once on load
     std::shared_ptr<data::Structure> m_structure;          // working copy shown in viewport
     QStringList m_elements;
+    int m_selectionMode = 0;
 
     static StructureModel* s_instance;
 };

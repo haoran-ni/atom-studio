@@ -45,7 +45,8 @@ struct BondInstance {
     float4 endColor;
     float  startRadius;
     float  endRadius;
-    float2 _pad2;
+    float  bondRadius;
+    float  _pad2;
 };
 
 struct LineVertex {
@@ -289,8 +290,9 @@ vertex BondVertexOut bond_vertex(
     }
 
     BondMeshVertex vert = cylinderVertices[vid];
-    float3 localPos = right * vert.position.x * scene.bondRadius +
-                      up * vert.position.y * scene.bondRadius +
+    float bondRadius = bond.bondRadius > 0.0f ? bond.bondRadius : scene.bondRadius;
+    float3 localPos = right * vert.position.x * bondRadius +
+                      up * vert.position.y * bondRadius +
                       axisDir * vert.position.z * bondLength;
     out.viewPos = startView + localPos;
 
@@ -752,7 +754,8 @@ void traceClosest(float3 ro, float3 rd,
                   int atomCount, float atomScale, bool showAtoms,
                   device const float4* bondStartPositions,
                   device const float4* bondEndPositions,
-                  int bondCount, float bondRadius, bool showBonds,
+                  device const float* bondRadii,
+                  int bondCount, bool showBonds,
                   device const float4* bvhNodeMinData,
                   device const float4* bvhNodeMaxData,
                   device const uint4* bvhNodeMeta,
@@ -793,6 +796,7 @@ void traceClosest(float3 ro, float3 rd,
                     int bondIdx = int(primIndex) - atomCount;
                     float3 pa = bondStartPositions[bondIdx].xyz;
                     float3 pb = bondEndPositions[bondIdx].xyz;
+                    float bondRadius = bondRadii[bondIdx];
                     float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
@@ -830,6 +834,82 @@ void traceClosest(float3 ro, float3 rd,
             if (sp < BVH_STACK_SIZE) stack[sp++] = int(right);
         }
     }
+}
+
+bool traceAnyHit(float3 ro, float3 rd, float maxDist,
+                 device const float4* atomPositions,
+                 int atomCount, float atomScale, bool showAtoms,
+                 device const float4* bondStartPositions,
+                 device const float4* bondEndPositions,
+                 device const float* bondRadii,
+                 int bondCount, bool showBonds,
+                 device const float4* bvhNodeMinData,
+                 device const float4* bvhNodeMaxData,
+                 device const uint4* bvhNodeMeta,
+                 device const uint* bvhPrimIndices,
+                 int bvhNodeCount) {
+    if (bvhNodeCount <= 0) return false;
+
+    int totalPrims = atomCount + bondCount;
+    float3 invRd = 1.0 / rd;
+    int stack[BVH_STACK_SIZE];
+    int sp = 0;
+    stack[sp++] = 0;
+
+    while (sp > 0) {
+        int nodeIndex = stack[--sp];
+        uint4 meta = bvhNodeMeta[nodeIndex];
+
+        uint primCount = meta.w;
+        if (primCount > 0) {
+            uint first = meta.z;
+            for (uint i = 0; i < primCount; ++i) {
+                uint primIndex = bvhPrimIndices[first + i];
+                if (primIndex >= uint(totalPrims)) continue;
+
+                if (primIndex < uint(atomCount)) {
+                    if (!showAtoms) continue;
+                    float4 atom = atomPositions[primIndex];
+                    float r = atom.w * atomScale;
+                    float3 oc = ro - atom.xyz;
+                    float b = dot(oc, rd);
+                    float c = dot(oc, oc) - r * r;
+                    float disc = b * b - c;
+                    if (disc >= 0.0) {
+                        float sqrtDisc = sqrt(disc);
+                        float t = -b - sqrtDisc;
+                        if (t > 0.001 && t < maxDist) return true;
+                        t = -b + sqrtDisc;
+                        if (t > 0.001 && t < maxDist) return true;
+                    }
+                } else if (showBonds) {
+                    int bondIdx = int(primIndex) - atomCount;
+                    float3 pa = bondStartPositions[bondIdx].xyz;
+                    float3 pb = bondEndPositions[bondIdx].xyz;
+                    float bondRadius = bondRadii[bondIdx];
+                    float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
+                    if (t > 0.001 && t < maxDist) return true;
+                }
+            }
+            continue;
+        }
+
+        uint left = meta.x;
+        uint right = meta.y;
+        float tNear;
+        if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale,
+                             bvhNodeMinData, bvhNodeMaxData, tNear))
+                stack[sp++] = int(left);
+        }
+        if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
+            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale,
+                             bvhNodeMinData, bvhNodeMaxData, tNear))
+                stack[sp++] = int(right);
+        }
+    }
+
+    return false;
 }
 
 bool traceAnyHit(float3 ro, float3 rd, float maxDist,
@@ -939,7 +1019,8 @@ fragment float4 rt_fragment(
     device const float4* bondStartPositions [[buffer(7)]],
     device const float4* bondEndPositions [[buffer(8)]],
     device const float4* bondStartColors [[buffer(9)]],
-    device const float4* bondEndColors [[buffer(10)]])
+    device const float4* bondEndColors [[buffer(10)]],
+    device const float* bondRadii [[buffer(11)]])
 {
     // Initialize RNG
     uint rng_state = pcg(
@@ -977,7 +1058,7 @@ fragment float4 rt_fragment(
     traceClosest(rayOrigin, rayDir, atomPositions,
                  rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
-                 rt.bondCount, rt.bondRadius, showBonds,
+                 bondRadii, rt.bondCount, showBonds,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                  rt.bvhNodeCount, hitT, hitIndex);
 
@@ -1005,13 +1086,14 @@ fragment float4 rt_fragment(
         float4 endColor = bondEndColors[bondIdx];
         float4 startPos = bondStartPositions[bondIdx];
         float4 endPos = bondEndPositions[bondIdx];
+        float bondRadius = bondRadii[bondIdx];
         float3 pa = startPos.xyz;
         float3 pb = endPos.xyz;
         float3 ba = pb - pa;
         float baLen2 = dot(ba, ba);
         float bondLength = (baLen2 > 1e-8f) ? sqrt(baLen2) : 0.0f;
         float3 bondDir = (bondLength > 1e-8f) ? (ba / bondLength) : float3(0.0f, 0.0f, 1.0f);
-        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, rt.bondRadius);
+        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, bondRadius);
         float h = bondHit.axial;
         if (bondHit.kind == CYL_HIT_START_CAP) {
             normal = -bondDir;
@@ -1030,7 +1112,7 @@ fragment float4 rt_fragment(
             splitT = clamp(splitDistance / bondLength, 0.0f, 1.0f);
         }
         surfaceColor = (h < splitT ? startColor : endColor).rgb;
-        biasRadius = rt.bondRadius;
+        biasRadius = bondRadius;
     }
 
     float3 lightDir = normalize(rt.lightDir);
@@ -1053,7 +1135,7 @@ fragment float4 rt_fragment(
         if (traceAnyHit(biasedOrigin, lightDir, 10000.0,
                         atomPositions, rt.atomCount, rt.atomScale, showAtoms,
                         bondStartPositions, bondEndPositions,
-                        rt.bondCount, rt.bondRadius, showBonds,
+                        bondRadii, rt.bondCount, showBonds,
                         bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                         rt.bvhNodeCount)) {
             shadow = 1.0 - clamp(rt.shadowOpacity, 0.0f, 1.0f);
@@ -1069,7 +1151,7 @@ fragment float4 rt_fragment(
             if (traceAnyHit(biasedOrigin, aoDir, rt.aoRadius,
                             atomPositions, rt.atomCount, rt.atomScale, showAtoms,
                             bondStartPositions, bondEndPositions,
-                            rt.bondCount, rt.bondRadius, showBonds,
+                            bondRadii, rt.bondCount, showBonds,
                             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                             rt.bvhNodeCount)) {
                 occluded += 1.0;

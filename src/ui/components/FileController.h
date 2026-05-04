@@ -76,6 +76,11 @@ signals:
     void currentFilePathChanged();
 
     /**
+     * @brief Emitted when file loading begins.
+     */
+    void loadingStarted(const QString& filePath);
+
+    /**
      * @brief Emitted when a structure is successfully loaded
      */
     void structureLoaded(std::shared_ptr<atom::data::Structure> structure);

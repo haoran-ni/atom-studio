@@ -103,6 +103,7 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
         instances[i].endColor = simd_make_float4(segment.endColorR, segment.endColorG, segment.endColorB, segment.endColorA);
         instances[i].startRadius = segment.startRadius;
         instances[i].endRadius = segment.endRadius;
+        instances[i].bondRadius = segment.bondRadius;
     }
 
     NSUInteger size = m_bondCount * sizeof(BondInstance);

@@ -6,7 +6,8 @@
 
 #include <QFileInfo>
 #include <QQmlEngine>
-#include <QSet>
+#include <algorithm>
+#include <cmath>
 
 namespace atom::ui {
 
@@ -89,19 +90,47 @@ QString StructureModel::cellParameters() const {
            .arg(lattice.gamma(), 0, 'f', 1);
 }
 
+int StructureModel::selectionMode() const {
+    return m_selectionMode;
+}
+
+bool StructureModel::selectionEnabled() const {
+    return m_selectionMode != 0;
+}
+
+int StructureModel::selectedAtomCount() const {
+    return m_structure ? static_cast<int>(m_structure->selectedAtomCount()) : 0;
+}
+
+int StructureModel::selectedBondCount() const {
+    return m_structure ? static_cast<int>(m_structure->selectedBondCount()) : 0;
+}
+
+bool StructureModel::hasActiveAtomSelection() const {
+    return selectionEnabled() && selectedAtomCount() > 0;
+}
+
+bool StructureModel::hasActiveBondSelection() const {
+    return selectionEnabled() && selectedBondCount() > 0;
+}
+
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
     m_originalStructure = structure;
     m_structure = structure->clone();
+    setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
+    emitSelectionResetSignals();
     emit structureUpdated(m_structure);
 }
 
 void StructureModel::resetToOriginal() {
     if (!m_originalStructure) return;
     m_structure = m_originalStructure->clone();
+    setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
+    emitSelectionResetSignals();
     emit structureUpdated(m_structure);
 }
 
@@ -113,6 +142,7 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
     if (!replicated) return;
 
     m_structure = std::move(replicated);
+    clearSelection();
     updateElementList();
     emit structureChanged();
     emit structureUpdated(m_structure);
@@ -123,18 +153,125 @@ void StructureModel::unwrapMolecules() {
     if (m_structure->bonds().empty()) return;
 
     data::unwrapMolecules(*m_structure);
+    clearSelection();
     emit structureChanged();
     emit structureUpdated(m_structure);
+}
+
+void StructureModel::setSelectionMode(int mode) {
+    mode = std::clamp(mode, 0, 2);
+    const bool modeChanged = mode != m_selectionMode;
+    setSelectionModeInternal(mode, modeChanged);
+    clearSelection();
+}
+
+void StructureModel::clearSelection() {
+    if (m_structure) {
+        m_structure->clearSelection();
+    }
+    emit selectionChanged();
+    emit structureStyleChanged();
+}
+
+bool StructureModel::toggleAtomSelection(size_t atomIndex) {
+    if (!m_structure || atomIndex >= m_structure->atomCount()) return false;
+    m_structure->toggleAtomSelected(atomIndex);
+    emit selectionChanged();
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::toggleBondSelection(size_t bondIndex) {
+    if (!m_structure || bondIndex >= m_structure->bonds().bondCount()) return false;
+    m_structure->bonds().toggleSelected(bondIndex);
+    emit selectionChanged();
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::toggleMoleculeSelectionFromAtom(size_t atomIndex) {
+    if (!m_structure || atomIndex >= m_structure->atomCount()) return false;
+    const data::ConnectedSelection component = data::connectedSelectionFromAtom(*m_structure, atomIndex);
+    const bool deselect = componentFullySelected(component);
+    return setComponentSelection(component, !deselect);
+}
+
+bool StructureModel::toggleMoleculeSelectionFromBond(size_t bondIndex) {
+    if (!m_structure || bondIndex >= m_structure->bonds().bondCount()) return false;
+    const data::ConnectedSelection component = data::connectedSelectionFromBond(*m_structure, bondIndex);
+    const bool deselect = componentFullySelected(component);
+    return setComponentSelection(component, !deselect);
+}
+
+bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScale) {
+    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+    if (!std::isfinite(scale) || !std::isfinite(globalAtomScale)) return false;
+
+    const float safeGlobalScale = std::max(globalAtomScale, 0.0001f);
+    float* radii = m_structure->radii();
+    const int* atomicNumbers = m_structure->atomicNumbers();
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+        if (!selectedAtoms[i]) continue;
+        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false) * scale / safeGlobalScale;
+    }
+
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applyAtomColorSchemeToSelection(int scheme) {
+    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+
+    const auto colorScheme = scheme == 1 ? data::ElementColorScheme::Cpk
+                                         : data::ElementColorScheme::Jmol;
+    float* cr = m_structure->colorsR();
+    float* cg = m_structure->colorsG();
+    float* cb = m_structure->colorsB();
+    float* ca = m_structure->colorsA();
+    const int* atomicNumbers = m_structure->atomicNumbers();
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+
+    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+        if (!selectedAtoms[i]) continue;
+        const auto color = data::ElementData::colorForElement(atomicNumbers[i], colorScheme);
+        cr[i] = color.r;
+        cg[i] = color.g;
+        cb[i] = color.b;
+        ca[i] = color.a;
+    }
+
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applyBondRadiusToSelection(float radius) {
+    if (!m_structure || !selectionEnabled() || selectedBondCount() == 0) return false;
+    if (!std::isfinite(radius)) return false;
+
+    auto& bonds = m_structure->bonds();
+    const auto& selectedBonds = bonds.selectionMask();
+    for (size_t i = 0; i < bonds.bondCount(); ++i) {
+        if (selectedBonds[i]) {
+            bonds.setRadius(i, radius);
+        }
+    }
+
+    emit structureStyleChanged();
+    return true;
 }
 
 void StructureModel::clear() {
     m_originalStructure.reset();
     m_structure.reset();
     m_elements.clear();
+    setSelectionModeInternal(0, false);
     emit structureChanged();
+    emitSelectionResetSignals();
 }
 
 void StructureModel::notifyBondsUpdated() {
+    clearSelection();
     emit structureChanged();
 }
 
@@ -158,6 +295,67 @@ void StructureModel::updateElementList() {
         QString symbol = QString::fromUtf8(elem.symbol.data(), elem.symbol.size());
         m_elements.append(QString("%1: %2").arg(symbol).arg(it.value()));
     }
+}
+
+void StructureModel::setSelectionModeInternal(int mode, bool emitChange) {
+    m_selectionMode = std::clamp(mode, 0, 2);
+    if (emitChange) {
+        emit selectionModeChanged();
+    }
+}
+
+bool StructureModel::componentFullySelected(const data::ConnectedSelection& component) const {
+    if (!m_structure) return false;
+    if (component.atoms.empty() && component.bonds.empty()) return false;
+
+    for (size_t atomIndex : component.atoms) {
+        if (atomIndex >= m_structure->atomCount() || !m_structure->atomSelected(atomIndex)) {
+            return false;
+        }
+    }
+
+    const auto& bonds = m_structure->bonds();
+    for (size_t bondIndex : component.bonds) {
+        if (bondIndex >= bonds.bondCount() || !bonds.selected(bondIndex)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool StructureModel::setComponentSelection(const data::ConnectedSelection& component, bool selected) {
+    if (!m_structure) return false;
+    bool changed = false;
+
+    for (size_t atomIndex : component.atoms) {
+        if (atomIndex >= m_structure->atomCount()) continue;
+        if (m_structure->atomSelected(atomIndex) != selected) {
+            m_structure->setAtomSelected(atomIndex, selected);
+            changed = true;
+        }
+    }
+
+    auto& bonds = m_structure->bonds();
+    for (size_t bondIndex : component.bonds) {
+        if (bondIndex >= bonds.bondCount()) continue;
+        if (bonds.selected(bondIndex) != selected) {
+            bonds.setSelected(bondIndex, selected);
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        emit selectionChanged();
+        emit structureStyleChanged();
+    }
+    return changed;
+}
+
+void StructureModel::emitSelectionResetSignals() {
+    emit selectionModeChanged();
+    emit selectionChanged();
+    emit structureStyleChanged();
 }
 
 } // namespace atom::ui

@@ -207,6 +207,7 @@ std::unique_ptr<Structure> Structure::clone() const {
     s->m_colorG = m_colorG;
     s->m_colorB = m_colorB;
     s->m_colorA = m_colorA;
+    s->m_selectedAtoms = m_selectedAtoms;
 
     s->m_lattice = m_lattice;
     s->m_bonds   = std::make_shared<BondList>(*m_bonds);
@@ -230,6 +231,7 @@ void Structure::reserve(size_t count) {
     m_colorG.reserve(count);
     m_colorB.reserve(count);
     m_colorA.reserve(count);
+    m_selectedAtoms.reserve(count);
 }
 
 void Structure::resize(size_t count) {
@@ -243,6 +245,7 @@ void Structure::resize(size_t count) {
     m_colorG.resize(count, 1.0f);
     m_colorB.resize(count, 1.0f);
     m_colorA.resize(count, 1.0f);
+    m_selectedAtoms.resize(count, 0);
     m_atomCount = count;
 }
 
@@ -257,6 +260,7 @@ void Structure::clear() {
     m_colorG.clear();
     m_colorB.clear();
     m_colorA.clear();
+    m_selectedAtoms.clear();
 
     m_velX.clear();
     m_velY.clear();
@@ -291,6 +295,7 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
     m_colorG.push_back(color.g);
     m_colorB.push_back(color.b);
     m_colorA.push_back(color.a);
+    m_selectedAtoms.push_back(0);
 
     return index;
 }
@@ -361,6 +366,41 @@ void Structure::updateRadiiFromElements(float scale, bool useVdW) {
     for (size_t i = 0; i < m_atomCount; ++i) {
         m_radii[i] = ElementData::radiusForElement(m_atomicNumbers[i], useVdW) * scale;
     }
+}
+
+void Structure::setAtomSelected(size_t index, bool selected) {
+    if (index < m_selectedAtoms.size()) {
+        m_selectedAtoms[index] = selected ? 1 : 0;
+    }
+}
+
+void Structure::toggleAtomSelected(size_t index) {
+    if (index < m_selectedAtoms.size()) {
+        m_selectedAtoms[index] = m_selectedAtoms[index] ? 0 : 1;
+    }
+}
+
+void Structure::clearAtomSelection() {
+    std::fill(m_selectedAtoms.begin(), m_selectedAtoms.end(), uint8_t{0});
+}
+
+void Structure::clearSelection() {
+    clearAtomSelection();
+    if (m_bonds) {
+        m_bonds->clearSelection();
+    }
+}
+
+size_t Structure::selectedAtomCount() const {
+    return static_cast<size_t>(std::count(m_selectedAtoms.begin(), m_selectedAtoms.end(), uint8_t{1}));
+}
+
+size_t Structure::selectedBondCount() const {
+    return m_bonds ? m_bonds->selectedCount() : 0;
+}
+
+bool Structure::hasSelection() const {
+    return selectedAtomCount() > 0 || selectedBondCount() > 0;
 }
 
 std::array<float, 3> Structure::position(size_t index) const {

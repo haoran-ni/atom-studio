@@ -2,6 +2,7 @@
 #include "MetalSphereRenderer.h"
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
+#include "../common/BondRenderData.h"
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <vector>
@@ -79,14 +80,14 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure) {
     const float* py = structure->positionsY();
     const float* pz = structure->positionsZ();
     const float* radii = structure->radii();
-    const float* cr = structure->colorsR();
-    const float* cg = structure->colorsG();
-    const float* cb = structure->colorsB();
-    const float* ca = structure->colorsA();
+    std::vector<float> colorData = packAtomRenderColors(structure);
 
     for (size_t i = 0; i < m_atomCount; ++i) {
         instances[i].positionAndRadius = simd_make_float4(px[i], py[i], pz[i], radii[i]);
-        instances[i].color = simd_make_float4(cr[i], cg[i], cb[i], ca[i]);
+        instances[i].color = simd_make_float4(colorData[i * 4 + 0],
+                                              colorData[i * 4 + 1],
+                                              colorData[i * 4 + 2],
+                                              colorData[i * 4 + 3]);
     }
 
     NSUInteger size = m_atomCount * sizeof(SphereInstance);

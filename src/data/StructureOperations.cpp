@@ -18,6 +18,41 @@ static bool isUnwrappableElement(int atomicNumber) {
     return element.atomicNumber != 0 && element.vdwRadius > 0.0f;
 }
 
+struct ComponentGraph {
+    struct AdjEntry { size_t neighbor; size_t bondIndex; };
+    std::vector<std::vector<AdjEntry>> adj;
+    std::vector<bool> atomEligible;
+    std::vector<bool> bondEligible;
+};
+
+static ComponentGraph buildUnwrapConnectivityGraph(const Structure& s) {
+    const size_t n = s.atomCount();
+    const BondList& bonds = s.bonds();
+
+    ComponentGraph graph;
+    graph.adj.resize(n);
+    graph.atomEligible.resize(n, false);
+    graph.bondEligible.resize(bonds.bondCount(), false);
+
+    for (size_t i = 0; i < n; ++i) {
+        graph.atomEligible[i] = isUnwrappableElement(s.atomicNumber(i));
+    }
+
+    for (size_t b = 0; b < bonds.bondCount(); ++b) {
+        const Bond& bond = bonds.bond(b);
+        const size_t i = bond.atomIndex1;
+        const size_t j = bond.atomIndex2;
+        if (i >= n || j >= n) continue;
+        if (!graph.atomEligible[i] || !graph.atomEligible[j]) continue;
+
+        graph.bondEligible[b] = true;
+        graph.adj[i].push_back({j, b});
+        graph.adj[j].push_back({i, b});
+    }
+
+    return graph;
+}
+
 std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, int nz) {
     if (!src.hasLattice() || nx < 1 || ny < 1 || nz < 1)
         return nullptr;
@@ -277,6 +312,63 @@ void unwrapMolecules(Structure& s) {
                           static_cast<float>(cart[2]));
         }
     }
+}
+
+ConnectedSelection connectedSelectionFromAtom(const Structure& s, size_t atomIndex) {
+    ConnectedSelection selection;
+    const size_t n = s.atomCount();
+    if (atomIndex >= n) return selection;
+
+    ComponentGraph graph = buildUnwrapConnectivityGraph(s);
+    if (!graph.atomEligible[atomIndex]) {
+        selection.atoms.push_back(atomIndex);
+        return selection;
+    }
+
+    std::vector<uint8_t> visitedAtoms(n, 0);
+    std::vector<uint8_t> visitedBonds(s.bonds().bondCount(), 0);
+    std::queue<size_t> queue;
+    queue.push(atomIndex);
+    visitedAtoms[atomIndex] = 1;
+
+    while (!queue.empty()) {
+        const size_t atom = queue.front();
+        queue.pop();
+        selection.atoms.push_back(atom);
+
+        for (const auto& edge : graph.adj[atom]) {
+            if (!visitedBonds[edge.bondIndex]) {
+                visitedBonds[edge.bondIndex] = 1;
+                selection.bonds.push_back(edge.bondIndex);
+            }
+            if (!visitedAtoms[edge.neighbor]) {
+                visitedAtoms[edge.neighbor] = 1;
+                queue.push(edge.neighbor);
+            }
+        }
+    }
+
+    return selection;
+}
+
+ConnectedSelection connectedSelectionFromBond(const Structure& s, size_t bondIndex) {
+    ConnectedSelection selection;
+    const BondList& bonds = s.bonds();
+    if (bondIndex >= bonds.bondCount()) return selection;
+
+    ComponentGraph graph = buildUnwrapConnectivityGraph(s);
+    const Bond& bond = bonds.bond(bondIndex);
+
+    if (bondIndex < graph.bondEligible.size() && graph.bondEligible[bondIndex]) {
+        return connectedSelectionFromAtom(s, bond.atomIndex1);
+    }
+
+    selection.bonds.push_back(bondIndex);
+    selection.atoms.push_back(bond.atomIndex1);
+    if (bond.atomIndex2 != bond.atomIndex1) {
+        selection.atoms.push_back(bond.atomIndex2);
+    }
+    return selection;
 }
 
 } // namespace atom::data

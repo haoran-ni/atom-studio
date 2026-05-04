@@ -130,6 +130,7 @@ void FileController::onLoadingStarted(const QString& filePath) {
     emit loadProgressChanged();
     emit loadStatusChanged();
     emit currentFilePathChanged();
+    emit loadingStarted(filePath);
 }
 
 void FileController::onProgressChanged(float progress, const QString& message) {

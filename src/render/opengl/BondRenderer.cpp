@@ -84,7 +84,7 @@ bool BondRenderer::initialize(ShaderManager* shaderManager) {
 
     m_instanceRadiusBuffer.bind();
     glEnableVertexAttribArray(5);
-    glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glVertexAttribDivisor(5, 1);
 
     m_cylinderIBO.bind();
@@ -146,10 +146,11 @@ void BondRenderer::setBondData(const data::Structure* structure) {
     m_bondCount = bonds.bondCount();
 
     const PackedBondRenderData packed = packBondRenderData(structure, BondPositionPacking::XYZ3);
-    std::vector<float> radiusData(m_bondCount * 2);
+    std::vector<float> radiusData(m_bondCount * 3);
     for (size_t i = 0; i < m_bondCount; ++i) {
-        radiusData[i * 2 + 0] = packed.startRadii[i];
-        radiusData[i * 2 + 1] = packed.endRadii[i];
+        radiusData[i * 3 + 0] = packed.startRadii[i];
+        radiusData[i * 3 + 1] = packed.endRadii[i];
+        radiusData[i * 3 + 2] = packed.bondRadii[i];
     }
 
     // Upload to GPU

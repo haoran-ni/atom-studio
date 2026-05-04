@@ -186,6 +186,7 @@ private:
     render::RenderSettings m_renderSettings;
 
     QPointF m_lastMousePos;
+    QPointF m_mousePressPos;
     Qt::MouseButtons m_pressedButtons;
 
     bool m_showBonds = false;
@@ -240,6 +241,7 @@ private:
 
 private slots:
     void onBondsReady();
+    void onStructureStyleChanged();
 };
 
 } // namespace atom::ui

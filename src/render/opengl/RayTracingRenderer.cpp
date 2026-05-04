@@ -70,8 +70,8 @@ uniform samplerBuffer uBondStartPositions; // vec4(x, y, z, startRadius)
 uniform samplerBuffer uBondEndPositions;   // vec4(x, y, z, endRadius)
 uniform samplerBuffer uBondStartColors;    // vec4(r, g, b, a)
 uniform samplerBuffer uBondEndColors;      // vec4(r, g, b, a)
+uniform samplerBuffer uBondRadii;          // float radius per bond
 uniform int uBondCount;
-uniform float uBondRadius;
 uniform bool uShowAtoms;
 uniform bool uShowBonds;
 
@@ -274,7 +274,8 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
                     int bondIdx = int(primIndex) - uAtomCount;
                     vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
                     vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
-                    float t = intersectCylinder(ro, rd, pa, pb, uBondRadius);
+                    float bondRadius = texelFetch(uBondRadii, bondIdx).x;
+                    float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
                         hitIndex = int(primIndex);
@@ -352,7 +353,8 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
                     int bondIdx = int(primIndex) - uAtomCount;
                     vec3 pa = texelFetch(uBondStartPositions, bondIdx).xyz;
                     vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
-                    float t = intersectCylinder(ro, rd, pa, pb, uBondRadius);
+                    float bondRadius = texelFetch(uBondRadii, bondIdx).x;
+                    float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.001 && t < maxDist) return true;
                 }
             }
@@ -461,13 +463,14 @@ void main() {
         vec4 endColor = texelFetch(uBondEndColors, bondIdx);
         vec4 startPos = texelFetch(uBondStartPositions, bondIdx);
         vec4 endPos = texelFetch(uBondEndPositions, bondIdx);
+        float bondRadius = texelFetch(uBondRadii, bondIdx).x;
         vec3 pa = startPos.xyz;
         vec3 pb = endPos.xyz;
         vec3 ba = pb - pa;
         float baLen2 = dot(ba, ba);
         float bondLength = (baLen2 > 1e-8) ? sqrt(baLen2) : 0.0;
         vec3 bondDir = (bondLength > 1e-8) ? (ba / bondLength) : vec3(0.0, 0.0, 1.0);
-        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, uBondRadius);
+        CylinderHit bondHit = intersectCappedCylinderDetailed(rayOrigin, rayDir, pa, pb, bondRadius);
         float h = bondHit.axial;
         if (bondHit.kind == CYL_HIT_START_CAP) {
             normal = -bondDir;
@@ -486,7 +489,7 @@ void main() {
             splitT = clamp(splitDistance / bondLength, 0.0, 1.0);
         }
         surfaceColor = (h < splitT ? startColor : endColor).rgb;
-        biasRadius = uBondRadius;
+        biasRadius = bondRadius;
     }
 
     // Light direction (world space, normalized)
@@ -628,6 +631,8 @@ bool RayTracingRenderer::initialize() {
     glGenTextures(1, &m_bondStartColorTex);
     glGenBuffers(1, &m_bondEndColorBuf);
     glGenTextures(1, &m_bondEndColorTex);
+    glGenBuffers(1, &m_bondRadiusBuf);
+    glGenTextures(1, &m_bondRadiusTex);
 
     m_initialized = true;
     return true;
@@ -666,6 +671,8 @@ void RayTracingRenderer::cleanup() {
     if (m_bondStartColorTex) { glDeleteTextures(1, &m_bondStartColorTex); m_bondStartColorTex = 0; }
     if (m_bondEndColorBuf) { glDeleteBuffers(1, &m_bondEndColorBuf); m_bondEndColorBuf = 0; }
     if (m_bondEndColorTex) { glDeleteTextures(1, &m_bondEndColorTex); m_bondEndColorTex = 0; }
+    if (m_bondRadiusBuf) { glDeleteBuffers(1, &m_bondRadiusBuf); m_bondRadiusBuf = 0; }
+    if (m_bondRadiusTex) { glDeleteTextures(1, &m_bondRadiusTex); m_bondRadiusTex = 0; }
 
     m_structure = nullptr;
     m_bvhNodeCount = 0;
@@ -895,8 +902,8 @@ void RayTracingRenderer::uploadSceneData() {
     glBindTexture(GL_TEXTURE_BUFFER, m_atomPosTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomPosBuf);
 
-    // Pack colors: vec4(r, g, b, a) per atom
-    auto colorData = m_structure->packColors();
+    // Pack colors with transient selection highlight applied.
+    auto colorData = packAtomRenderColors(m_structure);
 
     glBindBuffer(GL_TEXTURE_BUFFER, m_atomColorBuf);
     glBufferData(GL_TEXTURE_BUFFER,
@@ -948,6 +955,14 @@ void RayTracingRenderer::uploadSceneData() {
         glActiveTexture(GL_TEXTURE9);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondEndColorTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndColorBuf);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondRadiusBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(packedBonds.bondRadii.size() * sizeof(float)),
+                     packedBonds.bondRadii.data(), GL_STATIC_DRAW);
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_BUFFER, m_bondRadiusTex);
+        glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, m_bondRadiusBuf);
     }
 
     // ── Unified BVH (atoms + bonds) ───────────────────────────
@@ -971,7 +986,6 @@ void RayTracingRenderer::uploadSceneData() {
     }
 
     // Bond bounds (capsule AABB; maxRadius = 0 since bondRadius is baked in)
-    float bondR = m_settings.bondRadius;
     for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
         float sx = packedBonds.startPositions[i * 4 + 0];
         float sy = packedBonds.startPositions[i * 4 + 1];
@@ -979,6 +993,7 @@ void RayTracingRenderer::uploadSceneData() {
         float ex = packedBonds.endPositions[i * 4 + 0];
         float ey = packedBonds.endPositions[i * 4 + 1];
         float ez = packedBonds.endPositions[i * 4 + 2];
+        float bondR = packedBonds.bondRadii[i];
         size_t pi = static_cast<size_t>(m_atomCount) + i;
         primBounds[pi] = {
             std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
@@ -1115,11 +1130,14 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     glBindTexture(GL_TEXTURE_BUFFER, m_bondEndColorTex);
     m_rtShader->setUniformValue("uBondEndColors", 9);
 
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_BUFFER, m_bondRadiusTex);
+    m_rtShader->setUniformValue("uBondRadii", 10);
+
     m_rtShader->setUniformValue("uAtomCount", m_atomCount);
     m_rtShader->setUniformValue("uBondCount", m_bondCount);
     m_rtShader->setUniformValue("uBVHNodeCount", m_bvhNodeCount);
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
-    m_rtShader->setUniformValue("uBondRadius", m_settings.bondRadius);
     m_rtShader->setUniformValue("uShowAtoms", m_settings.showAtoms);
     m_rtShader->setUniformValue("uShowBonds", m_settings.showBonds);
 

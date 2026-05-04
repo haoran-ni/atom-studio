@@ -88,6 +88,7 @@ struct MetalRayTracingRenderer::Impl {
     id<MTLBuffer> bondEndBuffer = nil;       // float4(x,y,z,endRadius) per bond
     id<MTLBuffer> bondStartColorBuffer = nil; // float4(r,g,b,a) per bond start
     id<MTLBuffer> bondEndColorBuffer = nil;   // float4(r,g,b,a) per bond end
+    id<MTLBuffer> bondRadiusBuffer = nil;      // float radius per bond
 
     // Unit-cell overlay geometry + instance buffers
     id<MTLBuffer> unitCellCylinderVertexBuffer = nil;   // unit cylinder mesh (packed_float3)
@@ -463,6 +464,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondEndBuffer = nil;
         m_impl->bondStartColorBuffer = nil;
         m_impl->bondEndColorBuffer = nil;
+        m_impl->bondRadiusBuffer = nil;
         m_atomDataDirty = false;
         m_bondDataDirty = false;
         return;
@@ -478,7 +480,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
                     length:posData.size() * sizeof(float)
                    options:MTLResourceStorageModeShared];
 
-    auto colorData = m_structure->packColors();
+    auto colorData = packAtomRenderColors(m_structure);
     m_impl->atomColorBuffer = [m_impl->device
         newBufferWithBytes:colorData.data()
                     length:colorData.size() * sizeof(float)
@@ -508,11 +510,16 @@ void MetalRayTracingRenderer::uploadSceneData() {
             newBufferWithBytes:packedBonds.endColors.data()
                         length:packedBonds.endColors.size() * sizeof(float)
                        options:MTLResourceStorageModeShared];
+        m_impl->bondRadiusBuffer = [m_impl->device
+            newBufferWithBytes:packedBonds.bondRadii.data()
+                        length:packedBonds.bondRadii.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
     } else {
         m_impl->bondStartBuffer = nil;
         m_impl->bondEndBuffer = nil;
         m_impl->bondStartColorBuffer = nil;
         m_impl->bondEndColorBuffer = nil;
+        m_impl->bondRadiusBuffer = nil;
     }
 
     // ── Unified BVH (atoms + bonds) ──────────────────────────
@@ -534,7 +541,6 @@ void MetalRayTracingRenderer::uploadSceneData() {
         };
     }
 
-    float bondR = m_settings.bondRadius;
     for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
         float sx = packedBonds.startPositions[i * 4 + 0];
         float sy = packedBonds.startPositions[i * 4 + 1];
@@ -542,6 +548,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
         float ex = packedBonds.endPositions[i * 4 + 0];
         float ey = packedBonds.endPositions[i * 4 + 1];
         float ez = packedBonds.endPositions[i * 4 + 2];
+        float bondR = packedBonds.bondRadii[i];
         size_t pi = static_cast<size_t>(m_atomCount) + i;
         primBounds[pi] = {
             std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
@@ -699,12 +706,13 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
     [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
 
-    // buffer(7)-(9): bond data (fragment stage)
+    // buffer(7)-(11): bond data (fragment stage)
     if (m_impl->bondStartBuffer) {
         [encoder setFragmentBuffer:m_impl->bondStartBuffer offset:0 atIndex:7];
         [encoder setFragmentBuffer:m_impl->bondEndBuffer offset:0 atIndex:8];
         [encoder setFragmentBuffer:m_impl->bondStartColorBuffer offset:0 atIndex:9];
         [encoder setFragmentBuffer:m_impl->bondEndColorBuffer offset:0 atIndex:10];
+        [encoder setFragmentBuffer:m_impl->bondRadiusBuffer offset:0 atIndex:11];
     }
 
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];

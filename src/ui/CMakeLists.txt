@@ -9,6 +9,8 @@ set(UI_SHARED_SOURCES
     components/FileController.h
     components/StructureModel.cpp
     components/StructureModel.h
+    components/ViewportSelection.cpp
+    components/ViewportSelection.h
 )
 
 # ---------------------------------------------------------------------------

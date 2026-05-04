@@ -83,8 +83,24 @@ public:
 
     std::vector<size_t> bondsForAtom(uint32_t atomIndex) const;
 
+    // Per-bond rendering state
+    float radius(size_t bondIndex) const { return m_radii[bondIndex]; }
+    void setRadius(size_t bondIndex, float radius);
+    void setAllRadii(float radius);
+    const std::vector<float>& radii() const { return m_radii; }
+
+    // Selection state
+    bool selected(size_t bondIndex) const { return m_selected[bondIndex] != 0; }
+    void setSelected(size_t bondIndex, bool selected);
+    void toggleSelected(size_t bondIndex);
+    void clearSelection();
+    size_t selectedCount() const;
+    const std::vector<uint8_t>& selectionMask() const { return m_selected; }
+
 private:
     std::vector<Bond> m_bonds;
+    std::vector<float> m_radii;
+    std::vector<uint8_t> m_selected;
 };
 
 } // namespace atom::data
