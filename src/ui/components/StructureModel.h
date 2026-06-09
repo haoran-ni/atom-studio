@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -39,6 +40,8 @@ class StructureModel : public QObject {
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionModeChanged)
     Q_PROPERTY(int selectedAtomCount READ selectedAtomCount NOTIFY selectionChanged)
     Q_PROPERTY(int selectedBondCount READ selectedBondCount NOTIFY selectionChanged)
+    Q_PROPERTY(QColor selectedAtomColor READ selectedAtomColor NOTIFY structureStyleChanged)
+    Q_PROPERTY(int selectedAtomTransparency READ selectedAtomTransparency NOTIFY structureStyleChanged)
 
 public:
     explicit StructureModel(QObject* parent = nullptr);
@@ -69,6 +72,8 @@ public:
     int selectedBondCount() const;
     bool hasActiveAtomSelection() const;
     bool hasActiveBondSelection() const;
+    QColor selectedAtomColor() const;
+    int selectedAtomTransparency() const;
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
@@ -83,7 +88,10 @@ public slots:
     bool toggleMoleculeSelectionFromBond(size_t bondIndex);
     bool applyAtomScaleToSelection(float scale, float globalAtomScale);
     bool applyAtomColorSchemeToSelection(int scheme);
+    Q_INVOKABLE bool applyAtomColorToSelection(const QColor& color);
+    Q_INVOKABLE bool applyAtomTransparencyToSelection(int transparency);
     bool applyBondRadiusToSelection(float radius);
+    Q_INVOKABLE bool resetSelectedObjects(float defaultBondRadius, int colorScheme);
     void clear();
     void notifyBondsUpdated();
 

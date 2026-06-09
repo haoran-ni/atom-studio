@@ -199,6 +199,21 @@ public:
         ElementColorScheme scheme = ElementColorScheme::Jmol);
 
     /**
+     * @brief Update stored bond endpoint colors from their connected atom colors.
+     *
+     * Bond transparency is preserved.
+     */
+    void updateBondColorsFromAtomColors();
+
+    /**
+     * @brief Update stored bond endpoint colors from connected atom element defaults.
+     *
+     * Bond transparency is preserved.
+     */
+    void updateBondColorsFromElements(
+        ElementColorScheme scheme = ElementColorScheme::Jmol);
+
+    /**
      * @brief Update radii from element types
      * @param scale Scale factor for radii
      * @param useVdW Use Van der Waals radii instead of covalent

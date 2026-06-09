@@ -79,6 +79,8 @@ uniform int uIsPerspective;
 out vec4 fragColor;
 
 void main() {
+    if (vColor.a <= 0.001) discard;
+
     vec3 C = vViewCenter;
     float R = vRadius;
     vec3 hitPos;
@@ -226,6 +228,8 @@ out vec4 fragColor;
 void main() {
     vec3 normal = normalize(vNormalView);
     vec4 bondColor = (vAxial < vSplitT) ? vStartColor : vEndColor;
+    if (bondColor.a <= 0.001) discard;
+
     // Light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
     vec3 viewDir = (uIsPerspective != 0) ? normalize(-vViewPos) : vec3(0.0, 0.0, 1.0);

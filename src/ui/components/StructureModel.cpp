@@ -13,6 +13,71 @@ namespace atom::ui {
 
 StructureModel* StructureModel::s_instance = nullptr;
 
+namespace {
+
+data::ElementColorScheme colorSchemeFromIndex(int index) {
+    return index == 1 ? data::ElementColorScheme::Cpk
+                      : data::ElementColorScheme::Jmol;
+}
+
+data::Color colorFromQColor(const QColor& color) {
+    QColor valid = color.isValid() ? color : QColor(255, 255, 255);
+    return data::Color(
+        static_cast<float>(valid.redF()),
+        static_cast<float>(valid.greenF()),
+        static_cast<float>(valid.blueF()),
+        1.0f);
+}
+
+int transparencyFromAlpha(float alpha) {
+    const float clamped = std::clamp(alpha, 0.0f, 1.0f);
+    return static_cast<int>(std::lround((1.0f - clamped) * 100.0f));
+}
+
+void syncSelectedBondEndpointColorsFromSelectedAtoms(data::Structure& structure) {
+    auto& bonds = structure.bonds();
+    const auto& selectedAtoms = structure.atomSelectionMask();
+    const auto& selectedBonds = bonds.selectionMask();
+    const float* cr = structure.colorsR();
+    const float* cg = structure.colorsG();
+    const float* cb = structure.colorsB();
+
+    for (size_t i = 0; i < bonds.bondCount(); ++i) {
+        if (!selectedBonds[i]) continue;
+
+        const data::Bond& bond = bonds.bond(i);
+        if (bond.atomIndex1 < selectedAtoms.size() && selectedAtoms[bond.atomIndex1]) {
+            bonds.setStartColor(i, data::Color(
+                cr[bond.atomIndex1], cg[bond.atomIndex1], cb[bond.atomIndex1]));
+        }
+        if (bond.atomIndex2 < selectedAtoms.size() && selectedAtoms[bond.atomIndex2]) {
+            bonds.setEndColor(i, data::Color(
+                cr[bond.atomIndex2], cg[bond.atomIndex2], cb[bond.atomIndex2]));
+        }
+    }
+}
+
+void syncSelectedBondAlphaFromSelectedAtoms(data::Structure& structure, float alpha) {
+    auto& bonds = structure.bonds();
+    const auto& selectedAtoms = structure.atomSelectionMask();
+    const auto& selectedBonds = bonds.selectionMask();
+
+    for (size_t i = 0; i < bonds.bondCount(); ++i) {
+        if (!selectedBonds[i]) continue;
+
+        const data::Bond& bond = bonds.bond(i);
+        const bool startSelected = bond.atomIndex1 < selectedAtoms.size() &&
+            selectedAtoms[bond.atomIndex1];
+        const bool endSelected = bond.atomIndex2 < selectedAtoms.size() &&
+            selectedAtoms[bond.atomIndex2];
+        if (startSelected || endSelected) {
+            bonds.setAlpha(i, alpha);
+        }
+    }
+}
+
+} // namespace
+
 StructureModel::StructureModel(QObject* parent)
     : QObject(parent)
 {
@@ -112,6 +177,34 @@ bool StructureModel::hasActiveAtomSelection() const {
 
 bool StructureModel::hasActiveBondSelection() const {
     return selectionEnabled() && selectedBondCount() > 0;
+}
+
+QColor StructureModel::selectedAtomColor() const {
+    if (!m_structure) return QColor(255, 255, 255);
+
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    const float* cr = m_structure->colorsR();
+    const float* cg = m_structure->colorsG();
+    const float* cb = m_structure->colorsB();
+    for (size_t i = 0; i < selectedAtoms.size(); ++i) {
+        if (selectedAtoms[i]) {
+            return QColor::fromRgbF(cr[i], cg[i], cb[i], 1.0);
+        }
+    }
+    return QColor(255, 255, 255);
+}
+
+int StructureModel::selectedAtomTransparency() const {
+    if (!m_structure) return 0;
+
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    const float* ca = m_structure->colorsA();
+    for (size_t i = 0; i < selectedAtoms.size(); ++i) {
+        if (selectedAtoms[i]) {
+            return transparencyFromAlpha(ca[i]);
+        }
+    }
+    return 0;
 }
 
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
@@ -223,12 +316,10 @@ bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScal
 bool StructureModel::applyAtomColorSchemeToSelection(int scheme) {
     if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
 
-    const auto colorScheme = scheme == 1 ? data::ElementColorScheme::Cpk
-                                         : data::ElementColorScheme::Jmol;
+    const auto colorScheme = colorSchemeFromIndex(scheme);
     float* cr = m_structure->colorsR();
     float* cg = m_structure->colorsG();
     float* cb = m_structure->colorsB();
-    float* ca = m_structure->colorsA();
     const int* atomicNumbers = m_structure->atomicNumbers();
     const auto& selectedAtoms = m_structure->atomSelectionMask();
 
@@ -238,9 +329,48 @@ bool StructureModel::applyAtomColorSchemeToSelection(int scheme) {
         cr[i] = color.r;
         cg[i] = color.g;
         cb[i] = color.b;
-        ca[i] = color.a;
     }
 
+    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_structure);
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applyAtomColorToSelection(const QColor& color) {
+    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+
+    const data::Color target = colorFromQColor(color);
+    float* cr = m_structure->colorsR();
+    float* cg = m_structure->colorsG();
+    float* cb = m_structure->colorsB();
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+
+    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+        if (!selectedAtoms[i]) continue;
+        cr[i] = target.r;
+        cg[i] = target.g;
+        cb[i] = target.b;
+    }
+
+    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_structure);
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applyAtomTransparencyToSelection(int transparency) {
+    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+
+    const int clampedTransparency = std::clamp(transparency, 0, 100);
+    const float alpha = 1.0f - static_cast<float>(clampedTransparency) / 100.0f;
+    float* ca = m_structure->colorsA();
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+
+    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+        if (!selectedAtoms[i]) continue;
+        ca[i] = alpha;
+    }
+
+    syncSelectedBondAlphaFromSelectedAtoms(*m_structure, alpha);
     emit structureStyleChanged();
     return true;
 }
@@ -255,6 +385,53 @@ bool StructureModel::applyBondRadiusToSelection(float radius) {
         if (selectedBonds[i]) {
             bonds.setRadius(i, radius);
         }
+    }
+
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorScheme) {
+    if (!m_structure || !selectionEnabled() || !m_structure->hasSelection()) return false;
+    if (!std::isfinite(defaultBondRadius)) return false;
+
+    const auto scheme = colorSchemeFromIndex(colorScheme);
+    float* radii = m_structure->radii();
+    float* cr = m_structure->colorsR();
+    float* cg = m_structure->colorsG();
+    float* cb = m_structure->colorsB();
+    float* ca = m_structure->colorsA();
+    const int* atomicNumbers = m_structure->atomicNumbers();
+    const auto& selectedAtoms = m_structure->atomSelectionMask();
+
+    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+        if (!selectedAtoms[i]) continue;
+        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false);
+        const auto color = data::ElementData::colorForElement(atomicNumbers[i], scheme);
+        cr[i] = color.r;
+        cg[i] = color.g;
+        cb[i] = color.b;
+        ca[i] = 1.0f;
+    }
+
+    auto& bonds = m_structure->bonds();
+    const auto& selectedBonds = bonds.selectionMask();
+    const float clampedBondRadius = std::clamp(defaultBondRadius, 0.01f, 0.6f);
+    for (size_t i = 0; i < bonds.bondCount(); ++i) {
+        if (!selectedBonds[i]) continue;
+
+        const data::Bond& bond = bonds.bond(i);
+        if (bond.atomIndex1 >= m_structure->atomCount() ||
+            bond.atomIndex2 >= m_structure->atomCount()) {
+            continue;
+        }
+
+        bonds.setRadius(i, clampedBondRadius);
+        bonds.setEndpointColors(
+            i,
+            data::ElementData::colorForElement(atomicNumbers[bond.atomIndex1], scheme),
+            data::ElementData::colorForElement(atomicNumbers[bond.atomIndex2], scheme));
+        bonds.setAlpha(i, 1.0f);
     }
 
     emit structureStyleChanged();

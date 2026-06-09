@@ -124,6 +124,8 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
     // Enable depth testing
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Render unit-cell object (thick wireframe cuboid built from lattice)
     m_unitCellRenderer.render(camera, settings);

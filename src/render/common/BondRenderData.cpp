@@ -96,12 +96,9 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
     const float* px = structure.positionsX();
     const float* py = structure.positionsY();
     const float* pz = structure.positionsZ();
-    const float* cr = structure.colorsR();
-    const float* cg = structure.colorsG();
-    const float* cb = structure.colorsB();
-    const float* ca = structure.colorsA();
     const float* radii = structure.radii();
     const auto& mat = structure.lattice().matrix;
+    const auto& bonds = structure.bonds();
 
     segment.startX = px[a1];
     segment.startY = py[a1];
@@ -121,10 +118,15 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
 
     segment.startRadius = radii[a1];
     segment.endRadius = radii[a2];
-    std::array<float, 4> startColor = {cr[a1], cg[a1], cb[a1], ca[a1]};
-    std::array<float, 4> endColor = {cr[a2], cg[a2], cb[a2], ca[a2]};
-    const bool bondSelected = bondIndex < structure.bonds().bondCount() &&
-        structure.bonds().selected(bondIndex);
+    const data::Color storedStartColor = bonds.startColor(bondIndex);
+    const data::Color storedEndColor = bonds.endColor(bondIndex);
+    std::array<float, 4> startColor = {
+        storedStartColor.r, storedStartColor.g, storedStartColor.b, storedStartColor.a
+    };
+    std::array<float, 4> endColor = {
+        storedEndColor.r, storedEndColor.g, storedEndColor.b, storedEndColor.a
+    };
+    const bool bondSelected = bondIndex < bonds.bondCount() && bonds.selected(bondIndex);
     if (bondSelected) {
         startColor = highlightedColor(startColor[0], startColor[1], startColor[2], startColor[3]);
         endColor = highlightedColor(endColor[0], endColor[1], endColor[2], endColor[3]);
@@ -138,7 +140,7 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
     segment.endColorG = endColor[1];
     segment.endColorB = endColor[2];
     segment.endColorA = endColor[3];
-    segment.bondRadius = structure.bonds().radius(bondIndex);
+    segment.bondRadius = bonds.radius(bondIndex);
 
     return segment;
 }

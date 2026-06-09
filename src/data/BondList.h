@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ElementData.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -89,6 +91,14 @@ public:
     void setAllRadii(float radius);
     const std::vector<float>& radii() const { return m_radii; }
 
+    Color startColor(size_t bondIndex) const { return m_startColors[bondIndex]; }
+    Color endColor(size_t bondIndex) const { return m_endColors[bondIndex]; }
+    float alpha(size_t bondIndex) const { return m_startColors[bondIndex].a; }
+    void setStartColor(size_t bondIndex, Color color);
+    void setEndColor(size_t bondIndex, Color color);
+    void setEndpointColors(size_t bondIndex, Color startColor, Color endColor);
+    void setAlpha(size_t bondIndex, float alpha);
+
     // Selection state
     bool selected(size_t bondIndex) const { return m_selected[bondIndex] != 0; }
     void setSelected(size_t bondIndex, bool selected);
@@ -100,6 +110,8 @@ public:
 private:
     std::vector<Bond> m_bonds;
     std::vector<float> m_radii;
+    std::vector<Color> m_startColors;
+    std::vector<Color> m_endColors;
     std::vector<uint8_t> m_selected;
 };
 

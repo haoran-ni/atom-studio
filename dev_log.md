@@ -4,6 +4,82 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-09: Selected Atom Color, Transparency, and Reset Controls
+
+### Summary
+
+Added selected-only atom color and transparency customization under the `Atoms` sidebar tab, plus a `Reset selected objects` action under the `Selection` tab. Transparency uses the requested UI semantics where `0` is opaque and `100` is invisible.
+
+Atom color/transparency changes now apply only to selected atoms. Bonds now store their own endpoint colors and alpha so unselected bonds do not automatically change when connected atoms are customized. A selected bond updates only when it is selected together with a connected selected atom; color updates affect the matching endpoint color, while transparency updates set the whole bond alpha from the latest selected connected atom change.
+
+Ray-traced shadows and ambient occlusion now account for atom/bond alpha, so fully transparent objects do not contribute shadowing and partially transparent objects contribute proportionally weaker occlusion.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | Added selected atom color/transparency controls and the Selection-tab reset button |
+| `src/ui/components/StructureModel.h/.cpp` | Added selected atom color/transparency APIs, reset logic, and selected-bond propagation rules |
+| `src/data/BondList.h/.cpp` | Added persistent per-bond endpoint colors and whole-bond alpha storage |
+| `src/data/Structure.h/.cpp` | Added bond color refresh helpers and preserved atom alpha during color-scheme changes |
+| `src/render/common/BondRenderData.cpp` | Packed stored bond colors instead of deriving bond colors live from connected atoms |
+| `src/ui/components/OpenGLViewport.cpp` | Kept global color-scheme changes synchronized with stored bond endpoint colors |
+| `src/ui/components/MetalViewport.mm` | Kept global color-scheme changes synchronized with stored bond endpoint colors |
+| `src/render/opengl/ShaderManager.cpp` | Discarded fully transparent raster atom/bond fragments |
+| `src/render/opengl/OpenGLRenderer.cpp` | Enabled alpha blending for OpenGL raster rendering |
+| `src/render/opengl/RayTracingRenderer.cpp` | Made OpenGL RT visibility, shadows, and AO alpha-aware |
+| `src/render/metal/MetalShaderLibrary.mm` | Made Metal raster/RT visibility, shadows, and AO alpha-aware |
+| `src/data/tests/StructureTest.cpp` | Added coverage for stored bond appearance and alpha preservation |
+
+### Architecture Decisions
+
+#### 1. Bond Appearance Is Stored, Not Derived Live
+- Bonds previously derived endpoint colors from connected atom colors during render packing
+- That would violate selected-only customization because unselected bonds would change when their connected atoms changed
+- Bond endpoint colors and alpha now live in `BondList`, and renderers consume that stored state
+
+#### 2. Atom Color and Transparency Are Independent
+- Color customization updates RGB only and preserves atom alpha
+- Transparency customization updates alpha only and preserves RGB
+- Existing color-scheme paths were adjusted so color refreshes do not accidentally reset customized transparency
+
+#### 3. Selected Bonds Follow Only Selected Connected Atom Changes
+- Selected atom color changes copy the changed atom RGB into the corresponding endpoint of selected connected bonds
+- Selected atom transparency changes write the selected connected atom alpha to the entire selected bond
+- If the bond is not selected, it is left unchanged even when its connected atoms are selected and customized
+
+#### 4. Reset Uses Current Scene Defaults
+- The reset action restores selected atoms to default element radii, current color-scheme RGB, and full opacity
+- Selected bonds reset to the current default bond radius, endpoint element colors for the current color scheme, and full opacity
+- Selection is preserved so users can continue working with the same selected objects after reset
+
+#### 5. Transparent Objects Must Not Cast Opaque Shadows
+- RT shadow and AO tests now return alpha-weighted occlusion rather than a boolean hit
+- Alpha `0` objects are skipped for RT primary visibility and shadow/AO contribution
+- Raster shaders also discard alpha `0` fragments so fully invisible objects do not write depth
+
+### Build Commands
+
+```bash
+cmake --build build
+```
+
+### Testing
+
+```bash
+ctest --test-dir build --output-on-failure
+git diff --check
+```
+
+Validation results:
+
+- Build completed successfully with the existing macOS OpenGL deprecation warnings.
+- All CTest tests passed: `4/4`.
+- `git diff --check` passed.
+- A standalone Metal shader compile was attempted for the embedded runtime shader string, but the local machine is missing the Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), so that extra shader syntax check could not be completed.
+
+---
+
 ## 2026-05-04: Sidebar Selection Modes and Shared Selection Rendering
 
 ### Summary

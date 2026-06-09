@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <memory>
 
 namespace atom::data {
 namespace {
@@ -95,6 +96,39 @@ bool checkViewBoundsIncludeAtomsAndCell() {
     return true;
 }
 
+bool checkBondAppearanceTracksExplicitState() {
+    Structure s;
+    s.addAtom(0.0f, 0.0f, 0.0f, 6);
+    s.addAtom(1.2f, 0.0f, 0.0f, 8);
+
+    s.colorsR()[0] = 0.25f;
+    s.colorsG()[0] = 0.5f;
+    s.colorsB()[0] = 0.75f;
+
+    auto bonds = std::make_shared<BondList>();
+    bonds->addBond(0, 1);
+    s.setBondList(std::move(bonds));
+
+    if (!nearlyEqual(s.bonds().startColor(0).r, 0.25f) ||
+        !nearlyEqual(s.bonds().startColor(0).g, 0.5f) ||
+        !nearlyEqual(s.bonds().startColor(0).b, 0.75f)) {
+        std::cerr << "New bonds should initialize endpoint colors from current atom colors\n";
+        return false;
+    }
+
+    s.bonds().setAlpha(0, 0.4f);
+    s.updateBondColorsFromElements(ElementColorScheme::Cpk);
+    const auto carbon = ElementData::colorForElement(6, ElementColorScheme::Cpk);
+    if (!nearlyEqual(s.bonds().startColor(0).r, carbon.r) ||
+        !nearlyEqual(s.bonds().startColor(0).a, 0.4f) ||
+        !nearlyEqual(s.bonds().endColor(0).a, 0.4f)) {
+        std::cerr << "Bond color updates should preserve stored bond transparency\n";
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 } // namespace atom::data
 
@@ -104,6 +138,7 @@ int main() {
     ok = atom::data::checkGeometricCenterWithoutLattice() && ok;
     ok = atom::data::checkUnitCellCenterWithLattice() && ok;
     ok = atom::data::checkViewBoundsIncludeAtomsAndCell() && ok;
+    ok = atom::data::checkBondAppearanceTracksExplicitState() && ok;
 
     if (!ok) return 1;
 

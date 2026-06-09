@@ -7,12 +7,16 @@ namespace atom::data {
 void BondList::reserve(size_t count) {
     m_bonds.reserve(count);
     m_radii.reserve(count);
+    m_startColors.reserve(count);
+    m_endColors.reserve(count);
     m_selected.reserve(count);
 }
 
 void BondList::clear() {
     m_bonds.clear();
     m_radii.clear();
+    m_startColors.clear();
+    m_endColors.clear();
     m_selected.clear();
 }
 
@@ -31,6 +35,8 @@ size_t BondList::addBond(uint32_t atomIndex1, uint32_t atomIndex2,
     size_t index = m_bonds.size();
     m_bonds.emplace_back(atomIndex1, atomIndex2, imageX, imageY, imageZ, order);
     m_radii.push_back(0.1f);
+    m_startColors.emplace_back(1.0f, 1.0f, 1.0f, 1.0f);
+    m_endColors.emplace_back(1.0f, 1.0f, 1.0f, 1.0f);
     m_selected.push_back(0);
     return index;
 }
@@ -39,6 +45,8 @@ void BondList::removeBond(size_t bondIndex) {
     if (bondIndex < m_bonds.size()) {
         m_bonds.erase(m_bonds.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_radii.erase(m_radii.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_startColors.erase(m_startColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_endColors.erase(m_endColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_selected.erase(m_selected.begin() + static_cast<std::ptrdiff_t>(bondIndex));
     }
 }
@@ -88,6 +96,38 @@ void BondList::setRadius(size_t bondIndex, float radius) {
 
 void BondList::setAllRadii(float radius) {
     std::fill(m_radii.begin(), m_radii.end(), radius);
+}
+
+void BondList::setStartColor(size_t bondIndex, Color color) {
+    if (bondIndex < m_startColors.size()) {
+        color.a = m_startColors[bondIndex].a;
+        m_startColors[bondIndex] = color;
+    }
+}
+
+void BondList::setEndColor(size_t bondIndex, Color color) {
+    if (bondIndex < m_endColors.size()) {
+        color.a = m_endColors[bondIndex].a;
+        m_endColors[bondIndex] = color;
+    }
+}
+
+void BondList::setEndpointColors(size_t bondIndex, Color startColor, Color endColor) {
+    if (bondIndex < m_startColors.size() && bondIndex < m_endColors.size()) {
+        const float alpha = m_startColors[bondIndex].a;
+        startColor.a = alpha;
+        endColor.a = alpha;
+        m_startColors[bondIndex] = startColor;
+        m_endColors[bondIndex] = endColor;
+    }
+}
+
+void BondList::setAlpha(size_t bondIndex, float alpha) {
+    if (bondIndex < m_startColors.size() && bondIndex < m_endColors.size()) {
+        const float clamped = std::clamp(alpha, 0.0f, 1.0f);
+        m_startColors[bondIndex].a = clamped;
+        m_endColors[bondIndex].a = clamped;
+    }
 }
 
 void BondList::setSelected(size_t bondIndex, bool selected) {

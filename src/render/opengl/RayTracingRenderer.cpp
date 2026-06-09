@@ -239,7 +239,19 @@ bool testNodeAABB(int nodeIndex, vec3 ro, vec3 invRd, float tMax, out float tNea
     return intersectAABB(ro, invRd, bmin, bmax, tMax, tNear);
 }
 
-void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
+float primitiveAlpha(uint primIndex) {
+    if (primIndex < uint(uAtomCount)) {
+        return texelFetch(uAtomColors, int(primIndex)).a;
+    }
+
+    int bondIdx = int(primIndex) - uAtomCount;
+    if (bondIdx < 0 || bondIdx >= uBondCount) return 0.0;
+    vec4 startColor = texelFetch(uBondStartColors, bondIdx);
+    vec4 endColor = texelFetch(uBondEndColors, bondIdx);
+    return max(startColor.a, endColor.a);
+}
+
+void traceClosest(vec3 ro, vec3 rd, int skipIndex, out float hitT, out int hitIndex) {
     hitT = 1e30;
     hitIndex = -1;
     if (uBVHNodeCount <= 0) return;
@@ -260,6 +272,8 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
+                if (int(primIndex) == skipIndex) continue;
+                if (primitiveAlpha(primIndex) <= 0.001) continue;
 
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
@@ -313,14 +327,15 @@ void traceClosest(vec3 ro, vec3 rd, out float hitT, out int hitIndex) {
     }
 }
 
-// Any-hit test (shadow/AO) — early exit on first intersection
-bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
-    if (uBVHNodeCount <= 0) return false;
+// Alpha-weighted any-hit test for shadow/AO.
+float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
+    if (uBVHNodeCount <= 0) return 0.0;
 
     vec3 invRd = 1.0 / rd;
     int stack[BVH_STACK_SIZE];
     int sp = 0;
     stack[sp++] = 0;
+    float occlusionAlpha = 0.0;
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
@@ -333,6 +348,8 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
+                float alpha = primitiveAlpha(primIndex);
+                if (alpha <= 0.001) continue;
 
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
@@ -345,9 +362,15 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
                     if (disc >= 0.0) {
                         float sqrtDisc = sqrt(disc);
                         float t = -b - sqrtDisc;
-                        if (t > 0.001 && t < maxDist) return true;
+                        if (t > 0.001 && t < maxDist) {
+                            occlusionAlpha = max(occlusionAlpha, alpha);
+                            if (occlusionAlpha >= 0.999) return 1.0;
+                        }
                         t = -b + sqrtDisc;
-                        if (t > 0.001 && t < maxDist) return true;
+                        if (t > 0.001 && t < maxDist) {
+                            occlusionAlpha = max(occlusionAlpha, alpha);
+                            if (occlusionAlpha >= 0.999) return 1.0;
+                        }
                     }
                 } else if (uShowBonds) {
                     int bondIdx = int(primIndex) - uAtomCount;
@@ -355,7 +378,10 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
                     vec3 pb = texelFetch(uBondEndPositions, bondIdx).xyz;
                     float bondRadius = texelFetch(uBondRadii, bondIdx).x;
                     float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
-                    if (t > 0.001 && t < maxDist) return true;
+                    if (t > 0.001 && t < maxDist) {
+                        occlusionAlpha = max(occlusionAlpha, alpha);
+                        if (occlusionAlpha >= 0.999) return 1.0;
+                    }
                 }
             }
             continue;
@@ -374,7 +400,7 @@ bool traceAnyHit(vec3 ro, vec3 rd, float maxDist) {
         }
     }
 
-    return false;
+    return occlusionAlpha;
 }
 
 // ---------- Hemisphere sampling for AO ----------
@@ -436,7 +462,7 @@ void main() {
     // Trace primary ray
     float hitT;
     int hitIndex;
-    traceClosest(rayOrigin, rayDir, hitT, hitIndex);
+    traceClosest(rayOrigin, rayDir, -1, hitT, hitIndex);
 
     if (hitIndex < 0) {
         fragColor = vec4(uBackgroundColor, 1.0);
@@ -447,6 +473,7 @@ void main() {
     vec3 hitPos = rayOrigin + rayDir * hitT;
     vec3 normal;
     vec3 surfaceColor;
+    float surfaceAlpha;
     float biasRadius;
 
     if (hitIndex < uAtomCount) {
@@ -455,6 +482,7 @@ void main() {
         vec4 atomColor = texelFetch(uAtomColors, hitIndex);
         normal = normalize(hitPos - atomData.xyz);
         surfaceColor = atomColor.rgb;
+        surfaceAlpha = atomColor.a;
         biasRadius = atomData.w * uAtomScale;
     } else {
         // Cylinder hit
@@ -488,7 +516,9 @@ void main() {
             float splitDistance = 0.5 * (bondLength + scaledA - scaledB);
             splitT = clamp(splitDistance / bondLength, 0.0, 1.0);
         }
-        surfaceColor = (h < splitT ? startColor : endColor).rgb;
+        vec4 bondColor = h < splitT ? startColor : endColor;
+        surfaceColor = bondColor.rgb;
+        surfaceAlpha = bondColor.a;
         biasRadius = bondRadius;
     }
 
@@ -512,9 +542,8 @@ void main() {
     // Shadow
     float shadow = 1.0;
     if (uEnableShadows) {
-        if (traceAnyHit(biasedOrigin, lightDir, 10000.0)) {
-            shadow = 1.0 - clamp(uShadowOpacity, 0.0, 1.0);
-        }
+        float shadowAlpha = traceOcclusionAlpha(biasedOrigin, lightDir, 10000.0);
+        shadow = 1.0 - clamp(uShadowOpacity, 0.0, 1.0) * shadowAlpha;
     }
 
     // Ambient occlusion
@@ -523,16 +552,14 @@ void main() {
         float occluded = 0.0;
         for (int i = 0; i < uAOSamples; i++) {
             vec3 aoDir = cosineWeightedHemisphere(normal);
-            if (traceAnyHit(biasedOrigin, aoDir, uAORadius)) {
-                occluded += 1.0;
-            }
+            occluded += traceOcclusionAlpha(biasedOrigin, aoDir, uAORadius);
         }
         ao = 1.0 - occluded / float(uAOSamples);
     }
 
     // AO only modulates ambient (indirect light); direct light uses shadow only
     vec3 result = ambient * ao + (diffuse + specular) * shadow;
-    fragColor = vec4(result, 1.0);
+    fragColor = vec4(mix(uBackgroundColor, result, clamp(surfaceAlpha, 0.0, 1.0)), 1.0);
 }
 )";
 

@@ -358,7 +358,34 @@ void Structure::updateColorsFromElements(ElementColorScheme scheme) {
         m_colorR[i] = color.r;
         m_colorG[i] = color.g;
         m_colorB[i] = color.b;
-        m_colorA[i] = color.a;
+    }
+}
+
+void Structure::updateBondColorsFromAtomColors() {
+    if (!m_bonds) return;
+
+    for (size_t i = 0; i < m_bonds->bondCount(); ++i) {
+        const Bond& bond = m_bonds->bond(i);
+        if (bond.atomIndex1 >= m_atomCount || bond.atomIndex2 >= m_atomCount) continue;
+
+        m_bonds->setEndpointColors(
+            i,
+            Color(m_colorR[bond.atomIndex1], m_colorG[bond.atomIndex1], m_colorB[bond.atomIndex1]),
+            Color(m_colorR[bond.atomIndex2], m_colorG[bond.atomIndex2], m_colorB[bond.atomIndex2]));
+    }
+}
+
+void Structure::updateBondColorsFromElements(ElementColorScheme scheme) {
+    if (!m_bonds) return;
+
+    for (size_t i = 0; i < m_bonds->bondCount(); ++i) {
+        const Bond& bond = m_bonds->bond(i);
+        if (bond.atomIndex1 >= m_atomCount || bond.atomIndex2 >= m_atomCount) continue;
+
+        m_bonds->setEndpointColors(
+            i,
+            ElementData::colorForElement(m_atomicNumbers[bond.atomIndex1], scheme),
+            ElementData::colorForElement(m_atomicNumbers[bond.atomIndex2], scheme));
     }
 }
 
@@ -607,6 +634,7 @@ std::vector<float> Structure::packColors() const {
 void Structure::setBondList(std::shared_ptr<BondList> newBonds) {
     if (newBonds) {
         m_bonds = std::move(newBonds);
+        updateBondColorsFromAtomColors();
     }
 }
 

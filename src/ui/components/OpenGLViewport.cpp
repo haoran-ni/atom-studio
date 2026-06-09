@@ -372,7 +372,9 @@ QVariantList OpenGLViewport::getAxisDirections() const {
 void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
     if (m_structure) {
-        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+        const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
+        m_structure->updateColorsFromElements(scheme);
+        m_structure->updateBondColorsFromElements(scheme);
     }
     m_needsStructureUpdate = true;
 
@@ -463,6 +465,7 @@ void OpenGLViewport::onBondsReady() {
         if (result.structure == m_structure && result.bonds) {
             result.bonds->setAllRadii(m_bondRadius);
             m_structure->setBondList(std::move(result.bonds));
+            m_structure->updateBondColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
             m_needsStructureUpdate = true;
             emit bondCountChanged();
             if (auto* model = StructureModel::instance())
@@ -581,7 +584,9 @@ void OpenGLViewport::setAtomColorScheme(int scheme) {
     emit atomColorSchemeChanged();
 
     if (m_structure) {
-        m_structure->updateColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
+        const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
+        m_structure->updateColorsFromElements(scheme);
+        m_structure->updateBondColorsFromElements(scheme);
         m_needsStructureUpdate = true;
     }
     update();

@@ -762,6 +762,25 @@ Rectangle {
                                     }
                                 }
                             }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Reset selected objects")
+                                        Layout.fillWidth: true
+                                        enabled: StructureModel.hasStructure
+                                                 && StructureModel.selectionEnabled
+                                                 && (StructureModel.selectedAtomCount > 0
+                                                     || StructureModel.selectedBondCount > 0)
+                                        onClicked: {
+                                            StructureModel.resetSelectedObjects(
+                                                sidebar.viewport ? sidebar.viewport.bondRadius : 0.1,
+                                                sidebar.viewport ? sidebar.viewport.atomColorScheme : 0)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -791,7 +810,6 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
-                                lastItem: true
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5
@@ -805,6 +823,44 @@ Rectangle {
                                                     sidebar.viewport.atomColorScheme = index
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        enabled: StructureModel.selectionEnabled && StructureModel.selectedAtomCount > 0
+                                        opacity: enabled ? 1.0 : 0.4
+                                        Label { text: qsTr("Color"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                        RGBColorPicker {
+                                            defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
+                                            sourceColor: StructureModel.selectedAtomColor
+                                            onColorApplied: function(c) {
+                                                StructureModel.applyAtomColorToSelection(c)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Transparency")
+                                        statusHintTarget: sidebar
+                                        tooltipText: qsTr("Transparency for selected atoms. 0 keeps selected atoms opaque; 100 makes them invisible.")
+                                        integer: true
+                                        from: 0
+                                        to: 100
+                                        stepSize: 1
+                                        defaultValue: 0
+                                        enabled: StructureModel.selectionEnabled && StructureModel.selectedAtomCount > 0
+                                        sourceValue: StructureModel.selectedAtomTransparency
+                                        onValueApplied: function(newValue) {
+                                            StructureModel.applyAtomTransparencyToSelection(Math.round(newValue))
                                         }
                                     }
                                 }
