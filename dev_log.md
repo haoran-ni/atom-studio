@@ -64,6 +64,16 @@ cmake --build build
 - Runtime launch verified MSL compilation and all pipelines — including the new sphere early-Z pipeline, both precomputed bond pipelines, and the bond frame compute pipeline — create successfully
 - Recommended in-app visual checks (not yet performed): orbit a structure with outlines on/off and verify identical sphere/bond rendering (early-Z active when zoomed out, fallback when zoomed very close); a bond-heavy structure (> 2048 bonds) for identical bond appearance including the two-color split and outlines; deep zoom until the camera approaches/enters atoms to confirm the gate falls back cleanly with no popping differences
 
+### Post-Session Regression Fix: Early-Z Billboard Mis-Centering (Perspective)
+
+User-reported regression after this session: in perspective raster mode, atoms (not bonds) appeared partially cut when zooming in or panning the structure; orthographic and RT were unaffected.
+
+Root cause: the early-Z branch moved the billboard's plane to z = C.z + R but left its view-space XY at the sphere center. Perspective divides screen xy by depth, so the quad's screen center shifted radially outward by `C.xy·R/(dist·(dist−R))` for off-axis spheres — the quad no longer covered the silhouette, slicing atoms along the quad edge. The displacement grows as `dist` shrinks (zoom) and as `C.xy` grows (pan), matching the report exactly. Orthographic was unaffected because its projection ignores z for screen xy.
+
+Fix: scale the quad's view-space center and footprint by `k = (dist−R)/dist` in the perspective early-Z branch. The factor cancels in the projection (`(C.xy·k)/(dist·k) = C.xy/dist`), so the quad rasterizes exactly the center-plane quad's screen rectangle — same pixels, same per-pixel rays, same shading — while only the rasterized depth changes, which is the early-Z mechanism itself. The `[[depth(greater)]]` promise is unaffected (depth depends only on z) and the CPU gate still guarantees `dist − R > 2×near`, so `k` is always well-defined.
+
+Lesson: the structural depth-ordering proof was validated, but screen-space coverage equivalence was never exercised with a loaded structure in perspective. The recommended in-app orbit/zoom/pan check should be treated as mandatory for any billboard-placement change.
+
 ---
 
 ## 2026-06-10: Renderer Performance Pass 2 — Parallel BVH Build, Opaque-Scene Alpha Skip, GPU Buffer Reuse, Conditional MSAA Display

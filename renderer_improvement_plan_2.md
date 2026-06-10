@@ -599,6 +599,28 @@ Verification notes:
 - Works with outlines enabled (shell surfaces also lie behind the
   near-tangent plane), so the variant engages in the default configuration.
 
+Regression found and fixed (same day):
+
+- The first implementation moved the quad's plane to z = C.z + R but kept
+  its view-space XY at the sphere center. Perspective divides screen xy by
+  depth, so the quad's screen position shifted radially outward for any
+  off-axis sphere (displacement C.xy·R/(dist·(dist−R))) and no longer
+  covered the silhouette — atoms appeared cut/cropped when zooming in or
+  panning the structure. Orthographic, bonds, and RT were unaffected,
+  which is what localized the bug.
+- Fix: scale the quad's view-space center and footprint by
+  k = (dist−R)/dist in the perspective early-Z branch. The k cancels in
+  the projection, so the quad rasterizes exactly the center-plane quad's
+  screen rectangle (same pixels, same rays, same shading); only the
+  rasterized depth differs — which is the early-Z point. The depth
+  promise is untouched (depends only on z), and the gate still guarantees
+  dist − R > 2×near so k is always well-defined.
+- Lesson recorded: the structural depth argument was validated, but the
+  screen-space coverage equivalence was not exercised with a loaded
+  structure in perspective; the plan's recommended in-app orbit/zoom/pan
+  check would have caught this immediately and should be considered
+  mandatory for any future billboard-placement change.
+
 ### PERF-010: Bond vertex shader recomputes per-instance values per vertex
 
 Problem:

@@ -180,9 +180,16 @@ vertex SphereVertexOut sphere_vertex(
     // dist - R stays beyond the near plane, so no extra clipping occurs.
     if (scene.sphereEarlyZ != 0) {
         if (scene.isPerspective) {
-            // Silhouette footprint re-projected onto the nearer plane.
-            billboardR = R * max(dist - R, 1e-4) / sqrt(max(dist * dist - R * R, 1e-8));
-            billboardR *= 1.05;
+            // Perspective divides screen xy by depth, so moving the plane
+            // closer must scale the quad's view-space center AND footprint
+            // by k = (dist - R)/dist. The projected rectangle is then
+            // exactly the center-plane quad's: center (C.xy·k)/(dist·k) =
+            // C.xy/dist, halfwidth (billboardR·k)/(dist·k) = billboardR/dist.
+            // (Scaling only the footprint mis-centers the quad for off-axis
+            // spheres and visibly clips atoms when zoomed in or panned.)
+            float k = max(dist - R, 1e-4) / max(dist, 1e-4);
+            billboardR *= k;
+            viewPos.xy = viewCenter.xy * k;
         }
         viewPos.z = viewCenter.z + R;
     }
