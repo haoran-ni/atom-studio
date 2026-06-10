@@ -31,7 +31,7 @@ struct SceneUniforms {
     float    outlineWidthPx;
     float4   outlineColor;
     float    outlinePixelScale;
-    float    _pad0;
+    int      sphereEarlyZ;
     float    _pad1;
     float    _pad2;
 };
@@ -171,10 +171,24 @@ vertex SphereVertexOut sphere_vertex(
     }
     billboardR *= 1.05;
 
+    float4 viewPos = viewCenter;
+
+    // Early-Z placement: put the quad at the sphere's near-tangent plane
+    // (z = C.z + R). Every point of the sphere then lies at or behind the
+    // quad's depth, so the fragment shader's [[depth(greater)]] promise
+    // holds for every rasterized fragment. The CPU gate guarantees
+    // dist - R stays beyond the near plane, so no extra clipping occurs.
+    if (scene.sphereEarlyZ != 0) {
+        if (scene.isPerspective) {
+            // Silhouette footprint re-projected onto the nearer plane.
+            billboardR = R * max(dist - R, 1e-4) / sqrt(max(dist * dist - R * R, 1e-8));
+            billboardR *= 1.05;
+        }
+        viewPos.z = viewCenter.z + R;
+    }
+
     float3 qv = quadVertices[vid];
     float2 offset = qv.xy * billboardR;
-
-    float4 viewPos = viewCenter;
     viewPos.xy += offset;
 
     out.viewPosOnQuad = viewPos.xyz;
@@ -187,11 +201,23 @@ struct SphereFragmentOut {
     float  depth [[depth(any)]];
 };
 
-fragment SphereFragmentOut sphere_fragment(
-    SphereVertexOut in [[stage_in]],
-    constant SceneUniforms& scene [[buffer(0)]])
+// Early-Z variant: with the near-tangent billboard placement every sphere
+// surface point is at or behind the quad's rasterized depth, so the
+// [[depth(greater)]] promise lets the GPU keep conservative early-Z
+// rejection for occluded fragments.
+struct SphereFragmentOutEarlyZ {
+    float4 color [[color(0)]];
+    float  depth [[depth(greater)]];
+};
+
+struct SphereShadeResult {
+    float4 color;
+    float  depth;
+};
+
+SphereShadeResult sphere_shade(SphereVertexOut in, constant SceneUniforms& scene)
 {
-    SphereFragmentOut out;
+    SphereShadeResult out;
     if (in.color.a <= 0.001f) discard_fragment();
 
     float3 C = in.viewCenter;
@@ -259,7 +285,7 @@ fragment SphereFragmentOut sphere_fragment(
     }
 
     if (isOutline) {
-        SphereFragmentOut outlineOut;
+        SphereShadeResult outlineOut;
         outlineOut.color = float4(scene.outlineColor.rgb, in.color.a);
         float4 outlineClip = scene.projectionMatrix * float4(hitPos, 1.0);
         outlineOut.depth = outlineClip.z / outlineClip.w;
@@ -284,6 +310,28 @@ fragment SphereFragmentOut sphere_fragment(
     // Custom depth: Metal NDC depth is [0,1]
     float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0);
     out.depth = clipPos.z / clipPos.w;
+    return out;
+}
+
+fragment SphereFragmentOut sphere_fragment(
+    SphereVertexOut in [[stage_in]],
+    constant SceneUniforms& scene [[buffer(0)]])
+{
+    SphereShadeResult r = sphere_shade(in, scene);
+    SphereFragmentOut out;
+    out.color = r.color;
+    out.depth = r.depth;
+    return out;
+}
+
+fragment SphereFragmentOutEarlyZ sphere_fragment_early_z(
+    SphereVertexOut in [[stage_in]],
+    constant SceneUniforms& scene [[buffer(0)]])
+{
+    SphereShadeResult r = sphere_shade(in, scene);
+    SphereFragmentOutEarlyZ out;
+    out.color = r.color;
+    out.depth = r.depth;
     return out;
 }
 
@@ -451,6 +499,141 @@ fragment float4 bond_outline_fragment(
     float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
     if (bondColor.a <= 0.001f) discard_fragment();
     return float4(scene.outlineColor.rgb, bondColor.a);
+}
+
+// -------------------------------------------------------
+// Bond Frame Precompute (per-instance values hoisted out of
+// the vertex stage — computed once per bond per frame)
+// -------------------------------------------------------
+
+struct BondFrame {
+    float4 startViewAndLength;  // xyz = view-space start, w = bond length
+    float4 axisAndSplit;        // xyz = view-space axis, w = splitT
+    float4 rightAndRadius;      // xyz = right basis, w = effective bond radius
+    float4 upAndEndZ;           // xyz = up basis, w = view-space end z (exact, for outline width)
+};
+
+// Must perform exactly the same operations as the bond_vertex preamble so
+// the precomputed path is bit-identical to the inline path.
+kernel void bond_frame_kernel(
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant BondInstance* instances [[buffer(1)]],
+    device BondFrame* frames [[buffer(2)]],
+    constant uint& bondCount [[buffer(3)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= bondCount) return;
+    BondInstance bond = instances[gid];
+
+    float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
+    float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
+    float3 startView = startView4.xyz;
+    float3 endView = endView4.xyz;
+
+    float3 bondDir = endView - startView;
+    float bondLength = length(bondDir);
+    float3 axisDir = (bondLength > 1e-6f) ? (bondDir / bondLength) : float3(0.0f, 0.0f, 1.0f);
+    float3 up = fabs(axisDir.y) < 0.99f ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
+    float splitT;
+    if (bondLength > 1e-6f) {
+        float scaledA = bond.startRadius * scene.atomScale;
+        float scaledB = bond.endRadius * scene.atomScale;
+        float splitDistance = 0.5f * (bondLength + scaledA - scaledB);
+        splitT = clamp(splitDistance / bondLength, 0.0f, 1.0f);
+    } else {
+        splitT = 0.5f;
+    }
+
+    float bondRadius = bond.bondRadius > 0.0f ? bond.bondRadius : scene.bondRadius;
+
+    BondFrame f;
+    f.startViewAndLength = float4(startView, bondLength);
+    f.axisAndSplit = float4(axisDir, splitT);
+    f.rightAndRadius = float4(right, bondRadius);
+    f.upAndEndZ = float4(up, endView.z);
+    frames[gid] = f;
+}
+
+vertex BondVertexOut bond_vertex_pre(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
+    constant BondInstance* instances [[buffer(2)]],
+    device const BondFrame* frames [[buffer(3)]])
+{
+    BondVertexOut out;
+    out.startColor = instances[iid].startColor;
+    out.endColor = instances[iid].endColor;
+
+    BondFrame f = frames[iid];
+    float3 startView = f.startViewAndLength.xyz;
+    float bondLength = f.startViewAndLength.w;
+    float3 axisDir = f.axisAndSplit.xyz;
+    out.splitT = f.axisAndSplit.w;
+    float3 right = f.rightAndRadius.xyz;
+    float bondRadius = f.rightAndRadius.w;
+    float3 up = f.upAndEndZ.xyz;
+
+    BondMeshVertex vert = cylinderVertices[vid];
+    float3 localPos = right * vert.position.x * bondRadius +
+                      up * vert.position.y * bondRadius +
+                      axisDir * vert.position.z * bondLength;
+    out.viewPos = startView + localPos;
+
+    float3 localNormal = float3(vert.normal);
+    out.normalView = normalize(right * localNormal.x +
+                               up * localNormal.y +
+                               axisDir * localNormal.z);
+    out.axial = vert.position.z;
+    out.position = scene.projectionMatrix * float4(out.viewPos, 1.0f);
+    return out;
+}
+
+vertex BondVertexOut bond_outline_vertex_pre(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
+    constant BondInstance* instances [[buffer(2)]],
+    device const BondFrame* frames [[buffer(3)]])
+{
+    BondVertexOut out;
+    out.startColor = instances[iid].startColor;
+    out.endColor = instances[iid].endColor;
+
+    BondFrame f = frames[iid];
+    float3 startView = f.startViewAndLength.xyz;
+    float bondLength = f.startViewAndLength.w;
+    float3 axisDir = f.axisAndSplit.xyz;
+    out.splitT = f.axisAndSplit.w;
+    float3 right = f.rightAndRadius.xyz;
+    float bondRadius = f.rightAndRadius.w;
+    float3 up = f.upAndEndZ.xyz;
+
+    // Shell width from the bond midpoint's view depth (constant pixel width);
+    // uses the exact view-space end z stored by the kernel so the result is
+    // bit-identical to the inline path.
+    float midDist = -0.5f * (startView.z + f.upAndEndZ.w);
+    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+                   (scene.isPerspective ? max(midDist, 0.0f) : 1.0f);
+
+    BondMeshVertex vert = cylinderVertices[vid];
+    float3 localPos = right * vert.position.x * (bondRadius + shellW) +
+                      up * vert.position.y * (bondRadius + shellW) +
+                      axisDir * (vert.position.z * (bondLength + 2.0f * shellW) - shellW);
+    out.viewPos = startView + localPos;
+
+    float3 localNormal = float3(vert.normal);
+    out.normalView = normalize(right * localNormal.x +
+                               up * localNormal.y +
+                               axisDir * localNormal.z);
+    out.axial = vert.position.z;
+    out.position = scene.projectionMatrix * float4(out.viewPos, 1.0f);
+    return out;
 }
 
 // -------------------------------------------------------
@@ -1477,8 +1660,12 @@ struct MetalShaderLibrary::Impl {
     id<MTLDevice> device = nil;
     id<MTLLibrary> library = nil;
     id<MTLRenderPipelineState> spherePipeline = nil;
+    id<MTLRenderPipelineState> spherePipelineEarlyZ = nil;
     id<MTLRenderPipelineState> bondPipeline = nil;
+    id<MTLRenderPipelineState> bondPipelinePrecomputed = nil;
     id<MTLRenderPipelineState> bondOutlinePipeline = nil;
+    id<MTLRenderPipelineState> bondOutlinePipelinePrecomputed = nil;
+    id<MTLComputePipelineState> bondFramePipeline = nil;
     id<MTLRenderPipelineState> solidCylinderPipeline = nil;
     id<MTLRenderPipelineState> viewportAxesPipeline = nil;
     id<MTLRenderPipelineState> linePipeline = nil;
@@ -1565,6 +1752,20 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
                          << error.localizedDescription.UTF8String;
             return false;
         }
+
+        // Early-Z variant ([[depth(greater)]] fragment, near-tangent billboard).
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"sphere_fragment_early_z"];
+        if (!desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: sphere early-Z shader function not found";
+            return false;
+        }
+        m_impl->spherePipelineEarlyZ =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->spherePipelineEarlyZ) {
+            qCritical() << "MetalShaderLibrary: sphere early-Z pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
     }
 
     // --- Bond pipeline ---
@@ -1589,6 +1790,20 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         m_impl->bondPipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!m_impl->bondPipeline) {
             qCritical() << "MetalShaderLibrary: bond pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+
+        // Variant reading precomputed per-bond frame data (buffer 3).
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"bond_vertex_pre"];
+        if (!desc.vertexFunction) {
+            qCritical() << "MetalShaderLibrary: precomputed bond vertex function not found";
+            return false;
+        }
+        m_impl->bondPipelinePrecomputed =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->bondPipelinePrecomputed) {
+            qCritical() << "MetalShaderLibrary: precomputed bond pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -1617,6 +1832,36 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
             [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!m_impl->bondOutlinePipeline) {
             qCritical() << "MetalShaderLibrary: bond outline pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+
+        // Variant reading precomputed per-bond frame data (buffer 3).
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"bond_outline_vertex_pre"];
+        if (!desc.vertexFunction) {
+            qCritical() << "MetalShaderLibrary: precomputed bond outline vertex function not found";
+            return false;
+        }
+        m_impl->bondOutlinePipelinePrecomputed =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->bondOutlinePipelinePrecomputed) {
+            qCritical() << "MetalShaderLibrary: precomputed bond outline pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
+    // --- Bond frame compute pipeline (per-instance precompute) ---
+    {
+        id<MTLFunction> kernelFn = [m_impl->library newFunctionWithName:@"bond_frame_kernel"];
+        if (!kernelFn) {
+            qCritical() << "MetalShaderLibrary: bond frame kernel not found";
+            return false;
+        }
+        m_impl->bondFramePipeline =
+            [m_impl->device newComputePipelineStateWithFunction:kernelFn error:&error];
+        if (!m_impl->bondFramePipeline) {
+            qCritical() << "MetalShaderLibrary: bond frame compute pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -1826,8 +2071,12 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
 void MetalShaderLibrary::cleanup() {
     if (m_impl) {
         m_impl->spherePipeline = nil;
+        m_impl->spherePipelineEarlyZ = nil;
         m_impl->bondPipeline = nil;
+        m_impl->bondPipelinePrecomputed = nil;
         m_impl->bondOutlinePipeline = nil;
+        m_impl->bondOutlinePipelinePrecomputed = nil;
+        m_impl->bondFramePipeline = nil;
         m_impl->solidCylinderPipeline = nil;
         m_impl->viewportAxesPipeline = nil;
         m_impl->linePipeline = nil;
@@ -1848,12 +2097,28 @@ void* MetalShaderLibrary::spherePipeline() const {
     return (__bridge void*)m_impl->spherePipeline;
 }
 
+void* MetalShaderLibrary::spherePipelineEarlyZ() const {
+    return (__bridge void*)m_impl->spherePipelineEarlyZ;
+}
+
 void* MetalShaderLibrary::bondPipeline() const {
     return (__bridge void*)m_impl->bondPipeline;
 }
 
+void* MetalShaderLibrary::bondPipelinePrecomputed() const {
+    return (__bridge void*)m_impl->bondPipelinePrecomputed;
+}
+
 void* MetalShaderLibrary::bondOutlinePipeline() const {
     return (__bridge void*)m_impl->bondOutlinePipeline;
+}
+
+void* MetalShaderLibrary::bondOutlinePipelinePrecomputed() const {
+    return (__bridge void*)m_impl->bondOutlinePipelinePrecomputed;
+}
+
+void* MetalShaderLibrary::bondFrameComputePipeline() const {
+    return (__bridge void*)m_impl->bondFramePipeline;
 }
 
 void* MetalShaderLibrary::solidCylinderPipeline() const {

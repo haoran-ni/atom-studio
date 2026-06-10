@@ -159,6 +159,10 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
     // sphere impostor pipeline with atoms and would otherwise grow shells.
     unitCellUniforms.outlineWidthPx = 0.0f;
 
+    // No early-Z placement either: the atom-based gate does not cover the
+    // tiny joint spheres, and this pass uses the depth(any) pipeline.
+    unitCellUniforms.sphereEarlyZ = 0;
+
     // Flat color: no shading terms for the unit-cell object.
     unitCellUniforms.ambient = 1.0f;
     unitCellUniforms.diffuse = 0.0f;

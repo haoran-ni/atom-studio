@@ -37,4 +37,15 @@ inline id<MTLBuffer> fillSharedBuffer(id<MTLDevice> device,
     return buffer;
 }
 
+/// Returns a private-storage (GPU-only) buffer with capacity >= length,
+/// reusing the existing buffer when it is large enough.
+inline id<MTLBuffer> ensurePrivateBuffer(id<MTLDevice> device,
+                                         id<MTLBuffer> buffer,
+                                         size_t length) {
+    if (buffer && buffer.length >= length) {
+        return buffer;
+    }
+    return [device newBufferWithLength:length options:MTLResourceStorageModePrivate];
+}
+
 } // namespace atom::render::metal

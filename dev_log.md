@@ -4,6 +4,68 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-10: Renderer Performance Pass 3 — Early-Z Sphere Impostors, Per-Bond Frame Precompute, Signal Guard
+
+### Summary
+
+Third and final implementation session of `renderer_improvement_plan_2.md`, fixing the remaining items PERF-009 through PERF-011. All eleven plan items are now addressed (PERF-003's OpenGL half remains deferred as documented). As before, no change alters the rendered image.
+
+Sphere impostors regained conservative early-Z rejection: a new pipeline variant declares its depth output `[[depth(greater)]]` and places the billboard at the sphere's near-tangent plane, so every sphere surface point — including outline shells and the camera-inside fallbacks — lies at or behind the quad's rasterized depth, making the depth promise hold structurally for every rasterized fragment in both projections. A per-frame CPU gate enables the variant only when every atom's near-tangent plane stays safely beyond the camera near plane; otherwise the existing `[[depth(any)]]` path runs unchanged. Occluded sphere fragments in dense scenes can now be rejected before fragment shading instead of always running the full ray-sphere intersection and lighting.
+
+Bond rendering hoists its per-instance setup (view-space endpoint transform, orthonormal basis, color split point, effective radius) out of the vertex stage into a small per-frame compute pass that runs once per bond instead of once per vertex (~80–160× per bond at default tessellation). The kernel replicates the inline vertex math exactly — the outline path even carries the exact view-space end z — so the precomputed and inline paths are bit-identical. The pass engages only at ≥ 2048 bonds; below that the inline path remains active.
+
+The viewports also stopped emitting `sampleCountChanged` on every RT frame; both now emit only when the value actually changed.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/render/metal/MetalTypes.h` | PERF-009: `SceneUniforms::sphereEarlyZ` replaced a pad field (struct size unchanged) |
+| `src/render/metal/MetalShaderLibrary.h/.mm` | PERF-009: near-tangent billboard branch in `sphere_vertex`, fragment refactored into a shared `sphere_shade()` helper with `depth(any)`/`depth(greater)` entry points, new early-Z pipeline; PERF-010: `BondFrame` struct, `bond_frame_kernel` compute kernel, `bond_vertex_pre`/`bond_outline_vertex_pre` variants, two render pipelines plus a compute pipeline |
+| `src/render/metal/MetalSphereRenderer.h/.mm` | PERF-009: atom-center bounds + max radius tracked during upload; `canUseEarlyZ()` gate; per-frame pipeline selection |
+| `src/render/metal/MetalBondRenderer.h/.mm` | PERF-010: `encodeFramePrecompute()` compute dispatch (thresholded), GPU-only frame buffer, pipeline selection with inline fallback |
+| `src/render/metal/MetalRenderer.mm` | PERF-009: sets `sphereEarlyZ` from the gate; PERF-010: encodes the bond frame compute pass before the render pass |
+| `src/render/metal/MetalUnitCellRenderer.mm` | PERF-009: zeroes `sphereEarlyZ` in its local uniforms (joints share the sphere pipeline but are not covered by the atom gate) |
+| `src/render/metal/MetalBufferUtil.h` | PERF-010: `ensurePrivateBuffer()` for GPU-only buffer reuse |
+| `src/ui/components/MetalViewport.mm` | PERF-011: `sampleCountChanged` emitted only on change |
+| `src/ui/components/OpenGLViewport.cpp` | PERF-011: same guard in the FBO renderer's render() |
+
+### Architecture Decisions
+
+#### 1. depth(greater) With Near-Tangent Placement Instead of the Planned depth(less)
+- The original plan proposed `[[depth(less)]]` with the existing center-plane billboard, but the camera-inside-sphere fallbacks (perspective back-surface and orthographic back-surface) write depth behind the center plane and would violate that promise — undefined behavior territory
+- Inverting the relationship is robust: place the quad at the sphere's near-tangent plane (z = C.z + R) and promise `[[depth(greater)]]`; every point of the sphere is then at or behind the quad by construction, for any camera, in both projections, including outline shells
+- With a LESS depth compare, depth(greater) still allows the GPU to early-reject fragments whose rasterized depth already fails — which is exactly the occluded-overdraw case the item targets
+- The billboard footprint is re-projected onto the nearer plane (`R·(dist−R)/√(dist²−R²)`), preserving exact silhouette coverage
+
+#### 2. The Early-Z Gate Exists Only for Near-Plane Clipping Parity, Not Depth Correctness
+- Because the depth promise is structural, the only behavior that could differ is when a sphere straddles the near plane: the shifted quad would be clipped earlier than the center-plane quad
+- The gate (`canUseEarlyZ`) computes the minimum view depth of the atom-center AABB along the camera forward axis in O(1) and requires `minDepth − maxOuterRadius > 2×near`, with the outline shell width bounded at the deepest atom
+- Inside the gate the two placements rasterize identical fragments with identical colors and depths; outside it the old pipeline runs — so output is identical to the previous build in every case
+- The unit-cell joint spheres are not covered by the atom bounds, so the unit-cell renderer zeroes the flag in its uniforms copy, exactly like it already did for outline width
+
+#### 3. Bond Precompute Is Bit-Identical by Replicating Expression Order
+- The compute kernel performs the same operations in the same order as the inline vertex preamble, so IEEE results match exactly; the outline shell width additionally needs the view-space end z, which is stored in otherwise-padding rather than being reconstructed from axis × length (which would differ in the last bits)
+- The frame buffer is GPU-only (private storage, reused via `ensurePrivateBuffer`) and the compute encoder runs in the same command buffer before the render pass, so Metal's automatic hazard tracking provides the ordering
+- A 2048-bond threshold keeps small scenes on the inline path where a dispatch would cost more than it saves; the threshold choice errs conservative and can be tuned with profiling later
+- The OpenGL raster bond shader keeps its inline path (fallback backend, out of scope per plan)
+
+### Build Commands
+
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+
+- Built successfully; only the pre-existing macOS OpenGL deprecation warnings remain
+- All CTest tests passed: `4/4`
+- Runtime launch verified MSL compilation and all pipelines — including the new sphere early-Z pipeline, both precomputed bond pipelines, and the bond frame compute pipeline — create successfully
+- Recommended in-app visual checks (not yet performed): orbit a structure with outlines on/off and verify identical sphere/bond rendering (early-Z active when zoomed out, fallback when zoomed very close); a bond-heavy structure (> 2048 bonds) for identical bond appearance including the two-color split and outlines; deep zoom until the camera approaches/enters atoms to confirm the gate falls back cleanly with no popping differences
+
+---
+
 ## 2026-06-10: Renderer Performance Pass 2 — Parallel BVH Build, Opaque-Scene Alpha Skip, GPU Buffer Reuse, Conditional MSAA Display
 
 ### Summary

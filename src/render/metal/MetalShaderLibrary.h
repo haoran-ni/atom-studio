@@ -25,8 +25,16 @@ public:
 
     // Pipeline state accessors (return id<MTLRenderPipelineState> as void*)
     void* spherePipeline() const;
+    /// [[depth(greater)]] variant — requires near-tangent billboard placement
+    /// (SceneUniforms::sphereEarlyZ = 1); keeps conservative early-Z alive.
+    void* spherePipelineEarlyZ() const;
     void* bondPipeline() const;
+    /// Variant whose vertex stage reads precomputed per-bond frame data.
+    void* bondPipelinePrecomputed() const;
     void* bondOutlinePipeline() const;
+    void* bondOutlinePipelinePrecomputed() const;
+    /// Compute pipeline filling the per-bond frame buffer (id<MTLComputePipelineState>).
+    void* bondFrameComputePipeline() const;
     void* solidCylinderPipeline() const;
     void* viewportAxesPipeline() const;
     void* linePipeline() const;

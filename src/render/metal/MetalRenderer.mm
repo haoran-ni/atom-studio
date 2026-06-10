@@ -206,9 +206,22 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     const auto& oc = settings.outlineColor;
     uniforms.outlineColor = simd_make_float4(oc.redF(), oc.greenF(), oc.blueF(), 1.0f);
 
+    // Sphere early-Z: enabled only when the gate proves the near-tangent
+    // billboard placement renders identically to the default placement.
+    uniforms.sphereEarlyZ =
+        (settings.showAtoms &&
+         m_sphereRenderer.canUseEarlyZ(camera, settings.atomScale,
+                                       uniforms.outlineWidthPx,
+                                       uniforms.outlinePixelScale)) ? 1 : 0;
+
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
     const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];
+
+    // Per-bond frame precompute (compute pass, must precede the render pass).
+    if (settings.showBonds) {
+        m_bondRenderer.encodeFramePrecompute((__bridge void*)cmdBuffer, uniforms);
+    }
 
     const bool needsOverlayPass = settings.showViewportAxes || settings.showRotationCenter;
 

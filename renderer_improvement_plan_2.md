@@ -1,6 +1,6 @@
 # Renderer Improvement Plan 2
 
-Last updated: 2026-06-10 (PERF-001/002/004/005/006/007/008 fixed; PERF-003 fixed on Metal, deferred on OpenGL)
+Last updated: 2026-06-10 (all items addressed: PERF-001..011 fixed; PERF-003 deferred on OpenGL only)
 
 ## Goal
 
@@ -34,9 +34,9 @@ Relationship to the previous plan (`archived/renderer_improvement_plan.md`):
 | PERF-006 | Fixed | Skip per-primitive alpha fetches in RT traversal when the scene is fully opaque. |
 | PERF-007 | Fixed | Reuse GPU scene buffers instead of reallocating on every upload. |
 | PERF-008 | Fixed | Skip the 4x MSAA display target when no overlay is drawn (RT display pass). |
-| PERF-009 | Not fixed | Restore early-Z for sphere impostors via a `[[depth(less)]]` pipeline variant. |
-| PERF-010 | Not fixed | Hoist per-instance bond math out of the per-vertex shader path. |
-| PERF-011 | Not fixed | Guard per-frame `sampleCountChanged` signal emission in the viewport. |
+| PERF-009 | Fixed | Restore early-Z for sphere impostors via a `[[depth(greater)]]` pipeline variant. |
+| PERF-010 | Fixed | Hoist per-instance bond math out of the per-vertex shader path. |
+| PERF-011 | Fixed | Guard per-frame `sampleCountChanged` signal emission in the viewport. |
 
 Status meanings:
 
@@ -570,7 +570,34 @@ Relevant files:
 
 Current status:
 
-- Not fixed.
+- Fixed.
+
+Verification notes:
+
+- Implemented with `[[depth(greater)]]` instead of the originally proposed
+  `[[depth(less)]]`: the billboard is placed at the sphere's near-tangent
+  plane (z = C.z + R), so every sphere surface point — inner hit, outline
+  shell, and both camera-inside fallbacks — lies at or behind the quad's
+  rasterized depth. The depth promise therefore holds structurally for
+  every rasterized fragment in both projections, with no special cases.
+  With compare-function LESS, depth(greater) still enables conservative
+  early-Z rejection of occluded fragments.
+- Fragment shading was refactored into a shared `sphere_shade()` helper
+  with two thin entry points (depth(any) / depth(greater)); identical math,
+  identical image. The vertex shader re-projects the silhouette footprint
+  onto the nearer plane (`R·(dist−R)/√(dist²−R²)`).
+- The only behavioral risk is near-plane clipping for spheres straddling
+  the near plane (the popping distance would change). A per-frame CPU gate
+  (`MetalSphereRenderer::canUseEarlyZ`) computes the minimum view depth of
+  the atom-center AABB along the camera forward axis and requires
+  `minDepth − maxOuterRadius > 2×near` (outline shell width included,
+  bounded at the deepest atom). Gate fails → the existing depth(any) path
+  runs unchanged, so output is identical to before in all cases.
+- The unit-cell renderer (which shares the sphere pipeline for its corner
+  joints) explicitly zeroes `sphereEarlyZ` in its local uniforms, mirroring
+  the existing outline-width zeroing.
+- Works with outlines enabled (shell surfaces also lie behind the
+  near-tangent plane), so the variant engages in the default configuration.
 
 ### PERF-010: Bond vertex shader recomputes per-instance values per vertex
 
@@ -605,10 +632,27 @@ Relevant files:
 
 - `src/render/metal/MetalShaderLibrary.mm`
 - `src/render/metal/MetalBondRenderer.mm`
+- `src/render/metal/MetalRenderer.mm` (compute pass scheduling)
 
 Current status:
 
-- Not fixed.
+- Fixed.
+
+Verification notes:
+
+- A `bond_frame_kernel` compute pass fills a GPU-only `BondFrame` buffer
+  (view-space start + length, axis + splitT, basis vectors, effective
+  radius) once per bond per frame; `bond_vertex_pre` /
+  `bond_outline_vertex_pre` pipeline variants read it by instance id.
+- The kernel replicates the exact expression order of the inline vertex
+  preamble, and the outline path stores the exact view-space end z in the
+  frame padding, so both paths are bit-identical — same image.
+- Engages only at ≥ 2048 bonds (below that the dispatch overhead outweighs
+  the saved vertex work); the inline path remains the fallback and is
+  selected per frame. The compute encoder runs in the same command buffer
+  before the render pass; Metal's hazard tracking orders the accesses.
+- Per-bond setup math now runs once per bond instead of once per vertex
+  (~80–160× per bond at default tessellation).
 
 ### PERF-011: Viewport emits sampleCountChanged every RT frame
 
@@ -635,7 +679,7 @@ Relevant files:
 
 Current status:
 
-- Not fixed.
+- Fixed (both viewports emit only when the value changes).
 
 ## Suggested Order Of Work
 

@@ -802,8 +802,11 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     void* mtlTexture = nullptr;
     bool needsMoreFrames = false;
     if (m_impl->currentMode == 1 && m_impl->rtRenderer) {
-        m_sampleCount = m_impl->rtRenderer->sampleCount();
-        emit sampleCountChanged();
+        const int newSampleCount = m_impl->rtRenderer->sampleCount();
+        if (newSampleCount != m_sampleCount) {
+            m_sampleCount = newSampleCount;
+            emit sampleCountChanged();
+        }
         needsMoreFrames = m_impl->rtRenderer->needsMoreFrames();
         mtlTexture = m_impl->rtRenderer->outputTexture();
     } else {

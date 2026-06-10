@@ -19,6 +19,13 @@ public:
     void cleanup();
 
     void setBondData(const data::Structure* structure);
+
+    /// Encodes the per-bond frame precompute pass (own compute encoder) into
+    /// the command buffer. Must run before the render pass that draws bonds.
+    /// Engages only above a bond-count threshold; render() falls back to the
+    /// inline vertex path otherwise. Math is bit-identical either way.
+    void encodeFramePrecompute(void* cmdBuffer, const SceneUniforms& uniforms);
+
     void render(void* encoder, const SceneUniforms& uniforms, int cylinderSegments);
 
     size_t bondCount() const { return m_bondCount; }
@@ -34,6 +41,7 @@ private:
     int m_meshSegments = 0;
     size_t m_bondCount = 0;
     bool m_initialized = false;
+    bool m_usePrecomputedFrames = false;
 };
 
 } // namespace atom::render::metal

@@ -25,7 +25,7 @@ struct SceneUniforms {
     float         outlineWidthPx;    // stroke width in rendered pixels (0 = off)
     simd_float4   outlineColor;      // rgb stroke color
     float         outlinePixelScale; // world units per pixel: × view depth (persp) or absolute (ortho)
-    float         _pad0;
+    int32_t       sphereEarlyZ;      // 1 = near-tangent billboard placement (early-Z pipeline)
     float         _pad1;
     float         _pad2;
 };

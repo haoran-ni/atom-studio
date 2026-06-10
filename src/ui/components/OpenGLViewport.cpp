@@ -57,8 +57,11 @@ public:
 
         // For RT mode: update sample count and keep rendering until converged
         if (m_currentMode == 1 && m_rtRenderer) {
-            m_viewport->m_sampleCount = m_rtRenderer->sampleCount();
-            emit m_viewport->sampleCountChanged();
+            const int newSampleCount = m_rtRenderer->sampleCount();
+            if (newSampleCount != m_viewport->m_sampleCount) {
+                m_viewport->m_sampleCount = newSampleCount;
+                emit m_viewport->sampleCountChanged();
+            }
 
             if (!m_rtRenderer->isConverged()) {
                 update();  // Request next frame for progressive refinement
