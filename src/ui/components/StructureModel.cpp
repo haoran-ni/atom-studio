@@ -309,7 +309,8 @@ bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScal
         radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false) * scale / safeGlobalScale;
     }
 
-    emit structureStyleChanged();
+    // Radii feed BVH bounds — geometry, not just appearance.
+    emit structureGeometryChanged();
     return true;
 }
 
@@ -387,7 +388,8 @@ bool StructureModel::applyBondRadiusToSelection(float radius) {
         }
     }
 
-    emit structureStyleChanged();
+    // Bond radii are baked into BVH bounds — geometry, not just appearance.
+    emit structureGeometryChanged();
     return true;
 }
 
@@ -434,6 +436,9 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
         bonds.setAlpha(i, 1.0f);
     }
 
+    // Resets both radii (geometry) and colors (appearance; also drives the
+    // selectedAtomColor/Transparency QML NOTIFY).
+    emit structureGeometryChanged();
     emit structureStyleChanged();
     return true;
 }

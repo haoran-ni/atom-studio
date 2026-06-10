@@ -733,6 +733,8 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
     // Upload scene data if dirty
     if (m_atomDataDirty || m_bondDataDirty) {
         uploadSceneData();
+    } else if (m_appearanceDirty) {
+        uploadAppearanceData();
     }
 
     if (m_atomCount == 0) {
@@ -782,6 +784,11 @@ void RayTracingRenderer::invalidateAtomData() {
 
 void RayTracingRenderer::invalidateBondData() {
     m_bondDataDirty = true;
+    resetAccumulation();
+}
+
+void RayTracingRenderer::invalidateAppearance() {
+    m_appearanceDirty = true;
     resetAccumulation();
 }
 
@@ -910,6 +917,7 @@ void RayTracingRenderer::uploadSceneData() {
         m_bvhNodeCount = 0;
         m_atomDataDirty = false;
         m_bondDataDirty = false;
+        m_appearanceDirty = false;
         return;
     }
 
@@ -1088,6 +1096,46 @@ void RayTracingRenderer::uploadSceneData() {
 
     m_atomDataDirty = false;
     m_bondDataDirty = false;
+    m_appearanceDirty = false;
+}
+
+void RayTracingRenderer::uploadAppearanceData() {
+    m_appearanceDirty = false;
+    if (!m_structure || m_atomCount == 0) {
+        return;
+    }
+
+    // Appearance updates assume unchanged geometry/topology. If counts moved
+    // under us, fall back to a full upload.
+    if (static_cast<int>(m_structure->atomCount()) != m_atomCount ||
+        static_cast<int>(bondRenderSegmentCount(m_structure)) != m_bondCount) {
+        uploadSceneData();
+        return;
+    }
+
+    auto colorData = packAtomRenderColors(m_structure);
+    glBindBuffer(GL_TEXTURE_BUFFER, m_atomColorBuf);
+    glBufferData(GL_TEXTURE_BUFFER,
+                 static_cast<GLsizeiptr>(colorData.size() * sizeof(float)),
+                 colorData.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+
+    if (m_bondCount > 0) {
+        std::vector<float> startColors;
+        std::vector<float> endColors;
+        packBondRenderColors(m_structure, startColors, endColors);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartColorBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(startColors.size() * sizeof(float)),
+                     startColors.data(), GL_STATIC_DRAW);
+
+        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndColorBuf);
+        glBufferData(GL_TEXTURE_BUFFER,
+                     static_cast<GLsizeiptr>(endColors.size() * sizeof(float)),
+                     endColors.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    }
 }
 
 void RayTracingRenderer::renderRTPass(const Camera& camera) {

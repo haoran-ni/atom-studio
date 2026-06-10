@@ -4,6 +4,7 @@
 #include "StructureModel.h"
 #include "ViewportSelection.h"
 #include "../../render/common/Camera.h"
+#include "../../render/common/RenderStateHash.h"
 #include "../../render/metal/MetalRenderer.h"
 #include "../../render/metal/MetalRayTracingRenderer.h"
 #include "../../data/Structure.h"
@@ -162,6 +163,8 @@ MetalViewport::MetalViewport(QQuickItem* parent)
                     this, &MetalViewport::setStructure);
             connect(model, &StructureModel::structureStyleChanged,
                     this, &MetalViewport::onStructureStyleChanged);
+            connect(model, &StructureModel::structureGeometryChanged,
+                    this, &MetalViewport::onStructureGeometryChanged);
         }
     });
 }
@@ -352,7 +355,7 @@ void MetalViewport::setAtomColorScheme(int scheme) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
         m_structure->updateColorsFromElements(scheme);
         m_structure->updateBondColorsFromElements(scheme);
-        m_needsStructureUpdate = true;
+        m_needsAppearanceUpdate = true;  // colors only — geometry unchanged
     }
     update();
 }
@@ -704,6 +707,9 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
             m_impl->activeRenderer = m_impl->rasterRenderer.get();
             m_sampleCount = 0;
             emit sampleCountChanged();
+            // Scene/appearance may have changed while RT was active (the
+            // raster renderer only got dirty flags); force one re-render.
+            m_lastRasterFrameHash = 0;
         }
     }
 
@@ -733,6 +739,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     m_renderSettings.rotationCenterY = m_camera->target().y();
     m_renderSettings.rotationCenterZ = m_camera->target().z();
 
+    bool sceneChangedThisFrame = false;
     if (m_needsStructureUpdate) {
         m_impl->activeRenderer->setStructure(m_structure.get());
         // Also update the other renderer for instant switching
@@ -742,6 +749,17 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
             m_impl->rasterRenderer->setStructure(m_structure.get());
         }
         m_needsStructureUpdate = false;
+        m_needsAppearanceUpdate = false;  // full update covers appearance
+        sceneChangedThisFrame = true;
+    } else if (m_needsAppearanceUpdate) {
+        m_impl->activeRenderer->invalidateAppearance();
+        if (m_impl->currentMode == 0 && m_impl->rtRenderer) {
+            m_impl->rtRenderer->invalidateAppearance();
+        } else if (m_impl->currentMode == 1 && m_impl->rasterRenderer) {
+            m_impl->rasterRenderer->invalidateAppearance();
+        }
+        m_needsAppearanceUpdate = false;
+        sceneChangedThisFrame = true;
     }
 
     // 5. Resize
@@ -762,7 +780,23 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     // 6. Render
-    m_impl->activeRenderer->render(*m_camera, m_renderSettings);
+    // Raster mode renders on demand: only when the frame state (camera,
+    // settings, size) or the scene changed, or a previous request was
+    // dropped while a frame was in flight. RT mode keeps its own gating
+    // (state hash + convergence) internally.
+    if (m_impl->currentMode == 1) {
+        m_impl->activeRenderer->render(*m_camera, m_renderSettings);
+    } else {
+        const quint64 frameHash =
+            render::computeRasterFrameHash(*m_camera, m_renderSettings, pw, ph);
+        const bool needsRender = sceneChangedThisFrame ||
+                                 frameHash != m_lastRasterFrameHash ||
+                                 m_impl->rasterRenderer->hasPendingRender();
+        if (needsRender) {
+            m_impl->rasterRenderer->render(*m_camera, m_renderSettings);
+            m_lastRasterFrameHash = frameHash;
+        }
+    }
 
     // 7. Get the output texture
     void* mtlTexture = nullptr;
@@ -774,10 +808,17 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         mtlTexture = m_impl->rtRenderer->outputTexture();
     } else {
         mtlTexture = m_impl->rasterRenderer->colorTexture();
+        needsMoreFrames = m_impl->rasterRenderer->needsMoreFrames();
+        if (!mtlTexture && !needsMoreFrames) {
+            // Safety net: no output and nothing in flight — force a render
+            // on the next pass instead of stalling with no content.
+            m_lastRasterFrameHash = 0;
+            needsMoreFrames = true;
+        }
     }
 
     if (!mtlTexture) {
-        if (needsMoreFrames || m_impl->currentMode != 1) {
+        if (needsMoreFrames) {
             update();
         }
         return oldNode;
@@ -821,12 +862,11 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         emit fpsChanged();
     }
 
-    // 10. Request next frame
-    if (m_impl->currentMode == 1 && m_impl->rtRenderer) {
-        if (needsMoreFrames) {
-            update();
-        }
-    } else {
+    // 10. Request next frame only while work remains (in-flight frame,
+    // dropped render request, or a completed frame not yet presented).
+    // All interactive changes re-trigger update() via the property setters
+    // and input handlers, so an idle viewport schedules no frames.
+    if (needsMoreFrames) {
         update();
     }
 
@@ -955,6 +995,13 @@ void MetalViewport::notifyFramePresented() {
 }
 
 void MetalViewport::onStructureStyleChanged() {
+    // Appearance only (colors, transparency, selection highlight) — the
+    // renderers refresh color buffers without rebuilding geometry or BVH.
+    m_needsAppearanceUpdate = true;
+    update();
+}
+
+void MetalViewport::onStructureGeometryChanged() {
     m_needsStructureUpdate = true;
     update();
 }

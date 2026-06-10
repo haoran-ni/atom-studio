@@ -57,4 +57,47 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     return h;
 }
 
+uint64_t computeRasterFrameHash(const Camera& camera, const RenderSettings& settings,
+                                int width, int height) {
+    std::hash<float> hf;
+    std::hash<int> hi;
+    std::hash<bool> hb;
+
+    uint64_t h = computeRenderStateHash(camera, settings);
+    auto combine = [&](uint64_t val) {
+        h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    };
+
+    // Viewport size
+    combine(hi(width));
+    combine(hi(height));
+
+    // Visibility/tessellation not covered by the RT accumulation hash
+    combine(hb(settings.showAtoms));
+    combine(hi(settings.cylinderSegments));
+    combine(hi(settings.backgroundColor.alpha()));
+
+    // Unit cell overlay
+    combine(hb(settings.showUnitCell));
+    combine(hf(settings.unitCellThickness));
+    combine(hi(settings.unitCellColor.red()));
+    combine(hi(settings.unitCellColor.green()));
+    combine(hi(settings.unitCellColor.blue()));
+
+    // Viewport axes overlay
+    combine(hb(settings.showViewportAxes));
+    combine(hf(settings.viewportAxesScreenX));
+    combine(hf(settings.viewportAxesScreenY));
+    combine(hf(settings.viewportAxesScale));
+    combine(hf(settings.viewportAxesPixelRatio));
+
+    // Rotation-center gizmo
+    combine(hb(settings.showRotationCenter));
+    combine(hf(settings.rotationCenterX));
+    combine(hf(settings.rotationCenterY));
+    combine(hf(settings.rotationCenterZ));
+
+    return h;
+}
+
 } // namespace atom::render

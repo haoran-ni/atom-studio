@@ -5,7 +5,9 @@
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <QMatrix4x4>
+#include <array>
 #include <cstring>
+#include <memory>
 
 namespace atom::render::metal {
 
@@ -37,12 +39,17 @@ static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
 // ---------------------------------------------------------------------------
 
 struct MetalRenderer::Impl {
+    struct OutputSlot {
+        id<MTLTexture> msaaColorTexture = nil;
+        id<MTLTexture> colorTexture = nil;
+        id<MTLTexture> depthTexture = nil;
+    };
+
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
     NSUInteger rasterSampleCount = 1;
-    id<MTLTexture> msaaColorTexture = nil;
-    id<MTLTexture> colorTexture = nil;
-    id<MTLTexture> depthTexture = nil;
+    std::array<OutputSlot, kOutputSlotCount> outputSlots{};
+    std::shared_ptr<AsyncFrameState> asyncState = std::make_shared<AsyncFrameState>();
 };
 
 MetalRenderer::MetalRenderer()
@@ -107,13 +114,22 @@ void MetalRenderer::cleanup() {
     m_viewportAxesRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
-    m_impl->msaaColorTexture = nil;
-    m_impl->colorTexture = nil;
-    m_impl->depthTexture = nil;
+    m_impl->asyncState->generation.fetch_add(1, std::memory_order_relaxed);
+    m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
+    resetOutputSlots(*m_impl->asyncState);
+
+    for (auto& slot : m_impl->outputSlots) {
+        slot.msaaColorTexture = nil;
+        slot.colorTexture = nil;
+        slot.depthTexture = nil;
+    }
     m_impl->commandQueue = nil;
     m_impl->rasterSampleCount = 1;
 
     m_structure = nullptr;
+    m_pendingRender = false;
+    m_outputGeneration = m_impl->asyncState->generation.load(std::memory_order_relaxed);
+    m_lastPresentedSlot = -1;
     m_initialized = false;
 }
 
@@ -135,8 +151,18 @@ void MetalRenderer::setStructure(const data::Structure* structure) {
 
 void MetalRenderer::render(const Camera& camera, const RenderSettings& settings) {
     if (!m_initialized || m_width == 0 || m_height == 0) return;
-    if (!m_impl->colorTexture || !m_impl->depthTexture) return;
-    if (m_impl->rasterSampleCount > 1 && !m_impl->msaaColorTexture) return;
+    if (!m_impl->outputSlots[0].colorTexture || !m_impl->outputSlots[0].depthTexture) return;
+    if (m_impl->rasterSampleCount > 1 && !m_impl->outputSlots[0].msaaColorTexture) return;
+
+    // Submit at most one GPU frame at a time. If a frame is still in flight,
+    // remember that newer state is waiting so the viewport schedules another
+    // attempt; dirty flags stay set and are processed then.
+    const int outputSlotIndex = acquireOutputSlot(*m_impl->asyncState, m_lastPresentedSlot);
+    if (outputSlotIndex < 0) {
+        m_pendingRender = true;
+        return;
+    }
+    m_pendingRender = false;
 
     // Upload dirty data
     if (m_atomDataDirty) {
@@ -182,19 +208,20 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
 
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
+    const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];
 
     const bool needsOverlayPass = settings.showViewportAxes || settings.showRotationCenter;
 
     MTLRenderPassDescriptor* passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
     passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-    if (m_impl->msaaColorTexture) {
-        passDesc.colorAttachments[0].texture = m_impl->msaaColorTexture;
-        passDesc.colorAttachments[0].resolveTexture = m_impl->colorTexture;
+    if (outputSlot.msaaColorTexture) {
+        passDesc.colorAttachments[0].texture = outputSlot.msaaColorTexture;
+        passDesc.colorAttachments[0].resolveTexture = outputSlot.colorTexture;
         passDesc.colorAttachments[0].storeAction = needsOverlayPass
             ? MTLStoreActionStoreAndMultisampleResolve
             : MTLStoreActionMultisampleResolve;
     } else {
-        passDesc.colorAttachments[0].texture = m_impl->colorTexture;
+        passDesc.colorAttachments[0].texture = outputSlot.colorTexture;
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
 
@@ -202,7 +229,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     passDesc.colorAttachments[0].clearColor = MTLClearColorMake(
         bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(), bg.blueF() * bg.alphaF(), bg.alphaF());
 
-    passDesc.depthAttachment.texture = m_impl->depthTexture;
+    passDesc.depthAttachment.texture = outputSlot.depthTexture;
     passDesc.depthAttachment.loadAction = MTLLoadActionClear;
     passDesc.depthAttachment.storeAction = MTLStoreActionDontCare;
     passDesc.depthAttachment.clearDepth = 1.0;
@@ -229,18 +256,18 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
 
     if (needsOverlayPass) {
         MTLRenderPassDescriptor* overlayPass = [MTLRenderPassDescriptor renderPassDescriptor];
-        if (m_impl->msaaColorTexture) {
-            overlayPass.colorAttachments[0].texture = m_impl->msaaColorTexture;
-            overlayPass.colorAttachments[0].resolveTexture = m_impl->colorTexture;
+        if (outputSlot.msaaColorTexture) {
+            overlayPass.colorAttachments[0].texture = outputSlot.msaaColorTexture;
+            overlayPass.colorAttachments[0].resolveTexture = outputSlot.colorTexture;
             overlayPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
             overlayPass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
         } else {
-            overlayPass.colorAttachments[0].texture = m_impl->colorTexture;
+            overlayPass.colorAttachments[0].texture = outputSlot.colorTexture;
             overlayPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
             overlayPass.colorAttachments[0].storeAction = MTLStoreActionStore;
         }
 
-        overlayPass.depthAttachment.texture = m_impl->depthTexture;
+        overlayPass.depthAttachment.texture = outputSlot.depthTexture;
         overlayPass.depthAttachment.loadAction = MTLLoadActionClear;
         overlayPass.depthAttachment.storeAction = MTLStoreActionDontCare;
         overlayPass.depthAttachment.clearDepth = 1.0;
@@ -265,8 +292,8 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         [overlayEncoder endEncoding];
     }
 
+    trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, m_outputGeneration);
     [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
 }
 
 void MetalRenderer::invalidateAtomData() {
@@ -277,55 +304,109 @@ void MetalRenderer::invalidateBondData() {
     m_bondDataDirty = true;
 }
 
-void* MetalRenderer::colorTexture() const {
-    return (__bridge void*)m_impl->colorTexture;
+void* MetalRenderer::colorTexture() {
+    const int readySlot = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
+    if (readySlot < 0 || readySlot >= kOutputSlotCount) {
+        return nullptr;
+    }
+
+    m_lastPresentedSlot = readySlot;
+    return (__bridge void*)m_impl->outputSlots[static_cast<size_t>(readySlot)].colorTexture;
+}
+
+bool MetalRenderer::needsMoreFrames() const {
+    if (m_pendingRender) {
+        return true;
+    }
+    if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
+        return true;
+    }
+    // A completed frame that has not been handed to the scene graph yet.
+    const int readySlot = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
+    return readySlot >= 0 && readySlot != m_lastPresentedSlot;
+}
+
+void MetalRenderer::trackSubmittedFrame(void* cmdBuf, int outputSlotIndex, uint64_t generation) {
+    auto asyncState = m_impl->asyncState;
+    asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+        static_cast<uint8_t>(OutputSlotState::InFlight), std::memory_order_release);
+    asyncState->inFlightSlot.store(outputSlotIndex, std::memory_order_release);
+
+    id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
+    [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
+        int expectedSlot = outputSlotIndex;
+        asyncState->inFlightSlot.compare_exchange_strong(expectedSlot, -1, std::memory_order_acq_rel);
+
+        if (completedBuffer.status != MTLCommandBufferStatusCompleted ||
+            asyncState->generation.load(std::memory_order_acquire) != generation) {
+            asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+                static_cast<uint8_t>(OutputSlotState::Free), std::memory_order_release);
+            return;
+        }
+
+        asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
+            static_cast<uint8_t>(OutputSlotState::Ready), std::memory_order_release);
+        asyncState->latestReadySlot.store(outputSlotIndex, std::memory_order_release);
+    }];
 }
 
 void MetalRenderer::createRenderTargets() {
-    // Resolved display texture (single-sample, sampled by Qt scene graph).
-    MTLTextureDescriptor* colorDesc = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                    width:m_width
-                                   height:m_height
-                                mipmapped:NO];
-    colorDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    colorDesc.storageMode = MTLStorageModePrivate;
-    m_impl->colorTexture = [m_impl->device newTextureWithDescriptor:colorDesc];
-
-    if (m_impl->rasterSampleCount > 1) {
-        MTLTextureDescriptor* msaaColorDesc = [MTLTextureDescriptor
+    for (auto& slot : m_impl->outputSlots) {
+        // Resolved display texture (single-sample, sampled by Qt scene graph).
+        MTLTextureDescriptor* colorDesc = [MTLTextureDescriptor
             texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                         width:m_width
                                        height:m_height
                                     mipmapped:NO];
-        msaaColorDesc.textureType = MTLTextureType2DMultisample;
-        msaaColorDesc.sampleCount = m_impl->rasterSampleCount;
-        msaaColorDesc.usage = MTLTextureUsageRenderTarget;
-        msaaColorDesc.storageMode = MTLStorageModePrivate;
-        m_impl->msaaColorTexture = [m_impl->device newTextureWithDescriptor:msaaColorDesc];
-        if (!m_impl->msaaColorTexture) {
-            qCritical() << "MetalRenderer: failed to create MSAA color texture";
+        colorDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        colorDesc.storageMode = MTLStorageModePrivate;
+        slot.colorTexture = [m_impl->device newTextureWithDescriptor:colorDesc];
+
+        if (m_impl->rasterSampleCount > 1) {
+            MTLTextureDescriptor* msaaColorDesc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                            width:m_width
+                                           height:m_height
+                                        mipmapped:NO];
+            msaaColorDesc.textureType = MTLTextureType2DMultisample;
+            msaaColorDesc.sampleCount = m_impl->rasterSampleCount;
+            msaaColorDesc.usage = MTLTextureUsageRenderTarget;
+            msaaColorDesc.storageMode = MTLStorageModePrivate;
+            slot.msaaColorTexture = [m_impl->device newTextureWithDescriptor:msaaColorDesc];
+            if (!slot.msaaColorTexture) {
+                qCritical() << "MetalRenderer: failed to create MSAA color texture";
+            }
+        } else {
+            slot.msaaColorTexture = nil;
         }
-    } else {
-        m_impl->msaaColorTexture = nil;
+
+        // Depth texture (matches raster sample count).
+        MTLTextureDescriptor* depthDesc = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
+                                        width:m_width
+                                       height:m_height
+                                    mipmapped:NO];
+        if (m_impl->rasterSampleCount > 1) {
+            depthDesc.textureType = MTLTextureType2DMultisample;
+            depthDesc.sampleCount = m_impl->rasterSampleCount;
+        }
+        depthDesc.usage = MTLTextureUsageRenderTarget;
+        depthDesc.storageMode = MTLStorageModePrivate;
+        slot.depthTexture = [m_impl->device newTextureWithDescriptor:depthDesc];
+        if (!slot.depthTexture) {
+            qCritical() << "MetalRenderer: failed to create depth texture";
+        }
     }
 
-    // Depth texture (matches raster sample count).
-    MTLTextureDescriptor* depthDesc = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
-                                    width:m_width
-                                   height:m_height
-                                mipmapped:NO];
-    if (m_impl->rasterSampleCount > 1) {
-        depthDesc.textureType = MTLTextureType2DMultisample;
-        depthDesc.sampleCount = m_impl->rasterSampleCount;
-    }
-    depthDesc.usage = MTLTextureUsageRenderTarget;
-    depthDesc.storageMode = MTLStorageModePrivate;
-    m_impl->depthTexture = [m_impl->device newTextureWithDescriptor:depthDesc];
-    if (!m_impl->depthTexture) {
-        qCritical() << "MetalRenderer: failed to create depth texture";
-    }
+    // Invalidate any frame still in flight against the old-size textures:
+    // bumping the generation makes its completion handler mark the slot Free
+    // instead of Ready, so a never-rendered new texture is never presented.
+    // inFlightSlot itself drains naturally via that handler.
+    m_outputGeneration =
+        m_impl->asyncState->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+    resetOutputSlots(*m_impl->asyncState);
+    m_lastPresentedSlot = -1;
+    m_pendingRender = true;  // latest state must be re-rendered at the new size
 }
 
 } // namespace atom::render::metal

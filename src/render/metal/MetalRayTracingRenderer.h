@@ -30,6 +30,7 @@ public:
     void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
+    void invalidateAppearance() override;
 
     // Progressive rendering state
     int sampleCount() const { return m_sampleCount; }
@@ -43,16 +44,17 @@ public:
 private:
     void createRenderTargets();
     void uploadSceneData();
+    void uploadAppearanceData();
     void uploadUnitCellData();
     void renderRTPass(const Camera& camera, void* cmdBuffer);
     void renderDisplayPass(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
     void renderUnitCellOverlay(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
     bool hasUnitCellOverlayData() const;
     void encodeUnitCellOverlayDraws(void* encoder, const RTUnitCellUniforms& unitCell);
-    int acquireOutputSlot() const;
     void trackSubmittedFrame(void* cmdBuffer,
                              int outputSlotIndex,
                              int submittedSampleCount,
+                             int batchSampleCount,
                              uint64_t generation);
 
     struct Impl;
@@ -76,6 +78,7 @@ private:
     bool m_initialized = false;
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
+    bool m_appearanceDirty = false;
     bool m_accumNeedsClear = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;

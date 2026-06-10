@@ -51,6 +51,12 @@ struct PackedBondRenderData {
 
 size_t bondRenderSegmentCount(const data::Structure* structure);
 std::vector<float> packAtomRenderColors(const data::Structure* structure);
+
+/// Packs only the bond endpoint colors (RGBA per bond, selection highlight
+/// applied) — appearance-only updates that skip geometry repacking.
+void packBondRenderColors(const data::Structure* structure,
+                          std::vector<float>& startColors,
+                          std::vector<float>& endColors);
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
                                         const data::Bond& bond,
                                         size_t bondIndex);

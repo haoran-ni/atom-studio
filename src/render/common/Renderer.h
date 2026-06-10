@@ -35,6 +35,19 @@ public:
 
     virtual void invalidateAtomData() = 0;
     virtual void invalidateBondData() = 0;
+
+    /**
+     * @brief Invalidate appearance only (atom/bond colors, selection
+     * highlight, transparency) — geometry and topology are unchanged.
+     *
+     * Renderers with acceleration structures override this to re-upload
+     * color data without rebuilding the BVH. The default falls back to a
+     * full atom + bond invalidation.
+     */
+    virtual void invalidateAppearance() {
+        invalidateAtomData();
+        invalidateBondData();
+    }
 };
 
 } // namespace atom::render

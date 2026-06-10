@@ -155,6 +155,15 @@ public:
                 m_rasterRenderer->setStructure(viewport->m_structure.get());
             }
             viewport->m_needsStructureUpdate = false;
+            viewport->m_needsAppearanceUpdate = false;  // full update covers appearance
+        } else if (viewport->m_needsAppearanceUpdate) {
+            m_activeRenderer->invalidateAppearance();
+            if (m_currentMode == 0 && m_rtRenderer) {
+                m_rtRenderer->invalidateAppearance();
+            } else if (m_currentMode == 1) {
+                m_rasterRenderer->invalidateAppearance();
+            }
+            viewport->m_needsAppearanceUpdate = false;
         }
 
         // Build render settings from viewport properties
@@ -232,6 +241,8 @@ OpenGLViewport::OpenGLViewport(QQuickItem* parent)
                     this, &OpenGLViewport::setStructure);
             connect(model, &StructureModel::structureStyleChanged,
                     this, &OpenGLViewport::onStructureStyleChanged);
+            connect(model, &StructureModel::structureGeometryChanged,
+                    this, &OpenGLViewport::onStructureGeometryChanged);
         }
     });
 }
@@ -604,7 +615,7 @@ void OpenGLViewport::setAtomColorScheme(int scheme) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
         m_structure->updateColorsFromElements(scheme);
         m_structure->updateBondColorsFromElements(scheme);
-        m_needsStructureUpdate = true;
+        m_needsAppearanceUpdate = true;  // colors only — geometry unchanged
     }
     update();
 }
@@ -810,6 +821,13 @@ void OpenGLViewport::notifyFramePresented() {
 }
 
 void OpenGLViewport::onStructureStyleChanged() {
+    // Appearance only (colors, transparency, selection highlight) — the
+    // renderers refresh color buffers without rebuilding geometry or BVH.
+    m_needsAppearanceUpdate = true;
+    update();
+}
+
+void OpenGLViewport::onStructureGeometryChanged() {
     m_needsStructureUpdate = true;
     update();
 }

@@ -54,6 +54,7 @@ set(RENDER_VULKAN_SOURCES
 # Metal backend (future — macOS primary)
 # ---------------------------------------------------------------------------
 set(RENDER_METAL_SOURCES
+    metal/MetalAsyncOutput.h
     metal/MetalTypes.h
     metal/MetalShaderLibrary.h
     metal/MetalShaderLibrary.mm

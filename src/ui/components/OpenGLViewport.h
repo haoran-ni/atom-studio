@@ -251,6 +251,7 @@ private:
     int m_frameCount = 0;
 
     bool m_needsStructureUpdate = false;
+    bool m_needsAppearanceUpdate = false;
     bool m_needsCameraUpdate = false;
     bool m_rendererModeChanged = false;
     bool m_showRotationCenter = false;
@@ -272,6 +273,7 @@ private:
 private slots:
     void onBondsReady();
     void onStructureStyleChanged();
+    void onStructureGeometryChanged();
 };
 
 } // namespace atom::ui

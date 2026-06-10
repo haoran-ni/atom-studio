@@ -85,6 +85,38 @@ std::vector<float> packAtomRenderColors(const data::Structure* structure) {
     return data;
 }
 
+void packBondRenderColors(const data::Structure* structure,
+                          std::vector<float>& startColors,
+                          std::vector<float>& endColors) {
+    startColors.clear();
+    endColors.clear();
+
+    const size_t count = bondRenderSegmentCount(structure);
+    if (count == 0) return;
+
+    startColors.reserve(count * 4);
+    endColors.reserve(count * 4);
+
+    const auto& bonds = structure->bonds();
+    for (size_t i = 0; i < count; ++i) {
+        const data::Color storedStartColor = bonds.startColor(i);
+        const data::Color storedEndColor = bonds.endColor(i);
+        std::array<float, 4> startColor = {
+            storedStartColor.r, storedStartColor.g, storedStartColor.b, storedStartColor.a
+        };
+        std::array<float, 4> endColor = {
+            storedEndColor.r, storedEndColor.g, storedEndColor.b, storedEndColor.a
+        };
+        if (bonds.selected(i)) {
+            startColor = highlightedColor(startColor[0], startColor[1], startColor[2], startColor[3]);
+            endColor = highlightedColor(endColor[0], endColor[1], endColor[2], endColor[3]);
+        }
+
+        appendPackedColor(startColors, startColor[0], startColor[1], startColor[2], startColor[3]);
+        appendPackedColor(endColors, endColor[0], endColor[1], endColor[2], endColor[3]);
+    }
+}
+
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
                                         const data::Bond& bond,
                                         size_t bondIndex) {

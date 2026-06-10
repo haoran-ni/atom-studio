@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/Renderer.h"
+#include "MetalAsyncOutput.h"
 #include "MetalShaderLibrary.h"
 #include "MetalSphereRenderer.h"
 #include "MetalBondRenderer.h"
@@ -30,11 +31,24 @@ public:
     void invalidateAtomData() override;
     void invalidateBondData() override;
 
-    /// Returns the offscreen color texture (id<MTLTexture> as void*).
-    void* colorTexture() const;
+    /// Returns the most recently completed color texture (id<MTLTexture> as
+    /// void*), or nullptr while no frame has finished yet. Marks the returned
+    /// slot as presented so it is not reused while the scene graph samples it.
+    void* colorTexture();
+
+    /// True when render() was called while a frame was still in flight, so
+    /// the latest scene state has not been submitted yet. The viewport should
+    /// schedule another frame.
+    bool hasPendingRender() const { return m_pendingRender; }
+
+    /// True while the viewport must keep scheduling frames: a frame is in
+    /// flight, a render request was dropped, or a completed frame has not
+    /// been presented yet.
+    bool needsMoreFrames() const;
 
 private:
     void createRenderTargets();
+    void trackSubmittedFrame(void* cmdBuffer, int outputSlotIndex, uint64_t generation);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -53,6 +67,9 @@ private:
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_unitCellDataDirty = true;
+    bool m_pendingRender = false;
+    uint64_t m_outputGeneration = 1;
+    int m_lastPresentedSlot = -1;
 };
 
 } // namespace atom::render::metal

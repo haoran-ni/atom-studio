@@ -30,6 +30,7 @@ public:
     void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
+    void invalidateAppearance() override;
 
     // Progressive rendering state
     int sampleCount() const { return m_sampleCount; }
@@ -42,6 +43,7 @@ private:
     void createFullScreenQuad();
     void createAccumulationFBO();
     void uploadSceneData();
+    void uploadAppearanceData();
 
     // Render passes
     void renderRTPass(const Camera& camera);
@@ -104,6 +106,7 @@ private:
     bool m_initialized = false;
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
+    bool m_appearanceDirty = false;
     uint64_t m_lastStateHash = 0;
 };
 

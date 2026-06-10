@@ -237,8 +237,10 @@ private:
     int m_frameCount = 0;
 
     bool m_needsStructureUpdate = false;
+    bool m_needsAppearanceUpdate = false;
     bool m_metalInitialized = false;
     bool m_showRotationCenter = false;
+    quint64 m_lastRasterFrameHash = 0;
 
     // Async bond detection
     struct BondResult {
@@ -257,6 +259,7 @@ private:
 private slots:
     void onBondsReady();
     void onStructureStyleChanged();
+    void onStructureGeometryChanged();
 };
 
 } // namespace atom::ui

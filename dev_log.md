@@ -4,6 +4,76 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-10: Renderer Performance Pass 1 — Async Raster Submission, Render-on-Demand, RT Sample Batching, Appearance/Geometry Dirty Split
+
+### Summary
+
+First implementation session of `renderer_improvement_plan_2.md`, fixing items PERF-001 through PERF-004. All changes are scheduling, bandwidth, or redundant-work fixes with no visualization quality change.
+
+The Metal raster renderer no longer blocks the CPU with `waitUntilCompleted` every frame: it renders into a 3-slot output texture ring with command-buffer completion handlers, reusing the asynchronous-submission design the Metal RT renderer already had (that machinery was extracted into a shared header used by both). On top of that, the Metal viewport now renders raster frames on demand — only when a state hash over camera, settings, overlays, and viewport size changes — instead of repainting at vsync forever; an idle viewport's CPU usage dropped from ~6-10% to ~0.1% (measured with `top`).
+
+The Metal RT renderer now encodes an adaptive batch of accumulation samples per command buffer (30 ms GPU budget, sized from per-sample GPU time measured via `GPUStartTime`/`GPUEndTime`), so convergence is no longer capped at one sample per display refresh. The first sample after an accumulation reset is always submitted alone, keeping camera interaction at one cheap sample per frame.
+
+Finally, scene invalidation was split into geometry-dirty vs. appearance-dirty. Selection highlights, per-selection colors/transparency, and global color-scheme switches now re-upload only color buffers in the RT renderers instead of repacking geometry and rebuilding the whole BVH; radius-affecting edits (selection atom scale, bond radius) still take the full geometry path because radii feed BVH bounds.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `renderer_improvement_plan_2.md` | New working plan for the performance effort (PERF-001..011); statuses and verification notes updated for this session |
+| `src/render/metal/MetalAsyncOutput.h` | New shared header: output slot ring constants, lock-free `AsyncFrameState`, `acquireOutputSlot()`, `resetOutputSlots()`, and the per-sample GPU timing atomic |
+| `src/render/CMakeLists.txt` | Registered the new shared header in the Metal source list |
+| `src/render/metal/MetalRenderer.h/.mm` | PERF-001: 3-slot texture ring, completion-handler tracking, generation-based invalidation on resize, `colorTexture()` returns the latest completed slot, new `hasPendingRender()`/`needsMoreFrames()`; removed `waitUntilCompleted` |
+| `src/render/metal/MetalRayTracingRenderer.h/.mm` | PERF-003: adaptive RT sample batching per command buffer with GPU-time feedback; PERF-004: `invalidateAppearance()` + `uploadAppearanceData()`; switched to the shared async-output header |
+| `src/render/common/RenderStateHash.h/.cpp` | PERF-002: added `computeRasterFrameHash()` covering camera, all image-affecting settings, overlays, tessellation, and viewport size |
+| `src/render/common/Renderer.h` | PERF-004: added virtual `invalidateAppearance()` with a full-invalidation default (used as-is by the BVH-less raster renderers) |
+| `src/render/common/BondRenderData.h/.cpp` | PERF-004: added `packBondRenderColors()` to pack bond endpoint colors (with selection highlight) without building full segments |
+| `src/render/opengl/RayTracingRenderer.h/.cpp` | PERF-004: appearance-only TBO re-upload path mirroring the Metal RT renderer |
+| `src/ui/components/StructureModel.h/.cpp` | PERF-004: new `structureGeometryChanged()` signal for radius-affecting edits; `structureStyleChanged()` is now appearance-only (reset emits both) |
+| `src/ui/components/MetalViewport.h/.mm` | PERF-002: hash-gated raster rendering and on-demand frame scheduling; PERF-004: appearance/geometry dirty routing; forced raster re-render on RT→raster mode switch |
+| `src/ui/components/OpenGLViewport.h/.cpp` | PERF-004: appearance/geometry dirty routing (its continuous raster loop is intentionally unchanged) |
+
+### Architecture Decisions
+
+#### 1. The Raster Renderer Adopted the RT Renderer's Async Design, Extracted Into a Shared Header
+- The RT renderer already solved safe async presentation (slot states, in-flight tracking, generation counters); duplicating it would have meant two diverging copies
+- `MetalAsyncOutput.h` holds the pure-C++ parts (atomics, slot acquisition/reset policy); each renderer keeps its own completion handler since the per-slot texture sets differ
+- `createRenderTargets()` bumps the generation counter so a frame in flight against old-size textures is marked Free (never Ready) by its completion handler — a never-rendered new texture can never be presented
+
+#### 2. Render-on-Demand Is Gated by a Frame Hash, Not by Tracking Call Sites
+- Every property setter and input handler already calls `update()`; the question is whether `updatePaintNode` should actually submit GPU work
+- A raster-specific hash (`computeRasterFrameHash`) decides this; it is a superset of the RT accumulation hash, adding overlays, tessellation, and viewport size — fields that must NOT reset RT accumulation but do require a raster redraw
+- The viewport keeps scheduling frames only while the renderer reports pending work (in-flight frame, dropped render request, or an unpresented completed frame), so the final frame after interaction always gets presented and the loop then stops
+- Known cosmetic side effect: the FPS readout freezes at its last value when idle, since frames are only counted when presented
+
+#### 3. RT Batching Preserves the Image by Construction and Stays Responsive by Policy
+- A batch is N independent accumulation passes in one command buffer: per-pass `frameCount` increments keep RNG sequences distinct, and the deferred accumulation clear applies only to a batch's first pass — identical accumulated output to N single-sample frames
+- N is derived from measured GPU nanoseconds per sample (stored atomically by the completion handler) against a 30 ms budget, capped at 256 samples per submit
+- `m_sampleCount == 0` always submits exactly one sample, so interactive camera motion (which resets accumulation every frame) never pays batch latency
+- OpenGL RT batching was deferred: its RT pass runs synchronously on the Qt render thread without GPU timer queries available through `QOpenGLFunctions`, so batching there risks multi-frame UI stalls; revisit via `QOpenGLTimerQuery` if the fallback path becomes a priority
+
+#### 4. Appearance vs. Geometry Is Split at the Signal Level, Decided Where the Edit Happens
+- `StructureModel` knows whether an edit touched radii (geometry) or only colors/alpha (appearance), so the split is expressed as two signals rather than inferred downstream
+- `structureStyleChanged` remains the QML NOTIFY for selected-color/transparency properties and is now strictly appearance-only; `structureGeometryChanged` is emitted by selection atom-scale and bond-radius edits; `resetSelectedObjects` emits both
+- RT renderers override `invalidateAppearance()` to re-upload only atom and bond color buffers (with a count-mismatch guard falling back to full upload); raster renderers use the base-class default since they have no BVH and full repack is already cheap
+- A subtle interaction with render-on-demand: scene changes arriving while RT mode is active only set dirty flags on the raster renderer, so switching back to raster forces one re-render by resetting the frame hash
+
+### Build Commands
+
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+
+- Built successfully after each stage; only the pre-existing macOS OpenGL deprecation warnings remain
+- Runtime launch verified clean Metal initialization (shader compilation, all pipelines) with no errors after the async raster conversion
+- Idle CPU measured with `top` against a baseline build of the same tree (`git stash` round-trip): ~6-10% before, ~0.1% after — confirming both the removal of the per-frame GPU stall and the on-demand repaint gating
+- Recommended in-app visual checks (not yet performed): orbit a loaded structure in raster mode (identical visuals, no stale frames after releasing the mouse), RT convergence speed after the camera stops (sample counter should climb much faster), selection clicks and color-scheme switches on a large structure (no hitch, identical highlight), and RT→raster mode switching after scene edits
+
+---
+
 ## 2026-06-10: Stroke Outlines for Atoms and Bonds (Metal Raster + RT)
 
 ### Summary

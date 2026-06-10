@@ -99,7 +99,12 @@ signals:
     void structureChanged();
     void selectionModeChanged();
     void selectionChanged();
+    /// Appearance-only change (colors, transparency, selection highlight).
+    /// Renderers may refresh color data without rebuilding geometry/BVH.
     void structureStyleChanged();
+    /// Geometry-affecting style change (atom radii, bond radii). Renderers
+    /// must repack geometry and rebuild acceleration structures.
+    void structureGeometryChanged();
     void structureUpdated(std::shared_ptr<data::Structure> structure);
 
 private:

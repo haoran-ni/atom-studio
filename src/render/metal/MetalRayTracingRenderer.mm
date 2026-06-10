@@ -1,5 +1,6 @@
 #import <Metal/Metal.h>
 #include "MetalRayTracingRenderer.h"
+#include "MetalAsyncOutput.h"
 #include "MetalTypes.h"
 #include "MetalUnitCellShared.h"
 #include "../common/BondRenderData.h"
@@ -21,7 +22,12 @@
 namespace atom::render::metal {
 
 static constexpr NSUInteger kPreferredOverlaySampleCount = 4;
-static constexpr int kOutputSlotCount = 3;
+
+// Adaptive sample batching: target GPU time per submission and a hard cap on
+// samples per command buffer. Keeps the UI responsive while letting fast
+// scenes converge far quicker than one sample per vsync.
+static constexpr uint64_t kRTGpuBudgetNanos = 30ull * 1000 * 1000;  // 30 ms
+static constexpr int kRTMaxSamplesPerSubmit = 256;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,26 +38,6 @@ static simd_float4x4 qMatToSimd(const QMatrix4x4& m) {
     std::memcpy(&result, m.constData(), 16 * sizeof(float));
     return result;
 }
-
-enum class OutputSlotState : uint8_t {
-    Free = 0,
-    InFlight = 1,
-    Ready = 2
-};
-
-struct AsyncFrameState {
-    std::atomic<uint64_t> generation{1};
-    std::atomic<int> inFlightSlot{-1};
-    std::atomic<int> latestReadySlot{-1};
-    std::atomic<int> latestReadySampleCount{0};
-    std::array<std::atomic<uint8_t>, kOutputSlotCount> slotStates{};
-
-    AsyncFrameState() {
-        for (auto& state : slotStates) {
-            state.store(static_cast<uint8_t>(OutputSlotState::Free));
-        }
-    }
-};
 
 // ---------------------------------------------------------------------------
 // PIMPL
@@ -194,11 +180,7 @@ void MetalRayTracingRenderer::cleanup() {
 
     m_impl->asyncState->generation.fetch_add(1, std::memory_order_relaxed);
     m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
-    m_impl->asyncState->latestReadySlot.store(-1, std::memory_order_relaxed);
-    m_impl->asyncState->latestReadySampleCount.store(0, std::memory_order_relaxed);
-    for (auto& state : m_impl->asyncState->slotStates) {
-        state.store(static_cast<uint8_t>(OutputSlotState::Free), std::memory_order_relaxed);
-    }
+    resetOutputSlots(*m_impl->asyncState);
 
     m_impl->quadVertexBuffer = nil;
     m_impl->accumTexture = nil;
@@ -274,6 +256,8 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
 
     if (m_atomDataDirty || m_bondDataDirty) {
         uploadSceneData();
+    } else if (m_appearanceDirty) {
+        uploadAppearanceData();
     }
     if (m_unitCellDataDirty) {
         uploadUnitCellData();
@@ -289,7 +273,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
         resetAccumulation();
     }
 
-    const int outputSlotIndex = acquireOutputSlot();
+    const int outputSlotIndex = acquireOutputSlot(*m_impl->asyncState, m_lastPresentedSlot);
     if (outputSlotIndex < 0) {
         return;
     }
@@ -318,7 +302,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             id<MTLRenderCommandEncoder> enc = [cmdBuffer renderCommandEncoderWithDescriptor:pass];
             [enc endEncoding];
         }
-        trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, 0, m_outputGeneration);
+        trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, 0, 0, m_outputGeneration);
         [cmdBuffer commit];
         return;
     }
@@ -332,14 +316,38 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
 
     // Keep rendering the display/output passes even after convergence so
     // overlays (unit cell) and RT output refresh remain responsive.
+    int batchSampleCount = 0;
     if (!isConverged()) {
-        m_sampleCount++;
-        renderRTPass(camera, (__bridge void*)cmdBuffer);
+        // Adaptive batching: encode several accumulation passes per command
+        // buffer, sized from the measured GPU cost of one sample. The first
+        // sample after a reset is always submitted alone so interaction
+        // (camera moves reset accumulation every frame) stays at one cheap
+        // sample per frame and feedback is immediate.
+        const int remaining = std::max(m_settings.maxRTSamples - m_sampleCount, 1);
+        int batch = 1;
+        if (m_sampleCount > 0) {
+            const uint64_t perSampleNanos =
+                m_impl->asyncState->gpuNanosPerSample.load(std::memory_order_relaxed);
+            if (perSampleNanos > 0) {
+                const uint64_t fitting = kRTGpuBudgetNanos / perSampleNanos;
+                batch = static_cast<int>(std::clamp<uint64_t>(fitting, 1, kRTMaxSamplesPerSubmit));
+            } else {
+                batch = 4;  // mild ramp until the first GPU timing arrives
+            }
+            batch = std::min(batch, remaining);
+        }
+
+        for (int i = 0; i < batch; ++i) {
+            m_sampleCount++;
+            renderRTPass(camera, (__bridge void*)cmdBuffer);
+        }
+        batchSampleCount = batch;
     }
 
     renderDisplayPass(camera, (__bridge void*)cmdBuffer, outputSlotIndex);
 
-    trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, m_sampleCount, m_outputGeneration);
+    trackSubmittedFrame((__bridge void*)cmdBuffer, outputSlotIndex, m_sampleCount,
+                        batchSampleCount, m_outputGeneration);
     [cmdBuffer commit];
 }
 
@@ -350,6 +358,11 @@ void MetalRayTracingRenderer::invalidateAtomData() {
 
 void MetalRayTracingRenderer::invalidateBondData() {
     m_bondDataDirty = true;
+    resetAccumulation();
+}
+
+void MetalRayTracingRenderer::invalidateAppearance() {
+    m_appearanceDirty = true;
     resetAccumulation();
 }
 
@@ -443,11 +456,7 @@ void MetalRayTracingRenderer::createRenderTargets() {
     // it naturally.  Forcing it to -1 would allow render() to submit a new
     // frame before the old handler fires, and the old handler's CAS would
     // then incorrectly clear the *new* submission's inFlightSlot.
-    m_impl->asyncState->latestReadySlot.store(-1, std::memory_order_relaxed);
-    m_impl->asyncState->latestReadySampleCount.store(0, std::memory_order_relaxed);
-    for (auto& state : m_impl->asyncState->slotStates) {
-        state.store(static_cast<uint8_t>(OutputSlotState::Free), std::memory_order_relaxed);
-    }
+    resetOutputSlots(*m_impl->asyncState);
     m_lastPresentedSlot = -1;
 }
 
@@ -469,6 +478,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondRadiusBuffer = nil;
         m_atomDataDirty = false;
         m_bondDataDirty = false;
+        m_appearanceDirty = false;
         return;
     }
 
@@ -617,6 +627,44 @@ void MetalRayTracingRenderer::uploadSceneData() {
 
     m_atomDataDirty = false;
     m_bondDataDirty = false;
+    m_appearanceDirty = false;
+}
+
+void MetalRayTracingRenderer::uploadAppearanceData() {
+    m_appearanceDirty = false;
+    if (!m_structure || m_atomCount == 0) {
+        return;
+    }
+
+    // Appearance updates assume unchanged geometry/topology. If counts moved
+    // under us (shouldn't happen — topology changes go through the geometry
+    // path), fall back to a full upload.
+    if (static_cast<int>(m_structure->atomCount()) != m_atomCount ||
+        static_cast<int>(bondRenderSegmentCount(m_structure)) != m_bondCount) {
+        uploadSceneData();
+        return;
+    }
+
+    auto colorData = packAtomRenderColors(m_structure);
+    m_impl->atomColorBuffer = [m_impl->device
+        newBufferWithBytes:colorData.data()
+                    length:colorData.size() * sizeof(float)
+                   options:MTLResourceStorageModeShared];
+
+    if (m_bondCount > 0) {
+        std::vector<float> startColors;
+        std::vector<float> endColors;
+        packBondRenderColors(m_structure, startColors, endColors);
+
+        m_impl->bondStartColorBuffer = [m_impl->device
+            newBufferWithBytes:startColors.data()
+                        length:startColors.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
+        m_impl->bondEndColorBuffer = [m_impl->device
+            newBufferWithBytes:endColors.data()
+                        length:endColors.size() * sizeof(float)
+                       options:MTLResourceStorageModeShared];
+    }
 }
 
 void MetalRayTracingRenderer::uploadUnitCellData() {
@@ -978,40 +1026,10 @@ void MetalRayTracingRenderer::encodeUnitCellOverlayDraws(
     }
 }
 
-int MetalRayTracingRenderer::acquireOutputSlot() const {
-    const int inFlightSlot = m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire);
-    if (inFlightSlot >= 0) {
-        return -1;
-    }
-
-    const int latestReadySlot =
-        m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
-    const auto isReusable = [&](int slotIndex) {
-        return slotIndex != latestReadySlot && slotIndex != m_lastPresentedSlot;
-    };
-
-    for (int slotIndex = 0; slotIndex < kOutputSlotCount; ++slotIndex) {
-        const auto state = static_cast<OutputSlotState>(
-            m_impl->asyncState->slotStates[static_cast<size_t>(slotIndex)].load(std::memory_order_acquire));
-        if (state == OutputSlotState::Free && isReusable(slotIndex)) {
-            return slotIndex;
-        }
-    }
-
-    for (int slotIndex = 0; slotIndex < kOutputSlotCount; ++slotIndex) {
-        const auto state = static_cast<OutputSlotState>(
-            m_impl->asyncState->slotStates[static_cast<size_t>(slotIndex)].load(std::memory_order_acquire));
-        if (state == OutputSlotState::Ready && isReusable(slotIndex)) {
-            return slotIndex;
-        }
-    }
-
-    return -1;
-}
-
 void MetalRayTracingRenderer::trackSubmittedFrame(void* cmdBuf,
                                                   int outputSlotIndex,
                                                   int submittedSampleCount,
+                                                  int batchSampleCount,
                                                   uint64_t generation) {
     auto asyncState = m_impl->asyncState;
     asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
@@ -1031,6 +1049,19 @@ void MetalRayTracingRenderer::trackSubmittedFrame(void* cmdBuf,
             asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
                 freeState, std::memory_order_release);
             return;
+        }
+
+        // Feed the adaptive batch size: measured GPU nanoseconds per RT sample
+        // (display/overlay overhead is amortized into the estimate, which only
+        // makes the next batch slightly conservative).
+        if (batchSampleCount > 0) {
+            const double gpuSeconds = completedBuffer.GPUEndTime - completedBuffer.GPUStartTime;
+            if (gpuSeconds > 0.0) {
+                const uint64_t perSample = static_cast<uint64_t>(
+                    gpuSeconds * 1e9 / static_cast<double>(batchSampleCount));
+                asyncState->gpuNanosPerSample.store(std::max<uint64_t>(perSample, 1),
+                                                    std::memory_order_relaxed);
+            }
         }
 
         asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
