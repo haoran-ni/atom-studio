@@ -32,6 +32,9 @@ public:
     void* linePipeline() const;
     void* rtPipeline() const;
     void* displayPipeline() const;
+    /// Single-sample display pipeline for overlay-free frames (skips the
+    /// MSAA render target + resolve entirely).
+    void* displayPipelineSingleSample() const;
     void* rtUnitCellCylinderPipeline() const;
     void* rtUnitCellSpherePipeline() const;
 

@@ -1,6 +1,6 @@
 # Renderer Improvement Plan 2
 
-Last updated: 2026-06-10 (PERF-001/002/004 fixed; PERF-003 fixed on Metal, deferred on OpenGL)
+Last updated: 2026-06-10 (PERF-001/002/004/005/006/007/008 fixed; PERF-003 fixed on Metal, deferred on OpenGL)
 
 ## Goal
 
@@ -30,10 +30,10 @@ Relationship to the previous plan (`archived/renderer_improvement_plan.md`):
 | PERF-002 | Fixed | Render on demand in raster mode instead of repainting every vsync. |
 | PERF-003 | Partial | Batch multiple RT accumulation samples per command buffer (Metal done; OpenGL deferred). |
 | PERF-004 | Fixed | Split geometry-dirty vs. appearance-dirty so color/selection changes skip BVH rebuild. |
-| PERF-005 | Not fixed | Parallelize BVH construction across subtrees. |
-| PERF-006 | Not fixed | Skip per-primitive alpha fetches in RT traversal when the scene is fully opaque. |
-| PERF-007 | Not fixed | Reuse GPU scene buffers instead of reallocating on every upload. |
-| PERF-008 | Not fixed | Skip the 4x MSAA display target when no overlay is drawn (RT display pass). |
+| PERF-005 | Fixed | Parallelize BVH construction across subtrees. |
+| PERF-006 | Fixed | Skip per-primitive alpha fetches in RT traversal when the scene is fully opaque. |
+| PERF-007 | Fixed | Reuse GPU scene buffers instead of reallocating on every upload. |
+| PERF-008 | Fixed | Skip the 4x MSAA display target when no overlay is drawn (RT display pass). |
 | PERF-009 | Not fixed | Restore early-Z for sphere impostors via a `[[depth(less)]]` pipeline variant. |
 | PERF-010 | Not fixed | Hoist per-instance bond math out of the per-vertex shader path. |
 | PERF-011 | Not fixed | Guard per-frame `sampleCountChanged` signal emission in the viewport. |
@@ -343,7 +343,24 @@ Relevant files:
 
 Current status:
 
-- Not fixed.
+- Fixed.
+
+Verification notes:
+
+- Deterministic three-phase build: a serial skeleton splits ranges down to
+  ≤ 4 levels (≤ 16 tasks, sized from hardware concurrency), subtrees build in
+  parallel via `std::async` into local results sharing the index array on
+  disjoint ranges, then merge in fixed task order with node/primitive index
+  fix-up. `BVHBuildOptions::maxParallelTasks` (0 = auto, 1 = serial) added.
+- Parallel path engages only at ≥ 32768 primitives; below that the serial
+  path runs unchanged.
+- Standalone benchmark (clang++ -O2, random scenes, best-of-3): 2.60× at
+  100k prims (24.7 → 9.5 ms), 2.65× at 1M (355 → 134 ms), 2.30× at 4M
+  (1872 → 813 ms). Canonical DFS comparison (AABBs + sorted leaf primitive
+  sets) confirms serial and parallel trees are exactly equivalent.
+- Remaining serial fraction is the skeleton's top-level `computeStats` +
+  `nth_element` passes over the full range (Amdahl); parallelizing those is
+  a possible follow-up if BVH build remains a bottleneck.
 
 ### PERF-006: RT traversal fetches primitive alpha even in fully opaque scenes
 
@@ -385,7 +402,22 @@ Relevant files:
 
 Current status:
 
-- Not fixed.
+- Fixed.
+
+Verification notes:
+
+- New `packedColorsHaveTransparency()` helper in `BondRenderData` scans the
+  already-packed RGBA arrays; both RT renderers compute the flag during
+  scene upload AND appearance-only upload (alpha edits go through the
+  appearance path), so it always tracks the latest colors.
+- Metal: `RTUniforms::hasTransparency` replaced a pad field (layout size
+  unchanged on both CPU and MSL sides); `traceClosest` and
+  `traceOcclusionAlpha` take an `anyTransparent` flag. OpenGL: new
+  `uHasTransparency` uniform, same shader logic.
+- Opaque path skips all `primitiveAlpha` fetches and, with alpha pinned at
+  1.0, occlusion rays early-out on the first confirmed hit. Flag changes
+  always coincide with an accumulation reset (they ride the existing
+  invalidation paths), so the image is unchanged by construction.
 
 ### PERF-007: GPU scene buffers are reallocated on every upload
 
@@ -428,7 +460,24 @@ Relevant files:
 
 Current status:
 
-- Not fixed.
+- Fixed (OpenGL raster sub-renderers left as-is — fallback path, small
+  buffers via QOpenGLBuffer).
+
+Verification notes:
+
+- New shared header `src/render/metal/MetalBufferUtil.h`:
+  `ensureSharedBuffer()` / `fillSharedBuffer()` reuse a shared-storage
+  MTLBuffer when capacity suffices. Safety contract documented: writes only
+  happen while no command buffer is in flight, which both Metal renderers
+  guarantee by gating all upload work behind their single-frame-in-flight
+  check (slot acquisition precedes uploads).
+- Metal RT: all ~12 scene buffers reuse storage; BVH node min/max/meta data
+  is written directly into `buffer.contents`, eliminating the three staging
+  vectors. Unit-cell instance buffers and the raster sphere/bond instance
+  buffers reuse storage too.
+- OpenGL RT: `uploadTBOData()` member re-specifies with `GL_DYNAMIC_DRAW`
+  only on growth (capacity map keyed by buffer id, cleared in `cleanup()`),
+  otherwise updates in place via `glBufferSubData`.
 
 ### PERF-008: RT display pass always renders into a 4x MSAA target
 
@@ -462,10 +511,24 @@ Suggested implementation notes:
 Relevant files:
 
 - `src/render/metal/MetalRayTracingRenderer.mm`
+- `src/render/metal/MetalShaderLibrary.h/.mm` (single-sample display pipeline)
 
 Current status:
 
-- Not fixed.
+- Fixed.
+
+Verification notes:
+
+- `renderDisplayPass` branches on the same overlay condition used for
+  encoding (unit cell with data, rotation gizmo, viewport axes). With no
+  overlay, the quad renders straight into the resolved output texture via a
+  new single-sample display pipeline variant (`displayPipelineSingleSample`,
+  aliasing the MSAA pipeline when the device runs single-sample anyway) —
+  no MSAA target writes, no resolve, no depth attachment.
+- Output is pixel-identical: a fullscreen quad covers every pixel exactly
+  once, so MSAA resolve of N identical samples equals the single sample.
+- Runtime launch confirmed all pipelines (including the new variant)
+  compile and create successfully.
 
 ### PERF-009: Sphere impostor fragment shader disables early-Z
 

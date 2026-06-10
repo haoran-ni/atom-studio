@@ -90,7 +90,7 @@ struct RTUniforms {
     float    outlineScale;
     float4   outlineColor;
     float    outlineWorldMax;
-    float    _pad0;
+    int      hasTransparency;
     float    _pad1;
     float    _pad2;
 };
@@ -964,6 +964,7 @@ void traceClosest(float3 ro, float3 rd,
                   device const float4* bondEndColors,
                   device const float* bondRadii,
                   int bondCount, bool showBonds,
+                  bool anyTransparent,
                   device const float4* bvhNodeMinData,
                   device const float4* bvhNodeMaxData,
                   device const uint4* bvhNodeMeta,
@@ -997,7 +998,8 @@ void traceClosest(float3 ro, float3 rd,
                 uint primIndex = bvhPrimIndices[first + i];
                 if (primIndex >= uint(totalPrims)) continue;
                 if (int(primIndex) == skipIndex) continue;
-                if (primitiveAlpha(primIndex, atomColors, atomCount,
+                if (anyTransparent &&
+                    primitiveAlpha(primIndex, atomColors, atomCount,
                                    bondStartColors, bondEndColors, bondCount) <= 0.001f) continue;
 
                 if (primIndex < uint(atomCount)) {
@@ -1092,6 +1094,7 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
                           device const float4* bondEndColors,
                           device const float* bondRadii,
                           int bondCount, bool showBonds,
+                          bool anyTransparent,
                           device const float4* bvhNodeMinData,
                           device const float4* bvhNodeMaxData,
                           device const uint4* bvhNodeMeta,
@@ -1116,9 +1119,14 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
             for (uint i = 0; i < primCount; ++i) {
                 uint primIndex = bvhPrimIndices[first + i];
                 if (primIndex >= uint(totalPrims)) continue;
-                float alpha = primitiveAlpha(primIndex, atomColors, atomCount,
-                                             bondStartColors, bondEndColors, bondCount);
-                if (alpha <= 0.001f) continue;
+                // All-opaque scenes skip the alpha fetch; alpha = 1 then also
+                // makes the >= 0.999 checks below early-out on the first hit.
+                float alpha = 1.0f;
+                if (anyTransparent) {
+                    alpha = primitiveAlpha(primIndex, atomColors, atomCount,
+                                           bondStartColors, bondEndColors, bondCount);
+                    if (alpha <= 0.001f) continue;
+                }
 
                 if (primIndex < uint(atomCount)) {
                     if (!showAtoms) continue;
@@ -1318,11 +1326,12 @@ fragment float4 rt_fragment(
     float hitT;
     int hitIndex;
     bool hitOutline;
+    bool anyTransparent = rt.hasTransparency != 0;
     traceClosest(rayOrigin, rayDir, atomPositions, atomColors,
                  rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
                  bondStartColors, bondEndColors,
-                 bondRadii, rt.bondCount, showBonds,
+                 bondRadii, rt.bondCount, showBonds, anyTransparent,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                  rt.bvhNodeCount, -1,
                  rt.outlineScale, rt.outlineWorldMax, rt.isPerspective != 0,
@@ -1415,7 +1424,7 @@ fragment float4 rt_fragment(
             biasedOrigin, lightDir, 10000.0,
             atomPositions, atomColors, rt.atomCount, rt.atomScale, showAtoms,
             bondStartPositions, bondEndPositions, bondStartColors, bondEndColors,
-            bondRadii, rt.bondCount, showBonds,
+            bondRadii, rt.bondCount, showBonds, anyTransparent,
             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
             rt.bvhNodeCount);
         shadow = 1.0 - clamp(rt.shadowOpacity, 0.0f, 1.0f) * shadowAlpha;
@@ -1431,7 +1440,7 @@ fragment float4 rt_fragment(
                 biasedOrigin, aoDir, rt.aoRadius,
                 atomPositions, atomColors, rt.atomCount, rt.atomScale, showAtoms,
                 bondStartPositions, bondEndPositions, bondStartColors, bondEndColors,
-                bondRadii, rt.bondCount, showBonds,
+                bondRadii, rt.bondCount, showBonds, anyTransparent,
                 bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                 rt.bvhNodeCount);
         }
@@ -1475,6 +1484,7 @@ struct MetalShaderLibrary::Impl {
     id<MTLRenderPipelineState> linePipeline = nil;
     id<MTLRenderPipelineState> rtPipeline = nil;
     id<MTLRenderPipelineState> displayPipeline = nil;
+    id<MTLRenderPipelineState> displayPipelineSingleSample = nil;
     id<MTLRenderPipelineState> rtUnitCellCylinderPipeline = nil;
     id<MTLRenderPipelineState> rtUnitCellSpherePipeline = nil;
     id<MTLDepthStencilState> depthLessWriteState = nil;
@@ -1740,6 +1750,20 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
                          << error.localizedDescription.UTF8String;
             return false;
         }
+
+        // Single-sample variant for overlay-free frames (no MSAA target/resolve).
+        if (rasterSamples > 1) {
+            desc.rasterSampleCount = 1;
+            m_impl->displayPipelineSingleSample =
+                [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+            if (!m_impl->displayPipelineSingleSample) {
+                qCritical() << "MetalShaderLibrary: single-sample display pipeline failed:"
+                             << error.localizedDescription.UTF8String;
+                return false;
+            }
+        } else {
+            m_impl->displayPipelineSingleSample = m_impl->displayPipeline;
+        }
     }
 
     // --- RT unit-cell cylinder overlay pipeline (alpha blend, BGRA8, no depth) ---
@@ -1809,6 +1833,7 @@ void MetalShaderLibrary::cleanup() {
         m_impl->linePipeline = nil;
         m_impl->rtPipeline = nil;
         m_impl->displayPipeline = nil;
+        m_impl->displayPipelineSingleSample = nil;
         m_impl->rtUnitCellCylinderPipeline = nil;
         m_impl->rtUnitCellSpherePipeline = nil;
         m_impl->depthLessWriteState = nil;
@@ -1849,6 +1874,10 @@ void* MetalShaderLibrary::rtPipeline() const {
 
 void* MetalShaderLibrary::displayPipeline() const {
     return (__bridge void*)m_impl->displayPipeline;
+}
+
+void* MetalShaderLibrary::displayPipelineSingleSample() const {
+    return (__bridge void*)m_impl->displayPipelineSingleSample;
 }
 
 void* MetalShaderLibrary::rtUnitCellCylinderPipeline() const {

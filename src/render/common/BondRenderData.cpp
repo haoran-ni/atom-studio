@@ -117,6 +117,13 @@ void packBondRenderColors(const data::Structure* structure,
     }
 }
 
+bool packedColorsHaveTransparency(const std::vector<float>& rgba) {
+    for (size_t i = 3; i < rgba.size(); i += 4) {
+        if (rgba[i] < 0.999f) return true;
+    }
+    return false;
+}
+
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
                                         const data::Bond& bond,
                                         size_t bondIndex) {

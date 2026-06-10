@@ -4,6 +4,74 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-10: Renderer Performance Pass 2 — Parallel BVH Build, Opaque-Scene Alpha Skip, GPU Buffer Reuse, Conditional MSAA Display
+
+### Summary
+
+Second implementation session of `renderer_improvement_plan_2.md`, fixing items PERF-005 through PERF-008. As with pass 1, all changes preserve visualization quality exactly.
+
+The BVH builder now parallelizes across subtrees: a serial skeleton phase performs the same median splits as before down to at most four levels, up to 16 subtree builds then run concurrently via `std::async` on disjoint ranges of a shared index array, and the results merge in fixed task order with node/primitive index fix-up. A standalone benchmark measured 2.3–2.65× faster builds (1M primitives: 355 → 134 ms; 4M: 1.87 s → 0.81 s) with a canonical-DFS comparison proving the serial and parallel trees exactly equivalent.
+
+Both RT shaders (Metal MSL and OpenGL GLSL) now skip all per-primitive alpha fetches when the scene contains no transparent primitives — a flag computed CPU-side during scene and appearance uploads. In the opaque case, shadow/AO occlusion rays also early-out on the first confirmed hit instead of continuing to accumulate alpha.
+
+GPU scene buffers are now reused across uploads instead of reallocated: Metal gained shared `ensureSharedBuffer`/`fillSharedBuffer` helpers (BVH node data is written directly into mapped buffer memory, eliminating three staging vectors), and the OpenGL RT renderer re-specifies TBO storage only on growth, updating in place with `glBufferSubData` otherwise.
+
+Finally, the Metal RT display pass renders directly into the resolved output texture when no overlay (unit cell, gizmo, axes) is drawn, via a new single-sample display pipeline — eliminating the 4× MSAA color writes, the resolve, and the depth attachment for overlay-free frames.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/render/common/BVH.h/.cpp` | PERF-005: three-phase parallel build (skeleton split, parallel subtrees, ordered merge); `BVHBuildOptions::maxParallelTasks` (0 = auto, 1 = serial); helpers factored so serial and skeleton paths share split logic |
+| `src/render/common/BondRenderData.h/.cpp` | PERF-006: `packedColorsHaveTransparency()` helper scanning packed RGBA arrays |
+| `src/render/metal/MetalTypes.h` | PERF-006: `RTUniforms::hasTransparency` replaced a pad field (struct size unchanged) |
+| `src/render/metal/MetalShaderLibrary.h/.mm` | PERF-006: `anyTransparent` parameter through `traceClosest`/`traceOcclusionAlpha` with opaque fast path; PERF-008: single-sample display pipeline variant |
+| `src/render/metal/MetalBufferUtil.h` | PERF-007: new shared `ensureSharedBuffer`/`fillSharedBuffer` helpers with documented in-flight safety contract |
+| `src/render/metal/MetalRayTracingRenderer.h/.mm` | PERF-006: transparency flag computed in both upload paths and passed in RT uniforms; PERF-007: buffer reuse everywhere, BVH nodes written directly into buffer contents; PERF-008: overlay-free direct display path |
+| `src/render/metal/MetalSphereRenderer.mm` / `MetalBondRenderer.mm` | PERF-007: instance buffer reuse |
+| `src/render/opengl/RayTracingRenderer.h/.cpp` | PERF-006: `uHasTransparency` uniform + shader fast path; PERF-007: `uploadTBOData()` with capacity tracking (`GL_DYNAMIC_DRAW` + `glBufferSubData`) |
+| `src/render/CMakeLists.txt` | Registered the new `MetalBufferUtil.h` header |
+
+### Architecture Decisions
+
+#### 1. Parallel BVH Build Is Deterministic and Tree-Identical by Construction
+- The skeleton phase performs exactly the same `computeStats`/`nth_element` splits as the serial path; subtrees are appended in fixed task order, so output is reproducible run to run and independent of thread scheduling
+- Subtree contexts share one index array but partition strictly disjoint ranges, so no synchronization is needed during the parallel phase
+- Verified by a canonical DFS comparison (per-node AABBs plus sorted leaf primitive sets) between serial and parallel builds at 100k/1M/4M primitives — exactly equal
+- Parallelism only engages at ≥ 32768 primitives; the speedup ceiling (~2.6×) comes from the serial skeleton's top-level O(N) passes, noted in the plan as a possible follow-up
+
+#### 2. The Transparency Flag Lives With the Color Data, Not the Settings
+- Whether alpha fetches are needed is a property of the uploaded colors, so the flag is computed from the already-packed RGBA arrays during scene upload and appearance upload (alpha edits arrive via the appearance path from pass 1)
+- Flag changes therefore always coincide with an accumulation reset, making the optimization invisible in the image
+- In the opaque case occlusion alpha is pinned to 1.0, which turns the existing `>= 0.999` accumulation checks into a first-hit early-out for shadow and AO rays with no extra branching
+
+#### 3. Buffer Reuse Leans on the Single-Frame-In-Flight Invariant
+- Both Metal renderers acquire an output slot (which fails while a frame is in flight) before any upload work, so rewriting shared-storage buffer contents can never race the GPU; `MetalBufferUtil.h` documents this contract explicitly
+- Buffers grow but never shrink during a session (full release on structure clear/cleanup), trading a little memory for zero-allocation steady-state updates — the case that matters for trajectories and the pass-1 appearance updates
+- OpenGL keeps a per-buffer capacity map because GL buffer objects don't expose their allocated size; `glBufferSubData` synchronization is the driver's responsibility
+
+#### 4. Overlay-Free Display Needs Its Own Pipeline, Not Just Another Pass Descriptor
+- Metal requires the pipeline's `rasterSampleCount` to match the render pass, so skipping MSAA required a second display pipeline compiled at sample count 1 (aliased to the MSAA one when the device already runs single-sample)
+- A fullscreen quad covers every pixel exactly once, so resolving N identical samples equals the single sample — the no-MSAA output is pixel-identical, purely saving bandwidth (~4× color writes plus a resolve per displayed frame during accumulation)
+- The branch reuses the exact overlay condition that gates overlay encoding, so the two can never disagree
+
+### Build Commands
+
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+
+- Built successfully; only the pre-existing macOS OpenGL deprecation warnings remain
+- All CTest tests passed: `4/4`
+- BVH benchmark (standalone clang++ -O2 harness over `BVH.cpp`, archived at `archived/bvh_bench.cpp`; random scenes, best-of-3): 2.60× at 100k prims, 2.65× at 1M, 2.30× at 4M, with serial/parallel tree equivalence verified by canonical DFS comparison at every size
+- Runtime launch verified MSL compilation and all pipelines (including the new single-sample display pipeline) create successfully; app runs cleanly
+- Recommended in-app visual checks (not yet performed): RT image identical with shadows/AO on for an opaque scene and for a scene with transparent atoms; RT display output identical with all overlays hidden; trajectory-style repeated structure updates for buffer-reuse stability
+
+---
+
 ## 2026-06-10: Renderer Performance Pass 1 — Async Raster Submission, Render-on-Demand, RT Sample Batching, Appearance/Geometry Dirty Split
 
 ### Summary

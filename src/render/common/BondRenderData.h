@@ -57,6 +57,11 @@ std::vector<float> packAtomRenderColors(const data::Structure* structure);
 void packBondRenderColors(const data::Structure* structure,
                           std::vector<float>& startColors,
                           std::vector<float>& endColors);
+
+/// True if any alpha in a packed RGBA float array is below fully opaque.
+/// Lets RT shaders skip per-primitive alpha fetches for all-opaque scenes.
+bool packedColorsHaveTransparency(const std::vector<float>& rgba);
+
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
                                         const data::Bond& bond,
                                         size_t bondIndex);

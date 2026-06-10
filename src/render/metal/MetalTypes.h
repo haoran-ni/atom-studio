@@ -88,7 +88,7 @@ struct RTUniforms {
     float         outlineScale;      // widthPx × pixelScale; × hit distance (persp) or absolute (ortho); 0 = off
     simd_float4   outlineColor;      // rgb stroke color
     float         outlineWorldMax;   // conservative world-space width bound for BVH AABB padding
-    float         _pad0;
+    int32_t       hasTransparency;   // 0 = all primitives opaque (skip alpha fetches)
     float         _pad1;
     float         _pad2;
 };

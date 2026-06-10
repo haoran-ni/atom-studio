@@ -79,6 +79,7 @@ private:
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_appearanceDirty = false;
+    bool m_hasTransparency = false;
     bool m_accumNeedsClear = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;

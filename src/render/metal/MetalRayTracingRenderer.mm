@@ -1,6 +1,7 @@
 #import <Metal/Metal.h>
 #include "MetalRayTracingRenderer.h"
 #include "MetalAsyncOutput.h"
+#include "MetalBufferUtil.h"
 #include "MetalTypes.h"
 #include "MetalUnitCellShared.h"
 #include "../common/BondRenderData.h"
@@ -485,18 +486,20 @@ void MetalRayTracingRenderer::uploadSceneData() {
     m_atomCount = static_cast<int>(m_structure->atomCount());
 
     // ── Atom buffers ──────────────────────────────────────────
+    // Buffer reuse is safe here: uploads only run while no command buffer is
+    // in flight (render() gates on inFlightSlot before any upload work).
 
     auto posData = m_structure->packPositionsAndRadii();
-    m_impl->atomPositionBuffer = [m_impl->device
-        newBufferWithBytes:posData.data()
-                    length:posData.size() * sizeof(float)
-                   options:MTLResourceStorageModeShared];
+    m_impl->atomPositionBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->atomPositionBuffer,
+        posData.data(), posData.size() * sizeof(float));
 
     auto colorData = packAtomRenderColors(m_structure);
-    m_impl->atomColorBuffer = [m_impl->device
-        newBufferWithBytes:colorData.data()
-                    length:colorData.size() * sizeof(float)
-                   options:MTLResourceStorageModeShared];
+    m_impl->atomColorBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->atomColorBuffer,
+        colorData.data(), colorData.size() * sizeof(float));
+
+    m_hasTransparency = packedColorsHaveTransparency(colorData);
 
     // ── Bond buffers ──────────────────────────────────────────
 
@@ -506,26 +509,25 @@ void MetalRayTracingRenderer::uploadSceneData() {
     if (m_bondCount > 0) {
         packedBonds = packBondRenderData(m_structure, BondPositionPacking::XYZW4);
 
-        m_impl->bondStartBuffer = [m_impl->device
-            newBufferWithBytes:packedBonds.startPositions.data()
-                        length:packedBonds.startPositions.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
-        m_impl->bondEndBuffer = [m_impl->device
-            newBufferWithBytes:packedBonds.endPositions.data()
-                        length:packedBonds.endPositions.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
-        m_impl->bondStartColorBuffer = [m_impl->device
-            newBufferWithBytes:packedBonds.startColors.data()
-                        length:packedBonds.startColors.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
-        m_impl->bondEndColorBuffer = [m_impl->device
-            newBufferWithBytes:packedBonds.endColors.data()
-                        length:packedBonds.endColors.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
-        m_impl->bondRadiusBuffer = [m_impl->device
-            newBufferWithBytes:packedBonds.bondRadii.data()
-                        length:packedBonds.bondRadii.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
+        m_impl->bondStartBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondStartBuffer,
+            packedBonds.startPositions.data(), packedBonds.startPositions.size() * sizeof(float));
+        m_impl->bondEndBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondEndBuffer,
+            packedBonds.endPositions.data(), packedBonds.endPositions.size() * sizeof(float));
+        m_impl->bondStartColorBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondStartColorBuffer,
+            packedBonds.startColors.data(), packedBonds.startColors.size() * sizeof(float));
+        m_impl->bondEndColorBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondEndColorBuffer,
+            packedBonds.endColors.data(), packedBonds.endColors.size() * sizeof(float));
+        m_impl->bondRadiusBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondRadiusBuffer,
+            packedBonds.bondRadii.data(), packedBonds.bondRadii.size() * sizeof(float));
+
+        m_hasTransparency = m_hasTransparency ||
+                            packedColorsHaveTransparency(packedBonds.startColors) ||
+                            packedColorsHaveTransparency(packedBonds.endColors);
     } else {
         m_impl->bondStartBuffer = nil;
         m_impl->bondEndBuffer = nil;
@@ -589,41 +591,38 @@ void MetalRayTracingRenderer::uploadSceneData() {
     assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
-    std::vector<simd_float4> nodeMins(static_cast<size_t>(m_bvhNodeCount));
-    std::vector<simd_float4> nodeMaxs(static_cast<size_t>(m_bvhNodeCount));
-    std::vector<simd_uint4> nodeMeta(static_cast<size_t>(m_bvhNodeCount));
-    for (int i = 0; i < m_bvhNodeCount; ++i) {
-        const BVHNodeGPU& node = bvh.nodes[static_cast<size_t>(i)];
-        nodeMins[static_cast<size_t>(i)] = simd_make_float4(
+    // Write node data straight into the (reused) shared-storage buffers —
+    // no staging vectors.
+    const size_t nodeCount = bvh.nodes.size();
+    m_impl->bvhNodeMinBuffer = ensureSharedBuffer(
+        m_impl->device, m_impl->bvhNodeMinBuffer, nodeCount * sizeof(simd_float4));
+    m_impl->bvhNodeMaxBuffer = ensureSharedBuffer(
+        m_impl->device, m_impl->bvhNodeMaxBuffer, nodeCount * sizeof(simd_float4));
+    m_impl->bvhNodeMetaBuffer = ensureSharedBuffer(
+        m_impl->device, m_impl->bvhNodeMetaBuffer, nodeCount * sizeof(simd_uint4));
+
+    auto* nodeMins = static_cast<simd_float4*>(m_impl->bvhNodeMinBuffer.contents);
+    auto* nodeMaxs = static_cast<simd_float4*>(m_impl->bvhNodeMaxBuffer.contents);
+    auto* nodeMeta = static_cast<simd_uint4*>(m_impl->bvhNodeMetaBuffer.contents);
+    for (size_t i = 0; i < nodeCount; ++i) {
+        const BVHNodeGPU& node = bvh.nodes[i];
+        nodeMins[i] = simd_make_float4(
             node.minAndMaxRadius[0],
             node.minAndMaxRadius[1],
             node.minAndMaxRadius[2],
             node.minAndMaxRadius[3]);
-        nodeMaxs[static_cast<size_t>(i)] = simd_make_float4(
+        nodeMaxs[i] = simd_make_float4(
             node.maxAndPad[0],
             node.maxAndPad[1],
             node.maxAndPad[2],
             node.maxAndPad[3]);
-        nodeMeta[static_cast<size_t>(i)] = simd_make_uint4(
+        nodeMeta[i] = simd_make_uint4(
             node.meta[0], node.meta[1], node.meta[2], node.meta[3]);
     }
 
-    m_impl->bvhNodeMinBuffer = [m_impl->device
-        newBufferWithBytes:nodeMins.data()
-                    length:nodeMins.size() * sizeof(simd_float4)
-                   options:MTLResourceStorageModeShared];
-    m_impl->bvhNodeMaxBuffer = [m_impl->device
-        newBufferWithBytes:nodeMaxs.data()
-                    length:nodeMaxs.size() * sizeof(simd_float4)
-                   options:MTLResourceStorageModeShared];
-    m_impl->bvhNodeMetaBuffer = [m_impl->device
-        newBufferWithBytes:nodeMeta.data()
-                    length:nodeMeta.size() * sizeof(simd_uint4)
-                   options:MTLResourceStorageModeShared];
-    m_impl->bvhPrimIndexBuffer = [m_impl->device
-        newBufferWithBytes:bvh.primitiveIndices.data()
-                    length:bvh.primitiveIndices.size() * sizeof(uint32_t)
-                   options:MTLResourceStorageModeShared];
+    m_impl->bvhPrimIndexBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->bvhPrimIndexBuffer,
+        bvh.primitiveIndices.data(), bvh.primitiveIndices.size() * sizeof(uint32_t));
 
     m_atomDataDirty = false;
     m_bondDataDirty = false;
@@ -646,24 +645,27 @@ void MetalRayTracingRenderer::uploadAppearanceData() {
     }
 
     auto colorData = packAtomRenderColors(m_structure);
-    m_impl->atomColorBuffer = [m_impl->device
-        newBufferWithBytes:colorData.data()
-                    length:colorData.size() * sizeof(float)
-                   options:MTLResourceStorageModeShared];
+    m_impl->atomColorBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->atomColorBuffer,
+        colorData.data(), colorData.size() * sizeof(float));
+
+    m_hasTransparency = packedColorsHaveTransparency(colorData);
 
     if (m_bondCount > 0) {
         std::vector<float> startColors;
         std::vector<float> endColors;
         packBondRenderColors(m_structure, startColors, endColors);
 
-        m_impl->bondStartColorBuffer = [m_impl->device
-            newBufferWithBytes:startColors.data()
-                        length:startColors.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
-        m_impl->bondEndColorBuffer = [m_impl->device
-            newBufferWithBytes:endColors.data()
-                        length:endColors.size() * sizeof(float)
-                       options:MTLResourceStorageModeShared];
+        m_impl->bondStartColorBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondStartColorBuffer,
+            startColors.data(), startColors.size() * sizeof(float));
+        m_impl->bondEndColorBuffer = fillSharedBuffer(
+            m_impl->device, m_impl->bondEndColorBuffer,
+            endColors.data(), endColors.size() * sizeof(float));
+
+        m_hasTransparency = m_hasTransparency ||
+                            packedColorsHaveTransparency(startColors) ||
+                            packedColorsHaveTransparency(endColors);
     }
 }
 
@@ -678,14 +680,12 @@ void MetalRayTracingRenderer::uploadUnitCellData() {
         return;
     }
 
-    m_impl->unitCellEdgeInstanceBuffer = [m_impl->device
-        newBufferWithBytes:instances.edges.data()
-                    length:instances.edges.size() * sizeof(BondInstance)
-                   options:MTLResourceStorageModeShared];
-    m_impl->unitCellJointInstanceBuffer = [m_impl->device
-        newBufferWithBytes:instances.joints.data()
-                    length:instances.joints.size() * sizeof(SphereInstance)
-                   options:MTLResourceStorageModeShared];
+    m_impl->unitCellEdgeInstanceBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->unitCellEdgeInstanceBuffer,
+        instances.edges.data(), instances.edges.size() * sizeof(BondInstance));
+    m_impl->unitCellJointInstanceBuffer = fillSharedBuffer(
+        m_impl->device, m_impl->unitCellJointInstanceBuffer,
+        instances.joints.data(), instances.joints.size() * sizeof(SphereInstance));
 
     m_unitCellEdgeCount = kUnitCellEdgeCount;
     m_unitCellJointCount = kUnitCellJointCount;
@@ -728,6 +728,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.showAtoms = m_settings.showAtoms ? 1 : 0;
     rt.showBonds = m_settings.showBonds ? 1 : 0;
     rt.isPerspective = camera.isPerspective() ? 1 : 0;
+    rt.hasTransparency = m_hasTransparency ? 1 : 0;
 
     // Stroke outlines: pixel→world scale factor valid for both projections
     // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).
@@ -818,6 +819,35 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
     const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];
+
+    // Overlay-free frames: a fullscreen quad gains nothing from MSAA, so
+    // render straight into the resolved output texture — no MSAA target
+    // writes, no resolve, no depth attachment.
+    const bool hasOverlay = (m_settings.showUnitCell && hasUnitCellOverlayData()) ||
+                            m_settings.showRotationCenter ||
+                            m_settings.showViewportAxes;
+    if (!hasOverlay) {
+        MTLRenderPassDescriptor* directPass = [MTLRenderPassDescriptor renderPassDescriptor];
+        directPass.colorAttachments[0].texture = outputSlot.outputTexture;
+        directPass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+        directPass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+        id<MTLRenderCommandEncoder> directEncoder =
+            [cmdBuffer renderCommandEncoderWithDescriptor:directPass];
+        [directEncoder setViewport:(MTLViewport){0, 0,
+            static_cast<double>(m_width), static_cast<double>(m_height),
+            0.0, 1.0}];
+
+        id<MTLRenderPipelineState> directPipeline =
+            (__bridge id<MTLRenderPipelineState>)m_shaderLibrary.displayPipelineSingleSample();
+        [directEncoder setRenderPipelineState:directPipeline];
+        [directEncoder setVertexBuffer:m_impl->quadVertexBuffer offset:0 atIndex:0];
+        [directEncoder setFragmentBytes:&disp length:sizeof(DisplayUniforms) atIndex:0];
+        [directEncoder setFragmentTexture:m_impl->accumTexture atIndex:0];
+        [directEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+        [directEncoder endEncoding];
+        return;
+    }
 
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;

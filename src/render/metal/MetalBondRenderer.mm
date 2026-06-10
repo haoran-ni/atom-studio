@@ -1,5 +1,6 @@
 #import <Metal/Metal.h>
 #include "MetalBondRenderer.h"
+#include "MetalBufferUtil.h"
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
 #include "MetalUnitCellShared.h"
@@ -106,10 +107,11 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
         instances[i].bondRadius = segment.bondRadius;
     }
 
-    NSUInteger size = m_bondCount * sizeof(BondInstance);
-    m_impl->instanceBuffer = [m_impl->device newBufferWithBytes:instances.data()
-                                                         length:size
-                                                        options:MTLResourceStorageModeShared];
+    // Reuse safe: setBondData only runs from render() after a free output
+    // slot was acquired, i.e. no command buffer is in flight.
+    m_impl->instanceBuffer = fillSharedBuffer(m_impl->device, m_impl->instanceBuffer,
+                                              instances.data(),
+                                              m_bondCount * sizeof(BondInstance));
 }
 
 void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms, int cylinderSegments) {

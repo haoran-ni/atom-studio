@@ -26,6 +26,12 @@ struct BVHNodeGPU {
 
 struct BVHBuildOptions {
     uint32_t leafSize = 8;
+
+    // Upper bound on parallel subtree-build tasks.
+    // 0 = auto (derived from hardware concurrency), 1 = force serial build.
+    // The produced tree is identical in shape and primitive partitioning
+    // regardless of this value; only node array ordering differs.
+    uint32_t maxParallelTasks = 0;
 };
 
 struct BVHData {

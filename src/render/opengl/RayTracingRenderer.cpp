@@ -82,6 +82,7 @@ uniform float uShadowOpacity;
 uniform int uAOSamples;
 uniform float uAORadius;
 uniform int uIsPerspective;
+uniform bool uHasTransparency;  // false = all primitives opaque (skip alpha fetches)
 
 // ---------- PCG random number generator ----------
 
@@ -273,7 +274,7 @@ void traceClosest(vec3 ro, vec3 rd, int skipIndex, out float hitT, out int hitIn
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
                 if (int(primIndex) == skipIndex) continue;
-                if (primitiveAlpha(primIndex) <= 0.001) continue;
+                if (uHasTransparency && primitiveAlpha(primIndex) <= 0.001) continue;
 
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
@@ -348,8 +349,13 @@ float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
-                float alpha = primitiveAlpha(primIndex);
-                if (alpha <= 0.001) continue;
+                // All-opaque scenes skip the alpha fetch; alpha = 1 then also
+                // makes the >= 0.999 checks below early-out on the first hit.
+                float alpha = 1.0;
+                if (uHasTransparency) {
+                    alpha = primitiveAlpha(primIndex);
+                    if (alpha <= 0.001) continue;
+                }
 
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
@@ -704,6 +710,7 @@ void RayTracingRenderer::cleanup() {
     m_structure = nullptr;
     m_bvhNodeCount = 0;
     m_bondCount = 0;
+    m_tboCapacity.clear();
     m_initialized = false;
 }
 
@@ -928,10 +935,8 @@ void RayTracingRenderer::uploadSceneData() {
     // Pack positions + radii: vec4(x, y, z, radius) per atom
     auto posData = m_structure->packPositionsAndRadii();
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_atomPosBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(posData.size() * sizeof(float)),
-                 posData.data(), GL_STATIC_DRAW);
+    uploadTBOData(m_atomPosBuf, posData.data(),
+                  static_cast<GLsizeiptr>(posData.size() * sizeof(float)));
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_BUFFER, m_atomPosTex);
@@ -940,14 +945,14 @@ void RayTracingRenderer::uploadSceneData() {
     // Pack colors with transient selection highlight applied.
     auto colorData = packAtomRenderColors(m_structure);
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_atomColorBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(colorData.size() * sizeof(float)),
-                 colorData.data(), GL_STATIC_DRAW);
+    uploadTBOData(m_atomColorBuf, colorData.data(),
+                  static_cast<GLsizeiptr>(colorData.size() * sizeof(float)));
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_BUFFER, m_atomColorTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomColorBuf);
+
+    m_hasTransparency = packedColorsHaveTransparency(colorData);
 
     // ── Bond TBOs ──────────────────────────────────────────────
 
@@ -959,45 +964,39 @@ void RayTracingRenderer::uploadSceneData() {
     if (m_bondCount > 0) {
         packedBonds = packBondRenderData(m_structure, BondPositionPacking::XYZW4);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(packedBonds.startPositions.size() * sizeof(float)),
-                     packedBonds.startPositions.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondStartBuf, packedBonds.startPositions.data(),
+                      static_cast<GLsizeiptr>(packedBonds.startPositions.size() * sizeof(float)));
         glActiveTexture(GL_TEXTURE6);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondStartTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondStartBuf);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(packedBonds.endPositions.size() * sizeof(float)),
-                     packedBonds.endPositions.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondEndBuf, packedBonds.endPositions.data(),
+                      static_cast<GLsizeiptr>(packedBonds.endPositions.size() * sizeof(float)));
         glActiveTexture(GL_TEXTURE7);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondEndTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndBuf);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartColorBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(packedBonds.startColors.size() * sizeof(float)),
-                     packedBonds.startColors.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondStartColorBuf, packedBonds.startColors.data(),
+                      static_cast<GLsizeiptr>(packedBonds.startColors.size() * sizeof(float)));
         glActiveTexture(GL_TEXTURE8);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondStartColorTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondStartColorBuf);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndColorBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(packedBonds.endColors.size() * sizeof(float)),
-                     packedBonds.endColors.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondEndColorBuf, packedBonds.endColors.data(),
+                      static_cast<GLsizeiptr>(packedBonds.endColors.size() * sizeof(float)));
         glActiveTexture(GL_TEXTURE9);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondEndColorTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bondEndColorBuf);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondRadiusBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(packedBonds.bondRadii.size() * sizeof(float)),
-                     packedBonds.bondRadii.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondRadiusBuf, packedBonds.bondRadii.data(),
+                      static_cast<GLsizeiptr>(packedBonds.bondRadii.size() * sizeof(float)));
         glActiveTexture(GL_TEXTURE10);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondRadiusTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, m_bondRadiusBuf);
+
+        m_hasTransparency = m_hasTransparency ||
+                            packedColorsHaveTransparency(packedBonds.startColors) ||
+                            packedColorsHaveTransparency(packedBonds.endColors);
     }
 
     // ── Unified BVH (atoms + bonds) ───────────────────────────
@@ -1058,38 +1057,26 @@ void RayTracingRenderer::uploadSceneData() {
         }
     }
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMinBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(nodeMinData.size() * sizeof(float)),
-                 nodeMinData.data(),
-                 GL_STATIC_DRAW);
+    uploadTBOData(m_bvhNodeMinBuf, nodeMinData.data(),
+                  static_cast<GLsizeiptr>(nodeMinData.size() * sizeof(float)));
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMinTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bvhNodeMinBuf);
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMaxBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(nodeMaxData.size() * sizeof(float)),
-                 nodeMaxData.data(),
-                 GL_STATIC_DRAW);
+    uploadTBOData(m_bvhNodeMaxBuf, nodeMaxData.data(),
+                  static_cast<GLsizeiptr>(nodeMaxData.size() * sizeof(float)));
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMaxTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_bvhNodeMaxBuf);
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_bvhNodeMetaBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(nodeMetaData.size() * sizeof(uint32_t)),
-                 nodeMetaData.data(),
-                 GL_STATIC_DRAW);
+    uploadTBOData(m_bvhNodeMetaBuf, nodeMetaData.data(),
+                  static_cast<GLsizeiptr>(nodeMetaData.size() * sizeof(uint32_t)));
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhNodeMetaTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, m_bvhNodeMetaBuf);
 
-    glBindBuffer(GL_TEXTURE_BUFFER, m_bvhPrimBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(bvh.primitiveIndices.size() * sizeof(uint32_t)),
-                 bvh.primitiveIndices.data(),
-                 GL_STATIC_DRAW);
+    uploadTBOData(m_bvhPrimBuf, bvh.primitiveIndices.data(),
+                  static_cast<GLsizeiptr>(bvh.primitiveIndices.size() * sizeof(uint32_t)));
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_BUFFER, m_bvhPrimTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, m_bvhPrimBuf);
@@ -1114,27 +1101,36 @@ void RayTracingRenderer::uploadAppearanceData() {
     }
 
     auto colorData = packAtomRenderColors(m_structure);
-    glBindBuffer(GL_TEXTURE_BUFFER, m_atomColorBuf);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 static_cast<GLsizeiptr>(colorData.size() * sizeof(float)),
-                 colorData.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    uploadTBOData(m_atomColorBuf, colorData.data(),
+                  static_cast<GLsizeiptr>(colorData.size() * sizeof(float)));
+
+    m_hasTransparency = packedColorsHaveTransparency(colorData);
 
     if (m_bondCount > 0) {
         std::vector<float> startColors;
         std::vector<float> endColors;
         packBondRenderColors(m_structure, startColors, endColors);
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondStartColorBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(startColors.size() * sizeof(float)),
-                     startColors.data(), GL_STATIC_DRAW);
+        uploadTBOData(m_bondStartColorBuf, startColors.data(),
+                      static_cast<GLsizeiptr>(startColors.size() * sizeof(float)));
+        uploadTBOData(m_bondEndColorBuf, endColors.data(),
+                      static_cast<GLsizeiptr>(endColors.size() * sizeof(float)));
 
-        glBindBuffer(GL_TEXTURE_BUFFER, m_bondEndColorBuf);
-        glBufferData(GL_TEXTURE_BUFFER,
-                     static_cast<GLsizeiptr>(endColors.size() * sizeof(float)),
-                     endColors.data(), GL_STATIC_DRAW);
-        glBindBuffer(GL_TEXTURE_BUFFER, 0);
+        m_hasTransparency = m_hasTransparency ||
+                            packedColorsHaveTransparency(startColors) ||
+                            packedColorsHaveTransparency(endColors);
+    }
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+}
+
+void RayTracingRenderer::uploadTBOData(GLuint buffer, const void* data, GLsizeiptr bytes) {
+    glBindBuffer(GL_TEXTURE_BUFFER, buffer);
+    GLsizeiptr& capacity = m_tboCapacity[buffer];
+    if (bytes > capacity) {
+        glBufferData(GL_TEXTURE_BUFFER, bytes, data, GL_DYNAMIC_DRAW);
+        capacity = bytes;
+    } else {
+        glBufferSubData(GL_TEXTURE_BUFFER, 0, bytes, data);
     }
 }
 
@@ -1215,6 +1211,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
     m_rtShader->setUniformValue("uShowAtoms", m_settings.showAtoms);
     m_rtShader->setUniformValue("uShowBonds", m_settings.showBonds);
+    m_rtShader->setUniformValue("uHasTransparency", m_hasTransparency);
 
     // Light direction is already in world space
     m_rtShader->setUniformValue("uLightDir", m_settings.lightDirWorld());

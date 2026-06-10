@@ -55,6 +55,7 @@ set(RENDER_VULKAN_SOURCES
 # ---------------------------------------------------------------------------
 set(RENDER_METAL_SOURCES
     metal/MetalAsyncOutput.h
+    metal/MetalBufferUtil.h
     metal/MetalTypes.h
     metal/MetalShaderLibrary.h
     metal/MetalShaderLibrary.mm

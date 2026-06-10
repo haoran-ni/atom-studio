@@ -7,6 +7,7 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <memory>
+#include <unordered_map>
 
 namespace atom::render {
 
@@ -44,6 +45,10 @@ private:
     void createAccumulationFBO();
     void uploadSceneData();
     void uploadAppearanceData();
+
+    /// Uploads into a TBO, reusing existing storage when capacity suffices
+    /// (glBufferSubData) and re-specifying with growth otherwise.
+    void uploadTBOData(GLuint buffer, const void* data, GLsizeiptr bytes);
 
     // Render passes
     void renderRTPass(const Camera& camera);
@@ -107,7 +112,9 @@ private:
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_appearanceDirty = false;
+    bool m_hasTransparency = false;
     uint64_t m_lastStateHash = 0;
+    std::unordered_map<GLuint, GLsizeiptr> m_tboCapacity;
 };
 
 } // namespace atom::render
