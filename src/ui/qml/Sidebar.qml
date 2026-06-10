@@ -722,6 +722,58 @@ Rectangle {
                                     }
                                 }
                             }
+
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Show Strokes")
+                                        checked: sidebar.viewport ? sidebar.viewport.outlineEnabled : true
+                                        onCheckedChanged: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.outlineEnabled = checked
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Stroke Thickness")
+                                        statusHintTarget: sidebar
+                                        tooltipText: qsTr("Stroke outline width in pixels along silhouettes and occluding boundaries.")
+                                        from: 0.5
+                                        to: 6
+                                        stepSize: 0.1
+                                        decimals: 1
+                                        defaultValue: 2.0
+                                        enabled: sidebar.viewport ? sidebar.viewport.outlineEnabled : true
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 2.0
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.outlineWidth = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    RGBColorPicker {
+                                        defaultColor: Qt.rgba(0, 0, 0, 1.0)
+                                        sourceColor: sidebar.viewport ? sidebar.viewport.outlineColor : defaultColor
+                                        onColorApplied: function(c) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.outlineColor = c
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -9,9 +9,11 @@
 #include "../../data/Structure.h"
 #include <QDebug>
 #include <QMatrix4x4>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -558,6 +560,20 @@ void MetalRayTracingRenderer::uploadSceneData() {
         };
     }
 
+    // Scene AABB over all primitives (for conservative outline-width bounds)
+    for (int axis = 0; axis < 3; ++axis) {
+        m_sceneBoundsMin[axis] = 1e30f;
+        m_sceneBoundsMax[axis] = -1e30f;
+    }
+    for (const PrimitiveBounds& pb : primBounds) {
+        m_sceneBoundsMin[0] = std::min(m_sceneBoundsMin[0], pb.minX);
+        m_sceneBoundsMin[1] = std::min(m_sceneBoundsMin[1], pb.minY);
+        m_sceneBoundsMin[2] = std::min(m_sceneBoundsMin[2], pb.minZ);
+        m_sceneBoundsMax[0] = std::max(m_sceneBoundsMax[0], pb.maxX);
+        m_sceneBoundsMax[1] = std::max(m_sceneBoundsMax[1], pb.maxY);
+        m_sceneBoundsMax[2] = std::max(m_sceneBoundsMax[2], pb.maxZ);
+    }
+
     BVHData bvh = buildBVH(primBounds.data(), totalPrims);
     assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
     assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
@@ -664,6 +680,33 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.showAtoms = m_settings.showAtoms ? 1 : 0;
     rt.showBonds = m_settings.showBonds ? 1 : 0;
     rt.isPerspective = camera.isPerspective() ? 1 : 0;
+
+    // Stroke outlines: pixel→world scale factor valid for both projections
+    // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).
+    const bool outlineOn = m_settings.outlineEnabled && m_settings.outlineWidth > 0.0f;
+    const float p11 = camera.projectionMatrix()(1, 1);
+    const float pixelScale =
+        (p11 > 1e-6f) ? 2.0f / (p11 * static_cast<float>(m_height)) : 0.0f;
+    rt.outlineScale = outlineOn ? m_settings.outlineWidth * pixelScale : 0.0f;
+    const auto& oc = m_settings.outlineColor;
+    rt.outlineColor = simd_make_float4(oc.redF(), oc.greenF(), oc.blueF(), 1.0f);
+    if (outlineOn && camera.isPerspective()) {
+        // Conservative BVH padding: outline width at the farthest scene corner
+        // (1.1× margin absorbs runtime atom-scale AABB growth).
+        float dFarSq = 0.0f;
+        for (int corner = 0; corner < 8; ++corner) {
+            const float cx = (corner & 1) ? m_sceneBoundsMax[0] : m_sceneBoundsMin[0];
+            const float cy = (corner & 2) ? m_sceneBoundsMax[1] : m_sceneBoundsMin[1];
+            const float cz = (corner & 4) ? m_sceneBoundsMax[2] : m_sceneBoundsMin[2];
+            const float dx = cx - camPos.x();
+            const float dy = cy - camPos.y();
+            const float dz = cz - camPos.z();
+            dFarSq = std::max(dFarSq, dx * dx + dy * dy + dz * dz);
+        }
+        rt.outlineWorldMax = rt.outlineScale * std::sqrt(dFarSq) * 1.1f;
+    } else {
+        rt.outlineWorldMax = rt.outlineScale;
+    }
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 

@@ -204,6 +204,9 @@ float MetalViewport::specularStrength() const { return m_specularStrength; }
 float MetalViewport::shininess() const { return m_shininess; }
 float MetalViewport::lightAzimuth() const { return m_lightAzimuth; }
 float MetalViewport::lightElevation() const { return m_lightElevation; }
+bool MetalViewport::outlineEnabled() const { return m_outlineEnabled; }
+float MetalViewport::outlineWidth() const { return m_outlineWidth; }
+QColor MetalViewport::outlineColor() const { return m_outlineColor; }
 bool MetalViewport::showViewportAxes() const { return m_showViewportAxes; }
 float MetalViewport::viewportAxesX() const { return m_viewportAxesX; }
 float MetalViewport::viewportAxesY() const { return m_viewportAxesY; }
@@ -564,6 +567,31 @@ void MetalViewport::setLightElevation(float value) {
     }
 }
 
+void MetalViewport::setOutlineEnabled(bool enable) {
+    if (m_outlineEnabled != enable) {
+        m_outlineEnabled = enable;
+        emit outlineEnabledChanged();
+        update();
+    }
+}
+
+void MetalViewport::setOutlineWidth(float width) {
+    const float clamped = std::clamp(width, 0.0f, 10.0f);
+    if (!qFuzzyCompare(m_outlineWidth, clamped)) {
+        m_outlineWidth = clamped;
+        emit outlineWidthChanged();
+        update();
+    }
+}
+
+void MetalViewport::setOutlineColor(const QColor& color) {
+    if (m_outlineColor != color) {
+        m_outlineColor = color;
+        emit outlineColorChanged();
+        update();
+    }
+}
+
 void MetalViewport::setShowViewportAxes(bool show) {
     if (m_showViewportAxes != show) {
         m_showViewportAxes = show;
@@ -720,6 +748,9 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     qreal dpr = renderWindow->devicePixelRatio();
     int pw = static_cast<int>(width() * dpr);
     int ph = static_cast<int>(height() * dpr);
+    m_renderSettings.outlineEnabled = m_outlineEnabled;
+    m_renderSettings.outlineWidth = m_outlineWidth * static_cast<float>(dpr);
+    m_renderSettings.outlineColor = m_outlineColor;
     m_renderSettings.showViewportAxes = m_showViewportAxes;
     m_renderSettings.viewportAxesScreenX = m_viewportAxesX * static_cast<float>(dpr);
     m_renderSettings.viewportAxesScreenY = m_viewportAxesY * static_cast<float>(dpr);

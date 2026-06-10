@@ -155,6 +155,10 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
     unitCellUniforms.atomScale = style.radius;
     unitCellUniforms.bondRadius = style.radius;
 
+    // No stroke outlines on the unit-cell object — the corner joints share the
+    // sphere impostor pipeline with atoms and would otherwise grow shells.
+    unitCellUniforms.outlineWidthPx = 0.0f;
+
     // Flat color: no shading terms for the unit-cell object.
     unitCellUniforms.ambient = 1.0f;
     unitCellUniforms.diffuse = 0.0f;

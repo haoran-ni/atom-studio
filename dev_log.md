@@ -4,6 +4,81 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-10: Stroke Outlines for Atoms and Bonds (Metal Raster + RT)
+
+### Summary
+
+Added solid, sharp stroke outlines along the visible silhouettes and occluding boundaries of atoms and bonds in both the Metal raster renderer and the Metal ray-tracing renderer, using the inverted-hull (shell) technique: each object is also rendered as a slightly inflated copy whose far/inner surface is shown, so ordinary depth testing produces outlines only where forms turn away or overlap. Where a bond meets the front-facing surface of an atom, the bond's shell stays inside the sphere and is depth-occluded, so the contact region remains continuous with no separating stroke — matching the target visual language without special-case logic.
+
+Stroke width is constant in screen pixels in both perspective and orthographic projection, so a sphere's outline is a geometrically exact circle at any distance. This replaced earlier screen-space depth-edge-detection attempts, which produced orientation-dependent line thickness ("rounded square" silhouettes at small projected sizes).
+
+Sidebar controls live under the `Structure` tab: a `Show Strokes` checkbox, a `Stroke Thickness` slider (0.5–6 px), and a stroke color picker (default black). The implementation plan for this session is archived at `archived/stroke_outline_implementation_plan.md`.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/render/common/RenderSettings.h` | Added `outlineEnabled`, `outlineWidth` (pixels), and `outlineColor` settings |
+| `src/render/common/RenderStateHash.cpp` | Hashed the outline settings so RT accumulation resets when they change |
+| `src/render/metal/MetalTypes.h` | Extended `SceneUniforms` (outline width/color/pixel scale) and `RTUniforms` (outline scale/color/world-max bound) |
+| `src/render/metal/MetalShaderLibrary.h/.mm` | Sphere impostor shell logic; new `bond_outline_*` shaders and `bondOutlinePipeline`; RT shell intersection helpers and outline-aware `traceClosest`/`testNodeAABB`/`rt_fragment` |
+| `src/render/metal/MetalBondRenderer.mm` | Second instanced draw of the bond cylinder mesh with front-face culling when outlines are active |
+| `src/render/metal/MetalRenderer.mm` | Filled raster outline uniforms (pixel→world scale from `P[1][1]` and target height) |
+| `src/render/metal/MetalRayTracingRenderer.h/.mm` | Filled RT outline uniforms; tracked scene bounds for conservative BVH AABB padding |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Zeroed outline width for the unit-cell object so its impostor corner joints do not grow shells |
+| `src/ui/components/MetalViewport.h/.mm` | Added `outlineEnabled`/`outlineWidth`/`outlineColor` Q_PROPERTYs; width is dpr-scaled into `RenderSettings` |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Added the same Q_PROPERTYs for QML interface parity (OpenGL renderers ignore them for now) |
+| `src/ui/qml/Sidebar.qml` | Added `Show Strokes`, `Stroke Thickness`, and stroke color controls under the `Structure` tab |
+
+### Architecture Decisions
+
+#### 1. Inverted Hull Instead of Screen-Space Edge Detection
+- Screen-space depth-discontinuity detection was tried previously and rejected: edge thickness varies with silhouette orientation relative to the pixel grid, deforming circles into rounded squares when viewed from afar
+- The inverted hull renders the outline as real geometry with an analytically exact silhouette, so stroke shape and width are correct by construction
+- No explicit depth-layer manipulation is needed: showing the inflated copy's far/inner surface makes the real object win the depth test inside its own silhouette, while the stroke still occludes farther objects and is occluded by closer ones
+
+#### 2. Bond–Atom Contact Continuity Falls Out of Depth Testing
+- Where a bond emerges from an atom's front face, the bond's inflated shell is still inside the sphere, so the sphere surface depth-occludes it — no stroke at the contact
+- The stroke begins only once the bond stands proud of the sphere by more than the shell width, giving the "bond emerges naturally from the atom" look without contact-detection logic
+- The same rule suppresses strokes at interpenetrating atom–atom seams, matching the "no strokes at object–object contact boundaries" requirement
+
+#### 3. Raster Atoms Need No Extra Draw Call
+- The sphere impostor shader was extended instead: the billboard covers `R + w`, and fragments that miss the inner sphere but hit the inflated one output the outline color with depth from the inflated sphere's far intersection
+- This is the analytic equivalent of an inverted hull at zero additional instance cost
+- Raster bonds use the classic two-draw form: the same instanced cylinder mesh is re-drawn dilated (radius `+w`, ends extended by `w`) with front faces culled; scaling rather than normal-offsetting keeps the hull closed at cap rims
+
+#### 4. RT Outlines Compete in the Same Closest-Hit Selection
+- In `traceClosest`, when a primitive is missed, the inflated primitive's exit (far) intersection becomes an outline candidate; real hits and outline candidates compete for the global closest hit
+- Outline hits shade as flat unlit color (no shadows or AO), and shadow/AO/any-hit rays ignore shells entirely
+- BVH node AABB tests get a conservative per-frame `outlineWorldMax` expansion derived from the camera distance to the farthest scene-bounds corner, so shells near leaf boundaries are not culled
+
+#### 5. Constant Pixel Width Via a Projection-Agnostic Scale Factor
+- `pixelScale = 2 / (P[1][1] * viewportHeightPx)` is valid for both projections (`P[1][1] = 1/tan(fovY/2)` perspective, `2/orthoHeight` orthographic)
+- World-space shell width is `widthPx × pixelScale × viewDepth` in perspective and `widthPx × pixelScale` in ortho, computed per instance (raster) or per primitive (RT)
+- The QML-facing width is in logical pixels and multiplied by the device pixel ratio when building `RenderSettings`, matching the viewport-axes convention
+
+#### 6. Overlay Objects Get No Strokes
+- The unit cell, rotation gizmo, and viewport axes are informational overlays and must not be outlined
+- The unit-cell renderer shares the sphere impostor pipeline for its corner joints, which initially inherited shells and showed bulging dark spheres at unit-cell vertices in raster mode (the joints are tiny, so a 2 px shell dominated them); fixed by zeroing `outlineWidthPx` in the unit-cell's local uniforms copy
+- The gizmo and viewport-axes renderers were verified unaffected: they use flat-color pipelines with no outline logic
+
+### Build Commands
+
+```bash
+cmake --build build
+./build/bin/atom-studio.app/Contents/MacOS/atom-studio
+```
+
+### Testing
+
+- Built successfully after each stage (settings, shaders, pipelines, viewport wiring, QML)
+- Runtime launch verified MSL compilation succeeds and all pipelines (including the new bond outline pipeline) are created
+- Runtime launch after the sidebar changes showed no QML errors or warnings
+- User-reported regression (spheres appearing at unit-cell vertices in raster mode with strokes enabled) was diagnosed as the shared sphere impostor pipeline and fixed; clean startup re-verified
+- Visual checks performed in-app: stroke circles at silhouettes, smooth bond–atom contacts, and the new Structure-tab controls; OpenGL backend rendering of outlines remains a follow-up
+
+---
+
 ## 2026-06-09: Selected Atom Color, Transparency, and Reset Controls
 
 ### Summary

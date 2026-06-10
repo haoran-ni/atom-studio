@@ -60,6 +60,11 @@ struct RenderSettings {
     int sphereSegments = 32;          // For tessellated spheres (fallback)
     int cylinderSegments = 20;        // For mesh bond cylinders
 
+    // Stroke outlines (inverted-hull shells around atoms and bonds)
+    bool outlineEnabled = true;
+    float outlineWidth = 2.0f;               // Stroke width in rendered pixels
+    QColor outlineColor = QColor(0, 0, 0);
+
     // Effects
     bool enableAmbientOcclusion = false;
     bool enableShadows = false;

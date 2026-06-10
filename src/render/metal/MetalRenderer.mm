@@ -170,6 +170,16 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     uniforms.bondRadius = settings.bondRadius;
     uniforms.isPerspective = camera.isPerspective() ? 1 : 0;
 
+    // Stroke outlines: world-units-per-pixel factor valid for both projections
+    // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).
+    const bool outlineOn = settings.outlineEnabled && settings.outlineWidth > 0.0f;
+    const float p11 = camera.projectionMatrix()(1, 1);
+    uniforms.outlineWidthPx = outlineOn ? settings.outlineWidth : 0.0f;
+    uniforms.outlinePixelScale =
+        (p11 > 1e-6f) ? 2.0f / (p11 * static_cast<float>(m_height)) : 0.0f;
+    const auto& oc = settings.outlineColor;
+    uniforms.outlineColor = simd_make_float4(oc.redF(), oc.greenF(), oc.blueF(), 1.0f);
+
     // Create command buffer and render pass
     id<MTLCommandBuffer> cmdBuffer = [m_impl->commandQueue commandBuffer];
 

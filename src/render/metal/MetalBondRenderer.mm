@@ -141,6 +141,25 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms, 
                        indexBuffer:m_impl->cylinderIndexBuffer
                  indexBufferOffset:0
                      instanceCount:m_bondCount];
+
+    // Stroke outline pass: re-draw the same instanced mesh inflated by the
+    // outline width with front faces culled (inverted hull). Buffers 0-2 are
+    // already bound; only pipeline and cull mode change.
+    if (uniforms.outlineWidthPx > 0.0f) {
+        id<MTLRenderPipelineState> outlinePipeline =
+            (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->bondOutlinePipeline();
+        [encoder setRenderPipelineState:outlinePipeline];
+        [encoder setCullMode:MTLCullModeFront];
+
+        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                            indexCount:m_cylinderIndexCount
+                             indexType:MTLIndexTypeUInt32
+                           indexBuffer:m_impl->cylinderIndexBuffer
+                     indexBufferOffset:0
+                         instanceCount:m_bondCount];
+
+        [encoder setCullMode:MTLCullModeBack];
+    }
 }
 
 } // namespace atom::render::metal

@@ -22,7 +22,12 @@ struct SceneUniforms {
     float         atomScale;
     float         bondRadius;
     int32_t       isPerspective;
-    float         _pad;
+    float         outlineWidthPx;    // stroke width in rendered pixels (0 = off)
+    simd_float4   outlineColor;      // rgb stroke color
+    float         outlinePixelScale; // world units per pixel: × view depth (persp) or absolute (ortho)
+    float         _pad0;
+    float         _pad1;
+    float         _pad2;
 };
 
 // Per-instance sphere data — [[buffer(2)]] in sphere shader
@@ -80,6 +85,12 @@ struct RTUniforms {
     int32_t       showAtoms;
     int32_t       showBonds;
     int32_t       isPerspective;
+    float         outlineScale;      // widthPx × pixelScale; × hit distance (persp) or absolute (ortho); 0 = off
+    simd_float4   outlineColor;      // rgb stroke color
+    float         outlineWorldMax;   // conservative world-space width bound for BVH AABB padding
+    float         _pad0;
+    float         _pad1;
+    float         _pad2;
 };
 
 // Unit-cell object overlay uniforms for RT output compositing

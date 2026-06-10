@@ -48,6 +48,11 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hi(settings.backgroundColor.red()));
     combine(hi(settings.backgroundColor.green()));
     combine(hi(settings.backgroundColor.blue()));
+    combine(hb(settings.outlineEnabled));
+    combine(hf(settings.outlineWidth));
+    combine(hi(settings.outlineColor.red()));
+    combine(hi(settings.outlineColor.green()));
+    combine(hi(settings.outlineColor.blue()));
 
     return h;
 }

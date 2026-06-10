@@ -28,7 +28,12 @@ struct SceneUniforms {
     float    atomScale;
     float    bondRadius;
     int      isPerspective;
-    float    _pad;
+    float    outlineWidthPx;
+    float4   outlineColor;
+    float    outlinePixelScale;
+    float    _pad0;
+    float    _pad1;
+    float    _pad2;
 };
 
 struct SphereInstance {
@@ -82,6 +87,12 @@ struct RTUniforms {
     int      showAtoms;
     int      showBonds;
     int      isPerspective;
+    float    outlineScale;
+    float4   outlineColor;
+    float    outlineWorldMax;
+    float    _pad0;
+    float    _pad1;
+    float    _pad2;
 };
 
 struct DisplayUniforms {
@@ -116,6 +127,7 @@ struct SphereVertexOut {
     float4 position [[position]];
     float3 viewCenter;
     float  radius;
+    float  outerRadius;   // radius + outline shell width (== radius when outlines off)
     float4 color;
     float3 viewPosOnQuad;
 };
@@ -137,12 +149,17 @@ vertex SphereVertexOut sphere_vertex(
     float4 viewCenter = scene.viewMatrix * float4(inst.positionAndRadius.xyz, 1.0);
     out.viewCenter = viewCenter.xyz;
 
-    // Billboard size
-    float R = out.radius;
+    // Outline shell width in view-space units (constant on-screen pixel width)
+    float dist = -viewCenter.z;
+    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+                   (scene.isPerspective ? max(dist, 0.0) : 1.0);
+    out.outerRadius = out.radius + shellW;
+
+    // Billboard size (must cover the outer shell silhouette)
+    float R = out.outerRadius;
     float billboardR;
     if (scene.isPerspective) {
         // Perspective-correct: projected silhouette grows as sphere nears camera
-        float dist = -viewCenter.z;
         if (dist > R * 1.01) {
             billboardR = R * dist / sqrt(dist * dist - R * R);
         } else {
@@ -179,8 +196,10 @@ fragment SphereFragmentOut sphere_fragment(
 
     float3 C = in.viewCenter;
     float R = in.radius;
+    float Rout = in.outerRadius;
     float3 hitPos;
     float3 normal;
+    bool isOutline = false;
 
     if (scene.isPerspective) {
         // Perspective ray-sphere intersection in view space
@@ -190,30 +209,61 @@ fragment SphereFragmentOut sphere_fragment(
         float c = dot(C, C) - R * R;
         float disc = b * b - c;
 
-        if (disc < 0.0) discard_fragment();
-
-        float sqrtDisc = sqrt(disc);
-        float t = b - sqrtDisc;
-        if (t < 0.0) t = b + sqrtDisc;
-        if (t < 0.0) discard_fragment();
-
-        hitPos = t * rayDir;
+        if (disc >= 0.0) {
+            float sqrtDisc = sqrt(disc);
+            float t = b - sqrtDisc;
+            if (t < 0.0) t = b + sqrtDisc;
+            if (t < 0.0) discard_fragment();
+            hitPos = t * rayDir;
+        } else if (Rout > R) {
+            // Inner sphere missed: outline shell. Inverted hull — show the far
+            // (inner-facing) surface of the inflated sphere so the real object
+            // always wins the depth test inside its own silhouette.
+            float cOut = dot(C, C) - Rout * Rout;
+            float discOut = b * b - cOut;
+            if (discOut < 0.0) discard_fragment();
+            float t = b + sqrt(discOut);
+            if (t < 0.0) discard_fragment();
+            hitPos = t * rayDir;
+            isOutline = true;
+        } else {
+            discard_fragment();
+        }
     } else {
         // Orthographic ray-sphere intersection in view space
         // Ray: origin = (quad.x, quad.y, 0), direction = (0, 0, -1)
         float dx = in.viewPosOnQuad.x - C.x;
         float dy = in.viewPosOnQuad.y - C.y;
-        float disc = R * R - dx * dx - dy * dy;
+        float rr = dx * dx + dy * dy;
+        float disc = R * R - rr;
 
-        if (disc < 0.0) discard_fragment();
+        if (disc >= 0.0) {
+            float sqrtDisc = sqrt(disc);
+            // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z).
+            // If that surface is behind the camera (hz > 0), fall back to the back
+            // surface — this guards against the camera entering the sphere volume.
+            float hz = C.z + sqrtDisc;
+            if (hz > 0.0) hz = C.z - sqrtDisc;
+            hitPos = float3(in.viewPosOnQuad.xy, hz);
+        } else if (Rout > R) {
+            // Outline shell: far surface of the inflated sphere
+            float discOut = Rout * Rout - rr;
+            if (discOut < 0.0) discard_fragment();
+            float hz = C.z - sqrt(discOut);
+            if (hz > 0.0) discard_fragment();
+            hitPos = float3(in.viewPosOnQuad.xy, hz);
+            isOutline = true;
+        } else {
+            discard_fragment();
+        }
+    }
 
-        float sqrtDisc = sqrt(disc);
-        // Front hit z = C.z + sqrtDisc (closest to camera, i.e. largest z).
-        // If that surface is behind the camera (hz > 0), fall back to the back
-        // surface — this guards against the camera entering the sphere volume.
-        float hz = C.z + sqrtDisc;
-        if (hz > 0.0) hz = C.z - sqrtDisc;
-        hitPos = float3(in.viewPosOnQuad.xy, hz);
+    if (isOutline) {
+        SphereFragmentOut outlineOut;
+        outlineOut.color = float4(scene.outlineColor.rgb, in.color.a);
+        float4 outlineClip = scene.projectionMatrix * float4(hitPos, 1.0);
+        outlineOut.depth = outlineClip.z / outlineClip.w;
+        return outlineOut;
     }
 
     normal = normalize(hitPos - C);
@@ -326,6 +376,81 @@ fragment float4 bond_fragment(
     float3 specular = scene.specular * spec * float3(1.0);
 
     return float4(ambient + diffuse + specular, bondColor.a);
+}
+
+// -------------------------------------------------------
+// Bond Outline Shader (inverted hull)
+// -------------------------------------------------------
+// Re-renders the bond cylinder mesh inflated by the outline width with front
+// faces culled, so only the inner/back surface is visible. Depth testing then
+// shows the shell as a stroke just outside the bond's silhouette while the
+// bond itself (and any closer geometry, e.g. the atom a bond emerges from)
+// occludes it everywhere else.
+
+vertex BondVertexOut bond_outline_vertex(
+    uint vid [[vertex_id]],
+    uint iid [[instance_id]],
+    constant SceneUniforms& scene [[buffer(0)]],
+    constant BondMeshVertex* cylinderVertices [[buffer(1)]],
+    constant BondInstance* instances [[buffer(2)]])
+{
+    BondVertexOut out;
+
+    BondInstance bond = instances[iid];
+    out.startColor = bond.startColor;
+    out.endColor = bond.endColor;
+
+    float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
+    float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
+    float3 startView = startView4.xyz;
+    float3 endView = endView4.xyz;
+
+    float3 bondDir = endView - startView;
+    float bondLength = length(bondDir);
+    float3 axisDir = (bondLength > 1e-6f) ? (bondDir / bondLength) : float3(0.0f, 0.0f, 1.0f);
+    float3 up = fabs(axisDir.y) < 0.99f ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 right = normalize(cross(up, axisDir));
+    up = cross(axisDir, right);
+
+    if (bondLength > 1e-6f) {
+        float scaledA = bond.startRadius * scene.atomScale;
+        float scaledB = bond.endRadius * scene.atomScale;
+        float splitDistance = 0.5f * (bondLength + scaledA - scaledB);
+        out.splitT = clamp(splitDistance / bondLength, 0.0f, 1.0f);
+    } else {
+        out.splitT = 0.5f;
+    }
+
+    // Shell width from the bond midpoint's view depth (constant pixel width)
+    float midDist = -0.5f * (startView.z + endView.z);
+    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+                   (scene.isPerspective ? max(midDist, 0.0f) : 1.0f);
+
+    BondMeshVertex vert = cylinderVertices[vid];
+    float bondRadius = bond.bondRadius > 0.0f ? bond.bondRadius : scene.bondRadius;
+    // Dilate the capped unit cylinder: radius + w, ends extended by w along the
+    // axis. Scaling (not normal offset) keeps the hull closed at the cap rims.
+    float3 localPos = right * vert.position.x * (bondRadius + shellW) +
+                      up * vert.position.y * (bondRadius + shellW) +
+                      axisDir * (vert.position.z * (bondLength + 2.0f * shellW) - shellW);
+    out.viewPos = startView + localPos;
+
+    float3 localNormal = float3(vert.normal);
+    out.normalView = normalize(right * localNormal.x +
+                               up * localNormal.y +
+                               axisDir * localNormal.z);
+    out.axial = vert.position.z;
+    out.position = scene.projectionMatrix * float4(out.viewPos, 1.0f);
+    return out;
+}
+
+fragment float4 bond_outline_fragment(
+    BondVertexOut in [[stage_in]],
+    constant SceneUniforms& scene [[buffer(0)]])
+{
+    float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
+    if (bondColor.a <= 0.001f) discard_fragment();
+    return float4(scene.outlineColor.rgb, bondColor.a);
 }
 
 // -------------------------------------------------------
@@ -716,6 +841,65 @@ float intersectSphere(float3 ro, float3 rd, float3 center, float radius) {
     return -1.0;
 }
 
+// Exit (far) intersection of a sphere — the inner-facing surface of an
+// outline shell (inverted-hull analog for ray tracing).
+float intersectSphereExit(float3 ro, float3 rd, float3 center, float radius) {
+    float3 oc = ro - center;
+    float b = dot(oc, rd);
+    float3 q = oc - b * rd;
+    float disc = radius * radius - dot(q, q);
+    if (disc < 0.0) return -1.0;
+    float t = -b + sqrt(disc);
+    return (t > 0.0) ? t : -1.0;
+}
+
+// Exit (far) intersection of a capped cylinder, as the intersection of the
+// infinite-cylinder interval with the axis slab interval (convex solid).
+float intersectCappedCylinderExit(float3 ro, float3 rd, float3 pa, float3 pb, float radius) {
+    float3 ba = pb - pa;
+    float baba = dot(ba, ba);
+    if (baba < 1e-8) return -1.0;
+
+    float3 oc = ro - pa;
+    float bard = dot(ba, rd);
+    float baoc = dot(ba, oc);
+
+    // Axis slab interval: y(t) = baoc + t·bard ∈ [0, baba]
+    float tsMin = -1e30;
+    float tsMax = 1e30;
+    if (abs(bard) > 1e-8) {
+        float t0 = -baoc / bard;
+        float t1 = (baba - baoc) / bard;
+        tsMin = min(t0, t1);
+        tsMax = max(t0, t1);
+    } else if (baoc < 0.0 || baoc > baba) {
+        return -1.0;
+    }
+
+    // Infinite cylinder interval (stable perpendicular formulation)
+    float3 rd_perp = rd - (bard / baba) * ba;
+    float3 oc_perp = oc - (baoc / baba) * ba;
+    float a = dot(rd_perp, rd_perp);
+    float tcMin = -1e30;
+    float tcMax = 1e30;
+    if (a > 1e-8) {
+        float hb = dot(oc_perp, rd_perp);
+        float3 q = oc_perp - (hb / a) * rd_perp;
+        float disc = a * (radius * radius - dot(q, q));
+        if (disc < 0.0) return -1.0;
+        float sqrtDisc = sqrt(disc);
+        tcMin = (-hb - sqrtDisc) / a;
+        tcMax = (-hb + sqrtDisc) / a;
+    } else if (dot(oc_perp, oc_perp) > radius * radius) {
+        return -1.0;
+    }
+
+    float entry = max(tsMin, tcMin);
+    float exitT = min(tsMax, tcMax);
+    if (entry > exitT || exitT <= 0.0) return -1.0;
+    return exitT;
+}
+
 constant uint BVH_INVALID_INDEX = 0xffffffffu;
 constant int BVH_STACK_SIZE = 64;
 
@@ -733,11 +917,14 @@ bool intersectAABB(float3 ro, float3 invRd, float3 bmin, float3 bmax, float tMax
 }
 
 // Test a BVH node's AABB only (fetches min/max, not meta).
+// outlinePad: extra conservative expansion for outline shells (0 when the
+// traversal does not consider outlines, e.g. shadow/AO/any-hit rays).
 bool testNodeAABB(int nodeIndex,
                   float3 ro,
                   float3 invRd,
                   float tMax,
                   float atomScale,
+                  float outlinePad,
                   device const float4* bvhNodeMinData,
                   device const float4* bvhNodeMaxData,
                   thread float& tNearOut) {
@@ -746,7 +933,7 @@ bool testNodeAABB(int nodeIndex,
 
     // BVH is built with base radii. Expand node AABBs conservatively when
     // runtime atom scale is larger than 1 to avoid misses.
-    float expansion = max(atomScale - 1.0, 0.0) * minData.w;
+    float expansion = max(atomScale - 1.0, 0.0) * minData.w + outlinePad;
     float3 bmin = minData.xyz - float3(expansion);
     float3 bmax = maxData.xyz + float3(expansion);
     return intersectAABB(ro, invRd, bmin, bmax, tMax, tNearOut);
@@ -783,9 +970,14 @@ void traceClosest(float3 ro, float3 rd,
                   device const uint* bvhPrimIndices,
                   int bvhNodeCount,
                   int skipIndex,
-                  thread float& hitT, thread int& hitIndex) {
+                  float outlineScale,
+                  float outlineWorldMax,
+                  bool isPerspective,
+                  thread float& hitT, thread int& hitIndex,
+                  thread bool& hitOutline) {
     hitT = 1e30;
     hitIndex = -1;
+    hitOutline = false;
     if (bvhNodeCount <= 0) return;
 
     int totalPrims = atomCount + bondCount;
@@ -816,6 +1008,19 @@ void traceClosest(float3 ro, float3 rd,
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
                         hitIndex = int(primIndex);
+                        hitOutline = false;
+                    } else if (t < 0.0 && outlineScale > 0.0) {
+                        // Sphere missed: outline shell candidate at the exit
+                        // point of the inflated sphere (inverted-hull analog —
+                        // the shell loses the depth race inside the silhouette
+                        // but wins just outside it).
+                        float w = outlineScale * (isPerspective ? length(atom.xyz - ro) : 1.0);
+                        float tShell = intersectSphereExit(ro, rd, atom.xyz, r + w);
+                        if (tShell > 0.0 && tShell < hitT) {
+                            hitT = tShell;
+                            hitIndex = int(primIndex);
+                            hitOutline = true;
+                        }
                     }
                 } else if (showBonds) {
                     int bondIdx = int(primIndex) - atomCount;
@@ -826,6 +1031,22 @@ void traceClosest(float3 ro, float3 rd,
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
                         hitIndex = int(primIndex);
+                        hitOutline = false;
+                    } else if (t < 0.0 && outlineScale > 0.0) {
+                        // Cylinder missed: outline shell candidate at the exit
+                        // point of the dilated capped cylinder.
+                        float3 mid = 0.5 * (pa + pb);
+                        float w = outlineScale * (isPerspective ? length(mid - ro) : 1.0);
+                        float3 ba = pb - pa;
+                        float baLen = length(ba);
+                        float3 axis = (baLen > 1e-6) ? (ba / baLen) : float3(0.0, 0.0, 1.0);
+                        float tShell = intersectCappedCylinderExit(
+                            ro, rd, pa - axis * w, pb + axis * w, bondRadius + w);
+                        if (tShell > 0.0 && tShell < hitT) {
+                            hitT = tShell;
+                            hitIndex = int(primIndex);
+                            hitOutline = true;
+                        }
                     }
                 }
             }
@@ -840,11 +1061,11 @@ void traceClosest(float3 ro, float3 rd,
         float rightNear = 0.0;
 
         if (left != BVH_INVALID_INDEX) {
-            hitLeft = testNodeAABB(int(left), ro, invRd, hitT, atomScale,
+            hitLeft = testNodeAABB(int(left), ro, invRd, hitT, atomScale, outlineWorldMax,
                                    bvhNodeMinData, bvhNodeMaxData, leftNear);
         }
         if (right != BVH_INVALID_INDEX) {
-            hitRight = testNodeAABB(int(right), ro, invRd, hitT, atomScale,
+            hitRight = testNodeAABB(int(right), ro, invRd, hitT, atomScale, outlineWorldMax,
                                     bvhNodeMinData, bvhNodeMaxData, rightNear);
         }
 
@@ -939,12 +1160,12 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
         uint right = meta.y;
         float tNear;
         if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
-            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale,
+            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale, 0.0,
                              bvhNodeMinData, bvhNodeMaxData, tNear))
                 stack[sp++] = int(left);
         }
         if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
-            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale,
+            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale, 0.0,
                              bvhNodeMinData, bvhNodeMaxData, tNear))
                 stack[sp++] = int(right);
         }
@@ -1013,12 +1234,12 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
         uint right = meta.y;
         float tNear;
         if (left != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
-            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale,
+            if (testNodeAABB(int(left), ro, invRd, maxDist, atomScale, 0.0,
                              bvhNodeMinData, bvhNodeMaxData, tNear))
                 stack[sp++] = int(left);
         }
         if (right != BVH_INVALID_INDEX && sp < BVH_STACK_SIZE) {
-            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale,
+            if (testNodeAABB(int(right), ro, invRd, maxDist, atomScale, 0.0,
                              bvhNodeMinData, bvhNodeMaxData, tNear))
                 stack[sp++] = int(right);
         }
@@ -1093,19 +1314,31 @@ fragment float4 rt_fragment(
     bool showBonds = rt.showBonds != 0;
     bool showAtoms = rt.showAtoms != 0;
 
-    // Trace primary ray
+    // Trace primary ray (outline shells participate as inverted-hull analogs)
     float hitT;
     int hitIndex;
+    bool hitOutline;
     traceClosest(rayOrigin, rayDir, atomPositions, atomColors,
                  rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
                  bondStartColors, bondEndColors,
                  bondRadii, rt.bondCount, showBonds,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
-                 rt.bvhNodeCount, -1, hitT, hitIndex);
+                 rt.bvhNodeCount, -1,
+                 rt.outlineScale, rt.outlineWorldMax, rt.isPerspective != 0,
+                 hitT, hitIndex, hitOutline);
 
     if (hitIndex < 0) {
         return float4(rt.backgroundColor.rgb * rt.backgroundColor.a, rt.backgroundColor.a);
+    }
+
+    if (hitOutline) {
+        // Flat, unlit stroke color — solid and sharp; no shadows or AO.
+        float alpha = clamp(primitiveAlpha(uint(hitIndex), atomColors, rt.atomCount,
+                                           bondStartColors, bondEndColors, rt.bondCount),
+                            0.0f, 1.0f);
+        float3 background = rt.backgroundColor.rgb * rt.backgroundColor.a;
+        return float4(background * (1.0f - alpha) + rt.outlineColor.rgb * alpha, 1.0);
     }
 
     // Shading
@@ -1236,6 +1469,7 @@ struct MetalShaderLibrary::Impl {
     id<MTLLibrary> library = nil;
     id<MTLRenderPipelineState> spherePipeline = nil;
     id<MTLRenderPipelineState> bondPipeline = nil;
+    id<MTLRenderPipelineState> bondOutlinePipeline = nil;
     id<MTLRenderPipelineState> solidCylinderPipeline = nil;
     id<MTLRenderPipelineState> viewportAxesPipeline = nil;
     id<MTLRenderPipelineState> linePipeline = nil;
@@ -1345,6 +1579,34 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         m_impl->bondPipeline = [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
         if (!m_impl->bondPipeline) {
             qCritical() << "MetalShaderLibrary: bond pipeline failed:"
+                         << error.localizedDescription.UTF8String;
+            return false;
+        }
+    }
+
+    // --- Bond outline pipeline (inverted hull; front faces culled at encode) ---
+    {
+        MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
+        desc.vertexFunction = [m_impl->library newFunctionWithName:@"bond_outline_vertex"];
+        desc.fragmentFunction = [m_impl->library newFunctionWithName:@"bond_outline_fragment"];
+        desc.rasterSampleCount = rasterSamples;
+        desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+
+        if (!desc.vertexFunction || !desc.fragmentFunction) {
+            qCritical() << "MetalShaderLibrary: bond outline shader functions not found";
+            return false;
+        }
+
+        m_impl->bondOutlinePipeline =
+            [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
+        if (!m_impl->bondOutlinePipeline) {
+            qCritical() << "MetalShaderLibrary: bond outline pipeline failed:"
                          << error.localizedDescription.UTF8String;
             return false;
         }
@@ -1541,6 +1803,7 @@ void MetalShaderLibrary::cleanup() {
     if (m_impl) {
         m_impl->spherePipeline = nil;
         m_impl->bondPipeline = nil;
+        m_impl->bondOutlinePipeline = nil;
         m_impl->solidCylinderPipeline = nil;
         m_impl->viewportAxesPipeline = nil;
         m_impl->linePipeline = nil;
@@ -1562,6 +1825,10 @@ void* MetalShaderLibrary::spherePipeline() const {
 
 void* MetalShaderLibrary::bondPipeline() const {
     return (__bridge void*)m_impl->bondPipeline;
+}
+
+void* MetalShaderLibrary::bondOutlinePipeline() const {
+    return (__bridge void*)m_impl->bondOutlinePipeline;
 }
 
 void* MetalShaderLibrary::solidCylinderPipeline() const {

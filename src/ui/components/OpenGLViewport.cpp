@@ -179,6 +179,11 @@ public:
         viewport->m_renderSettings.shininess = viewport->m_shininess;
         viewport->m_renderSettings.lightAzimuth = viewport->m_lightAzimuth;
         viewport->m_renderSettings.lightElevation = viewport->m_lightElevation;
+        // Stroke outlines: not yet implemented by the OpenGL renderers
+        // (settings plumbed for QML interface parity with MetalViewport).
+        viewport->m_renderSettings.outlineEnabled = viewport->m_outlineEnabled;
+        viewport->m_renderSettings.outlineWidth = viewport->m_outlineWidth * static_cast<float>(dpr);
+        viewport->m_renderSettings.outlineColor = viewport->m_outlineColor;
         viewport->m_renderSettings.showViewportAxes = viewport->m_showViewportAxes;
         viewport->m_renderSettings.viewportAxesScreenX = viewport->m_viewportAxesX * static_cast<float>(dpr);
         viewport->m_renderSettings.viewportAxesScreenY = viewport->m_viewportAxesY * static_cast<float>(dpr);
@@ -339,6 +344,18 @@ float OpenGLViewport::lightAzimuth() const {
 
 float OpenGLViewport::lightElevation() const {
     return m_lightElevation;
+}
+
+bool OpenGLViewport::outlineEnabled() const {
+    return m_outlineEnabled;
+}
+
+float OpenGLViewport::outlineWidth() const {
+    return m_outlineWidth;
+}
+
+QColor OpenGLViewport::outlineColor() const {
+    return m_outlineColor;
 }
 
 bool OpenGLViewport::showViewportAxes() const {
@@ -706,6 +723,31 @@ void OpenGLViewport::setLightElevation(float value) {
     if (!qFuzzyCompare(m_lightElevation, clamped)) {
         m_lightElevation = clamped;
         emit lightElevationChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setOutlineEnabled(bool enable) {
+    if (m_outlineEnabled != enable) {
+        m_outlineEnabled = enable;
+        emit outlineEnabledChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setOutlineWidth(float width) {
+    const float clamped = std::clamp(width, 0.0f, 10.0f);
+    if (!qFuzzyCompare(m_outlineWidth, clamped)) {
+        m_outlineWidth = clamped;
+        emit outlineWidthChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setOutlineColor(const QColor& color) {
+    if (m_outlineColor != color) {
+        m_outlineColor = color;
+        emit outlineColorChanged();
         update();
     }
 }

@@ -60,6 +60,9 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float shininess READ shininess WRITE setShininess NOTIFY shininessChanged)
     Q_PROPERTY(float lightAzimuth READ lightAzimuth WRITE setLightAzimuth NOTIFY lightAzimuthChanged)
     Q_PROPERTY(float lightElevation READ lightElevation WRITE setLightElevation NOTIFY lightElevationChanged)
+    Q_PROPERTY(bool outlineEnabled READ outlineEnabled WRITE setOutlineEnabled NOTIFY outlineEnabledChanged)
+    Q_PROPERTY(float outlineWidth READ outlineWidth WRITE setOutlineWidth NOTIFY outlineWidthChanged)
+    Q_PROPERTY(QColor outlineColor READ outlineColor WRITE setOutlineColor NOTIFY outlineColorChanged)
     Q_PROPERTY(bool showViewportAxes READ showViewportAxes WRITE setShowViewportAxes NOTIFY showViewportAxesChanged)
     Q_PROPERTY(float viewportAxesX READ viewportAxesX WRITE setViewportAxesX NOTIFY viewportAxesXChanged)
     Q_PROPERTY(float viewportAxesY READ viewportAxesY WRITE setViewportAxesY NOTIFY viewportAxesYChanged)
@@ -101,6 +104,9 @@ public:
     float shininess() const;
     float lightAzimuth() const;
     float lightElevation() const;
+    bool outlineEnabled() const;
+    float outlineWidth() const;
+    QColor outlineColor() const;
     bool showViewportAxes() const;
     float viewportAxesX() const;
     float viewportAxesY() const;
@@ -137,6 +143,9 @@ public slots:
     void setShininess(float shininess);
     void setLightAzimuth(float value);
     void setLightElevation(float value);
+    void setOutlineEnabled(bool enable);
+    void setOutlineWidth(float width);
+    void setOutlineColor(const QColor& color);
     void setShowViewportAxes(bool show);
     void setViewportAxesX(float value);
     void setViewportAxesY(float value);
@@ -172,6 +181,9 @@ signals:
     void shininessChanged();
     void lightAzimuthChanged();
     void lightElevationChanged();
+    void outlineEnabledChanged();
+    void outlineWidthChanged();
+    void outlineColorChanged();
     void showViewportAxesChanged();
     void viewportAxesXChanged();
     void viewportAxesYChanged();
@@ -226,6 +238,9 @@ private:
     float m_shininess = 32.0f;
     float m_lightAzimuth = 0.0f;
     float m_lightElevation = 45.0f;
+    bool m_outlineEnabled = true;
+    float m_outlineWidth = 2.0f;   // logical pixels; scaled by dpr for rendering
+    QColor m_outlineColor = QColor(0, 0, 0);
     bool m_showViewportAxes = true;
     float m_viewportAxesX = 60.0f;
     float m_viewportAxesY = 60.0f;
