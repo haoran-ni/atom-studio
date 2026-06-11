@@ -255,7 +255,9 @@ void StructureModel::setSelectionMode(int mode) {
     mode = std::clamp(mode, 0, 2);
     const bool modeChanged = mode != m_selectionMode;
     setSelectionModeInternal(mode, modeChanged);
-    clearSelection();
+    if (modeChanged && mode == 0) {
+        clearSelection();
+    }
 }
 
 void StructureModel::clearSelection() {
