@@ -942,7 +942,7 @@ void RayTracingRenderer::uploadSceneData() {
     glBindTexture(GL_TEXTURE_BUFFER, m_atomPosTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomPosBuf);
 
-    // Pack colors with transient selection highlight applied.
+    // Pack stored atom colors; selection visuals are handled separately.
     auto colorData = packAtomRenderColors(m_structure);
 
     uploadTBOData(m_atomColorBuf, colorData.data(),

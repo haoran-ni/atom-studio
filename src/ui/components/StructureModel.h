@@ -99,7 +99,7 @@ signals:
     void structureChanged();
     void selectionModeChanged();
     void selectionChanged();
-    /// Appearance-only change (colors, transparency, selection highlight).
+    /// Appearance-only change (colors, transparency, selection styling).
     /// Renderers may refresh color data without rebuilding geometry/BVH.
     void structureStyleChanged();
     /// Geometry-affecting style change (atom radii, bond radii). Renderers

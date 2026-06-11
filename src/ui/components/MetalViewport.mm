@@ -579,7 +579,7 @@ void MetalViewport::setOutlineEnabled(bool enable) {
 }
 
 void MetalViewport::setOutlineWidth(float width) {
-    const float clamped = std::clamp(width, 0.0f, 10.0f);
+    const float clamped = std::clamp(width, 0.5f, 4.0f);
     if (!qFuzzyCompare(m_outlineWidth, clamped)) {
         m_outlineWidth = clamped;
         emit outlineWidthChanged();
@@ -998,7 +998,7 @@ void MetalViewport::notifyFramePresented() {
 }
 
 void MetalViewport::onStructureStyleChanged() {
-    // Appearance only (colors, transparency, selection highlight) — the
+    // Appearance only (colors, transparency, selection styling) — the
     // renderers refresh color buffers without rebuilding geometry or BVH.
     m_needsAppearanceUpdate = true;
     update();

@@ -115,6 +115,7 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
         instances[i].startRadius = segment.startRadius;
         instances[i].endRadius = segment.endRadius;
         instances[i].bondRadius = segment.bondRadius;
+        instances[i].selected = segment.selected;
     }
 
     // Reuse safe: setBondData only runs from render() after a free output
@@ -199,7 +200,7 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms, 
     // Stroke outline pass: re-draw the same instanced mesh inflated by the
     // outline width with front faces culled (inverted hull). Buffers 0-3 are
     // already bound; only pipeline and cull mode change.
-    if (uniforms.outlineWidthPx > 0.0f) {
+    if (uniforms.outlineWidthPx > 0.0f || uniforms.selectionOutlineWidthPx > 0.0f) {
         id<MTLRenderPipelineState> outlinePipeline = (__bridge id<MTLRenderPipelineState>)(
             usePrecomputed ? m_shaderLibrary->bondOutlinePipelinePrecomputed()
                            : m_shaderLibrary->bondOutlinePipeline());

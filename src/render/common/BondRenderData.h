@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace atom::data {
@@ -28,6 +29,7 @@ struct BondRenderSegment {
     float endColorB = 0.0f;
     float endColorA = 1.0f;
     float bondRadius = 0.1f;
+    float selected = 0.0f;
 };
 
 enum class BondPositionPacking {
@@ -43,6 +45,7 @@ struct PackedBondRenderData {
     std::vector<float> startColors;
     std::vector<float> endColors;
     std::vector<float> bondRadii;
+    std::vector<float> selected;
     int positionStride = 0;
 
     size_t bondCount() const;
@@ -51,9 +54,11 @@ struct PackedBondRenderData {
 
 size_t bondRenderSegmentCount(const data::Structure* structure);
 std::vector<float> packAtomRenderColors(const data::Structure* structure);
+std::vector<uint32_t> packAtomSelectionMask(const data::Structure* structure);
+std::vector<uint32_t> packBondSelectionMask(const data::Structure* structure);
 
-/// Packs only the bond endpoint colors (RGBA per bond, selection highlight
-/// applied) — appearance-only updates that skip geometry repacking.
+/// Packs only the bond endpoint colors (RGBA per bond) — appearance-only
+/// updates that skip geometry repacking.
 void packBondRenderColors(const data::Structure* structure,
                           std::vector<float>& startColors,
                           std::vector<float>& endColors);

@@ -34,10 +34,10 @@ struct RenderSettings {
     float viewportAxesPixelRatio = 1.0f; // renderer pixels per QML logical pixel for overlay sizing
 
     // Lighting
-    float ambientStrength = 0.3f;
+    float ambientStrength = 0.35f;
     float diffuseStrength = 0.7f;
-    float specularStrength = 0.0f;
-    float shininess = 32.0f;
+    float specularStrength = 0.05f;
+    float shininess = 60.0f;
 
     // Light direction (world space, defined by spherical angles in degrees)
     // Azimuth: angle in XY plane, 0° = +X, 90° = +Y
@@ -62,7 +62,7 @@ struct RenderSettings {
 
     // Stroke outlines (inverted-hull shells around atoms and bonds)
     bool outlineEnabled = true;
-    float outlineWidth = 2.0f;               // Stroke width in rendered pixels
+    float outlineWidth = 1.0f;               // Stroke width in rendered pixels
     QColor outlineColor = QColor(0, 0, 0);
 
     // Effects

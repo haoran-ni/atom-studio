@@ -26,7 +26,7 @@ struct SceneUniforms {
     simd_float4   outlineColor;      // rgb stroke color
     float         outlinePixelScale; // world units per pixel: × view depth (persp) or absolute (ortho)
     int32_t       sphereEarlyZ;      // 1 = near-tangent billboard placement (early-Z pipeline)
-    float         _pad1;
+    float         selectionOutlineWidthPx; // selected-object stroke width in rendered pixels
     float         _pad2;
 };
 
@@ -34,6 +34,10 @@ struct SceneUniforms {
 struct SphereInstance {
     simd_float4 positionAndRadius;    // xyz = world center, w = covalent radius
     simd_float4 color;                // rgba
+    float       selected;             // 1 when selected, 0 otherwise
+    float       _pad0;
+    float       _pad1;
+    float       _pad2;
 };
 
 // Per-instance bond data — [[buffer(2)]] in bond shader
@@ -47,7 +51,7 @@ struct BondInstance {
     float       startRadius;
     float       endRadius;
     float       bondRadius;
-    float       _pad2;
+    float       selected;             // 1 when selected, 0 otherwise
 };
 
 // Line vertex (unit cell) — [[buffer(1)]] in line shader
@@ -89,8 +93,8 @@ struct RTUniforms {
     simd_float4   outlineColor;      // rgb stroke color
     float         outlineWorldMax;   // conservative world-space width bound for BVH AABB padding
     int32_t       hasTransparency;   // 0 = all primitives opaque (skip alpha fetches)
-    float         _pad1;
-    float         _pad2;
+    float         selectionOutlineScale;    // selected widthPx × pixelScale
+    float         selectionOutlineWorldMax; // conservative selected outline AABB padding
 };
 
 // Unit-cell object overlay uniforms for RT output compositing

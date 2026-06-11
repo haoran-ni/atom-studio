@@ -4,6 +4,70 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-11: Sidebar Defaults and Selection Outline Styling
+
+### Summary
+
+Updated several visualization defaults and changed selection feedback from color-overlay tinting to outline-only highlighting.
+
+The Structure tab's stroke thickness control now defaults to `1.0` and is constrained to `[0.5, 4.0]`. The shared render defaults and both viewport backends were kept in sync so newly-created viewports, QML fallback values, and C++ renderer settings all agree.
+
+Renderer lighting defaults were adjusted in the sidebar reset path and backing viewport/render defaults: Ambient is now `0.35`, Specular is `0.05`, and Shininess is `60`.
+
+Selection rendering no longer mixes a highlight color into selected atom or bond fill colors. The shared atom/bond color packing now uploads stored colors unchanged and carries selection state separately. In the Metal raster and Metal RT paths, selected atoms and bonds render with a fixed red outline (`RGB = 255, 0, 0`) at thickness `4` logical pixels, independent of the normal global stroke toggle. Normal, non-selected stroke outlines still use the user-controlled stroke settings.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/ui/qml/Sidebar.qml` | Stroke thickness slider range/default; renderer lighting slider/reset defaults |
+| `src/render/common/RenderSettings.h` | Shared defaults for stroke width and renderer lighting |
+| `src/ui/components/MetalViewport.h/.mm` | Viewport defaults for stroke width and renderer lighting; selection style comment cleanup |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Same viewport default updates and comments for the OpenGL fallback interface |
+| `src/render/common/BondRenderData.h/.cpp` | Removed selected-color RGB mixing; added atom/bond selection mask packing and selected flag in bond segment data |
+| `src/render/metal/MetalTypes.h` | Added selected flags to sphere/bond instances and selection-outline fields to raster/RT uniforms |
+| `src/render/metal/MetalSphereRenderer.mm` | Uploads per-atom selected flags |
+| `src/render/metal/MetalBondRenderer.mm` | Uploads per-bond selected flags and runs outline pass when selection outlines are needed |
+| `src/render/metal/MetalRenderer.mm` | Sets fixed selection outline width for Metal raster and accounts for it in the early-Z gate |
+| `src/render/metal/MetalRayTracingRenderer.mm` | Uploads atom/bond selection buffers and passes fixed selection outline scale to RT shaders |
+| `src/render/metal/MetalShaderLibrary.mm` | Selection-aware atom, bond, and RT outline shader logic; selected outline color changed to red |
+| `src/render/metal/MetalUnitCellRenderer.mm` | Explicitly disables selection outlines for unit-cell helper instances |
+| `src/render/opengl/SphereRenderer.cpp` / `RayTracingRenderer.cpp` | Comment updates after removing color-overlay selection packing |
+| `src/ui/components/StructureModel.h` | Comment update: selection styling is now appearance-only, not necessarily color overlay |
+
+### Architecture Decisions
+
+#### 1. Selection State Is Separate From Fill Color
+- The selected-color overlay was removed at the shared packing layer so atom and bond base colors remain stable across selection changes
+- Selection masks/flags now travel beside color data, letting renderers choose a selection-specific visual without corrupting stored colors or color-scheme output
+- Appearance invalidation still handles selection changes because the GPU instance data or RT selection buffers must refresh, but geometry and BVH rebuilds remain unnecessary unless radii/topology change
+
+#### 2. Selected Outlines Override Normal Stroke Settings Only for Selected Objects
+- Non-selected outlines still use the sidebar-controlled stroke enable/color/width
+- Selected objects always get the fixed selection outline, currently red and thickness `4`, even if normal strokes are disabled
+- Unit-cell geometry explicitly zeros selection outline width because it reuses the same sphere/bond shader structs but is not selectable structure geometry
+
+#### 3. Metal RT Needed Explicit Selection Buffers
+- RT closest-hit traversal chooses outline thickness per primitive, so selection state is uploaded as separate atom and bond buffers
+- BVH traversal uses the maximum of normal-outline and selection-outline padding to keep outline shell candidates inside conservative node bounds
+- RT outline hits carry whether they came from a selected primitive so the final stroke color can switch to red without altering regular stroke color
+
+### Build Commands
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+### Testing
+
+- Built successfully; only the pre-existing macOS OpenGL deprecation warnings remain
+- All CTest tests passed: `4/4`
+- Direct standalone Metal shader compilation could not be run because the local Xcode install is missing the Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain` required)
+- Recommended in-app visual checks: select atoms and bonds in Metal raster and Metal RT modes; verify selected objects retain original fill colors and show a red 4 px outline; toggle normal strokes off and verify selection outlines remain visible; verify non-selected strokes still obey the sidebar settings
+
+---
+
 ## 2026-06-10: Renderer Performance Pass 3 — Early-Z Sphere Impostors, Per-Bond Frame Precompute, Signal Guard
 
 ### Summary

@@ -32,13 +32,17 @@ struct SceneUniforms {
     float4   outlineColor;
     float    outlinePixelScale;
     int      sphereEarlyZ;
-    float    _pad1;
+    float    selectionOutlineWidthPx;
     float    _pad2;
 };
 
 struct SphereInstance {
     float4 positionAndRadius;
     float4 color;
+    float  selected;
+    float  _pad0;
+    float  _pad1;
+    float  _pad2;
 };
 
 struct BondInstance {
@@ -51,7 +55,7 @@ struct BondInstance {
     float  startRadius;
     float  endRadius;
     float  bondRadius;
-    float  _pad2;
+    float  selected;
 };
 
 struct LineVertex {
@@ -91,14 +95,16 @@ struct RTUniforms {
     float4   outlineColor;
     float    outlineWorldMax;
     int      hasTransparency;
-    float    _pad1;
-    float    _pad2;
+    float    selectionOutlineScale;
+    float    selectionOutlineWorldMax;
 };
 
 struct DisplayUniforms {
     float sampleCount;
     float _pad[3];
 };
+
+constant float3 kSelectionOutlineColor = float3(1.0, 0.0, 0.0);
 
 struct RTUnitCellUniforms {
     float4x4 viewProjectionMatrix;
@@ -129,6 +135,7 @@ struct SphereVertexOut {
     float  radius;
     float  outerRadius;   // radius + outline shell width (== radius when outlines off)
     float4 color;
+    float4 outlineColor;
     float3 viewPosOnQuad;
 };
 
@@ -144,6 +151,9 @@ vertex SphereVertexOut sphere_vertex(
     SphereInstance inst = instances[iid];
     out.color = inst.color;
     out.radius = inst.positionAndRadius.w * scene.atomScale;
+    bool selected = inst.selected > 0.5;
+    float outlineWidthPx = selected ? scene.selectionOutlineWidthPx : scene.outlineWidthPx;
+    out.outlineColor = selected ? float4(kSelectionOutlineColor, 1.0) : scene.outlineColor;
 
     // Transform sphere center to view space
     float4 viewCenter = scene.viewMatrix * float4(inst.positionAndRadius.xyz, 1.0);
@@ -151,7 +161,7 @@ vertex SphereVertexOut sphere_vertex(
 
     // Outline shell width in view-space units (constant on-screen pixel width)
     float dist = -viewCenter.z;
-    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+    float shellW = outlineWidthPx * scene.outlinePixelScale *
                    (scene.isPerspective ? max(dist, 0.0) : 1.0);
     out.outerRadius = out.radius + shellW;
 
@@ -293,7 +303,7 @@ SphereShadeResult sphere_shade(SphereVertexOut in, constant SceneUniforms& scene
 
     if (isOutline) {
         SphereShadeResult outlineOut;
-        outlineOut.color = float4(scene.outlineColor.rgb, in.color.a);
+        outlineOut.color = float4(in.outlineColor.rgb, in.color.a);
         float4 outlineClip = scene.projectionMatrix * float4(hitPos, 1.0);
         outlineOut.depth = outlineClip.z / outlineClip.w;
         return outlineOut;
@@ -357,8 +367,10 @@ struct BondVertexOut {
     float3 normalView;
     float4 startColor;
     float4 endColor;
+    float4 outlineColor;
     float  axial;
     float  splitT;
+    float  outlineWidthPx;
 };
 
 vertex BondVertexOut bond_vertex(
@@ -373,6 +385,8 @@ vertex BondVertexOut bond_vertex(
     BondInstance bond = instances[iid];
     out.startColor = bond.startColor;
     out.endColor = bond.endColor;
+    out.outlineColor = scene.outlineColor;
+    out.outlineWidthPx = 0.0;
 
     float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
     float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
@@ -454,6 +468,10 @@ vertex BondVertexOut bond_outline_vertex(
     BondInstance bond = instances[iid];
     out.startColor = bond.startColor;
     out.endColor = bond.endColor;
+    bool selected = bond.selected > 0.5;
+    float outlineWidthPx = selected ? scene.selectionOutlineWidthPx : scene.outlineWidthPx;
+    out.outlineColor = selected ? float4(kSelectionOutlineColor, 1.0) : scene.outlineColor;
+    out.outlineWidthPx = outlineWidthPx;
 
     float4 startView4 = scene.viewMatrix * float4(bond.start, 1.0f);
     float4 endView4 = scene.viewMatrix * float4(bond.end, 1.0f);
@@ -478,7 +496,7 @@ vertex BondVertexOut bond_outline_vertex(
 
     // Shell width from the bond midpoint's view depth (constant pixel width)
     float midDist = -0.5f * (startView.z + endView.z);
-    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+    float shellW = outlineWidthPx * scene.outlinePixelScale *
                    (scene.isPerspective ? max(midDist, 0.0f) : 1.0f);
 
     BondMeshVertex vert = cylinderVertices[vid];
@@ -504,8 +522,9 @@ fragment float4 bond_outline_fragment(
     constant SceneUniforms& scene [[buffer(0)]])
 {
     float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
+    if (in.outlineWidthPx <= 0.0f) discard_fragment();
     if (bondColor.a <= 0.001f) discard_fragment();
-    return float4(scene.outlineColor.rgb, bondColor.a);
+    return float4(in.outlineColor.rgb, bondColor.a);
 }
 
 // -------------------------------------------------------
@@ -575,6 +594,8 @@ vertex BondVertexOut bond_vertex_pre(
     BondVertexOut out;
     out.startColor = instances[iid].startColor;
     out.endColor = instances[iid].endColor;
+    out.outlineColor = scene.outlineColor;
+    out.outlineWidthPx = 0.0;
 
     BondFrame f = frames[iid];
     float3 startView = f.startViewAndLength.xyz;
@@ -611,6 +632,10 @@ vertex BondVertexOut bond_outline_vertex_pre(
     BondVertexOut out;
     out.startColor = instances[iid].startColor;
     out.endColor = instances[iid].endColor;
+    bool selected = instances[iid].selected > 0.5;
+    float outlineWidthPx = selected ? scene.selectionOutlineWidthPx : scene.outlineWidthPx;
+    out.outlineColor = selected ? float4(kSelectionOutlineColor, 1.0) : scene.outlineColor;
+    out.outlineWidthPx = outlineWidthPx;
 
     BondFrame f = frames[iid];
     float3 startView = f.startViewAndLength.xyz;
@@ -625,7 +650,7 @@ vertex BondVertexOut bond_outline_vertex_pre(
     // uses the exact view-space end z stored by the kernel so the result is
     // bit-identical to the inline path.
     float midDist = -0.5f * (startView.z + f.upAndEndZ.w);
-    float shellW = scene.outlineWidthPx * scene.outlinePixelScale *
+    float shellW = outlineWidthPx * scene.outlinePixelScale *
                    (scene.isPerspective ? max(midDist, 0.0f) : 1.0f);
 
     BondMeshVertex vert = cylinderVertices[vid];
@@ -1147,12 +1172,14 @@ float primitiveAlpha(uint primIndex,
 void traceClosest(float3 ro, float3 rd,
                   device const float4* atomPositions,
                   device const float4* atomColors,
+                  device const uint* atomSelections,
                   int atomCount, float atomScale, bool showAtoms,
                   device const float4* bondStartPositions,
                   device const float4* bondEndPositions,
                   device const float4* bondStartColors,
                   device const float4* bondEndColors,
                   device const float* bondRadii,
+                  device const uint* bondSelections,
                   int bondCount, bool showBonds,
                   bool anyTransparent,
                   device const float4* bvhNodeMinData,
@@ -1162,13 +1189,16 @@ void traceClosest(float3 ro, float3 rd,
                   int bvhNodeCount,
                   int skipIndex,
                   float outlineScale,
+                  float selectionOutlineScale,
                   float outlineWorldMax,
                   bool isPerspective,
                   thread float& hitT, thread int& hitIndex,
-                  thread bool& hitOutline) {
+                  thread bool& hitOutline,
+                  thread bool& hitSelectionOutline) {
     hitT = 1e30;
     hitIndex = -1;
     hitOutline = false;
+    hitSelectionOutline = false;
     if (bvhNodeCount <= 0) return;
 
     int totalPrims = atomCount + bondCount;
@@ -1196,22 +1226,26 @@ void traceClosest(float3 ro, float3 rd,
                     if (!showAtoms) continue;
                     float4 atom = atomPositions[primIndex];
                     float r = atom.w * atomScale;
+                    bool selected = atomSelections[primIndex] != 0;
+                    float primitiveOutlineScale = selected ? selectionOutlineScale : outlineScale;
                     float t = intersectSphere(ro, rd, atom.xyz, r);
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
                         hitIndex = int(primIndex);
                         hitOutline = false;
-                    } else if (t < 0.0 && outlineScale > 0.0) {
+                        hitSelectionOutline = false;
+                    } else if (t < 0.0 && primitiveOutlineScale > 0.0) {
                         // Sphere missed: outline shell candidate at the exit
                         // point of the inflated sphere (inverted-hull analog —
                         // the shell loses the depth race inside the silhouette
                         // but wins just outside it).
-                        float w = outlineScale * (isPerspective ? length(atom.xyz - ro) : 1.0);
+                        float w = primitiveOutlineScale * (isPerspective ? length(atom.xyz - ro) : 1.0);
                         float tShell = intersectSphereExit(ro, rd, atom.xyz, r + w);
                         if (tShell > 0.0 && tShell < hitT) {
                             hitT = tShell;
                             hitIndex = int(primIndex);
                             hitOutline = true;
+                            hitSelectionOutline = selected;
                         }
                     }
                 } else if (showBonds) {
@@ -1219,16 +1253,19 @@ void traceClosest(float3 ro, float3 rd,
                     float3 pa = bondStartPositions[bondIdx].xyz;
                     float3 pb = bondEndPositions[bondIdx].xyz;
                     float bondRadius = bondRadii[bondIdx];
+                    bool selected = bondSelections[bondIdx] != 0;
+                    float primitiveOutlineScale = selected ? selectionOutlineScale : outlineScale;
                     float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.0 && t < hitT) {
                         hitT = t;
                         hitIndex = int(primIndex);
                         hitOutline = false;
-                    } else if (t < 0.0 && outlineScale > 0.0) {
+                        hitSelectionOutline = false;
+                    } else if (t < 0.0 && primitiveOutlineScale > 0.0) {
                         // Cylinder missed: outline shell candidate at the exit
                         // point of the dilated capped cylinder.
                         float3 mid = 0.5 * (pa + pb);
-                        float w = outlineScale * (isPerspective ? length(mid - ro) : 1.0);
+                        float w = primitiveOutlineScale * (isPerspective ? length(mid - ro) : 1.0);
                         float3 ba = pb - pa;
                         float baLen = length(ba);
                         float3 axis = (baLen > 1e-6) ? (ba / baLen) : float3(0.0, 0.0, 1.0);
@@ -1238,6 +1275,7 @@ void traceClosest(float3 ro, float3 rd,
                             hitT = tShell;
                             hitIndex = int(primIndex);
                             hitOutline = true;
+                            hitSelectionOutline = selected;
                         }
                     }
                 }
@@ -1480,7 +1518,9 @@ fragment float4 rt_fragment(
     device const float4* bondEndPositions [[buffer(8)]],
     device const float4* bondStartColors [[buffer(9)]],
     device const float4* bondEndColors [[buffer(10)]],
-    device const float* bondRadii [[buffer(11)]])
+    device const float* bondRadii [[buffer(11)]],
+    device const uint* atomSelections [[buffer(12)]],
+    device const uint* bondSelections [[buffer(13)]])
 {
     // Initialize RNG
     uint rng_state = pcg(
@@ -1516,16 +1556,20 @@ fragment float4 rt_fragment(
     float hitT;
     int hitIndex;
     bool hitOutline;
+    bool hitSelectionOutline;
     bool anyTransparent = rt.hasTransparency != 0;
     traceClosest(rayOrigin, rayDir, atomPositions, atomColors,
+                 atomSelections,
                  rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
                  bondStartColors, bondEndColors,
-                 bondRadii, rt.bondCount, showBonds, anyTransparent,
+                 bondRadii, bondSelections, rt.bondCount, showBonds, anyTransparent,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                  rt.bvhNodeCount, -1,
-                 rt.outlineScale, rt.outlineWorldMax, rt.isPerspective != 0,
-                 hitT, hitIndex, hitOutline);
+                 rt.outlineScale, rt.selectionOutlineScale,
+                 max(rt.outlineWorldMax, rt.selectionOutlineWorldMax),
+                 rt.isPerspective != 0,
+                 hitT, hitIndex, hitOutline, hitSelectionOutline);
 
     if (hitIndex < 0) {
         return float4(rt.backgroundColor.rgb * rt.backgroundColor.a, rt.backgroundColor.a);
@@ -1537,7 +1581,8 @@ fragment float4 rt_fragment(
                                            bondStartColors, bondEndColors, rt.bondCount),
                             0.0f, 1.0f);
         float3 background = rt.backgroundColor.rgb * rt.backgroundColor.a;
-        return float4(background * (1.0f - alpha) + rt.outlineColor.rgb * alpha, 1.0);
+        float3 outlineColor = hitSelectionOutline ? kSelectionOutlineColor : rt.outlineColor.rgb;
+        return float4(background * (1.0f - alpha) + outlineColor * alpha, 1.0);
     }
 
     // Shading

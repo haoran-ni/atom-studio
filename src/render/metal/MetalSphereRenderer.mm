@@ -99,6 +99,7 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure) {
                                               colorData[i * 4 + 1],
                                               colorData[i * 4 + 2],
                                               colorData[i * 4 + 3]);
+        instances[i].selected = structure->atomSelected(i) ? 1.0f : 0.0f;
 
         boundsMin[0] = std::min(boundsMin[0], px[i]);
         boundsMin[1] = std::min(boundsMin[1], py[i]);

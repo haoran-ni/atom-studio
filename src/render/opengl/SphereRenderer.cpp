@@ -112,7 +112,7 @@ void SphereRenderer::setAtomData(const data::Structure* structure) {
         posRadiusData[i * 4 + 3] = radii[i];
     }
 
-    // Pack color data with transient selection highlight applied.
+    // Pack stored atom colors; selection visuals are handled separately.
     std::vector<float> colorData = packAtomRenderColors(structure);
 
     // Upload to GPU

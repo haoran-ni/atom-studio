@@ -201,6 +201,7 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     const bool outlineOn = settings.outlineEnabled && settings.outlineWidth > 0.0f;
     const float p11 = camera.projectionMatrix()(1, 1);
     uniforms.outlineWidthPx = outlineOn ? settings.outlineWidth : 0.0f;
+    uniforms.selectionOutlineWidthPx = 4.0f * std::max(settings.viewportAxesPixelRatio, 1.0f);
     uniforms.outlinePixelScale =
         (p11 > 1e-6f) ? 2.0f / (p11 * static_cast<float>(m_height)) : 0.0f;
     const auto& oc = settings.outlineColor;
@@ -211,7 +212,8 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
     uniforms.sphereEarlyZ =
         (settings.showAtoms &&
          m_sphereRenderer.canUseEarlyZ(camera, settings.atomScale,
-                                       uniforms.outlineWidthPx,
+                                       std::max(uniforms.outlineWidthPx,
+                                                uniforms.selectionOutlineWidthPx),
                                        uniforms.outlinePixelScale)) ? 1 : 0;
 
     // Create command buffer and render pass

@@ -68,10 +68,10 @@ Rectangle {
         sidebar.viewport.shadowOpacity = 1.0
         sidebar.viewport.aoSamples = 4
         sidebar.viewport.aoRadius = 3.0
-        sidebar.viewport.ambientStrength = 0.3
+        sidebar.viewport.ambientStrength = 0.35
         sidebar.viewport.diffuseStrength = 0.7
-        sidebar.viewport.specularStrength = 0.0
-        sidebar.viewport.shininess = 32
+        sidebar.viewport.specularStrength = 0.05
+        sidebar.viewport.shininess = 60
         sidebar.viewport.lightAzimuth = 0
         sidebar.viewport.lightElevation = 45
     }
@@ -745,12 +745,12 @@ Rectangle {
                                         statusHintTarget: sidebar
                                         tooltipText: qsTr("Stroke outline width in pixels along silhouettes and occluding boundaries.")
                                         from: 0.5
-                                        to: 6
+                                        to: 4
                                         stepSize: 0.1
                                         decimals: 1
-                                        defaultValue: 2.0
+                                        defaultValue: 1.0
                                         enabled: sidebar.viewport ? sidebar.viewport.outlineEnabled : true
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 2.0
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 1.0
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.outlineWidth = newValue
@@ -1322,8 +1322,8 @@ Rectangle {
                                         to: 1
                                         stepSize: 0.01
                                         decimals: 2
-                                        defaultValue: 0.3
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.3
+                                        defaultValue: 0.35
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.35
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.ambientStrength = newValue
@@ -1387,8 +1387,8 @@ Rectangle {
                                         to: 1
                                         stepSize: 0.01
                                         decimals: 2
-                                        defaultValue: 0.0
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.0
+                                        defaultValue: 0.05
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.specularStrength : 0.05
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.specularStrength = newValue
@@ -1409,8 +1409,8 @@ Rectangle {
                                         from: 1
                                         to: 128
                                         stepSize: 1
-                                        defaultValue: 32
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.shininess : 32
+                                        defaultValue: 60
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.shininess : 60
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.shininess = Math.round(newValue)
