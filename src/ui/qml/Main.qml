@@ -92,11 +92,13 @@ ApplicationWindow {
                 id: statusLabel
                 text: FileController.isLoading
                     ? FileController.loadStatus
-                    : (sidebar.statusHint.length > 0
-                        ? sidebar.statusHint
-                        : (mainWindow.persistentStatusMessage.length > 0
-                            ? mainWindow.persistentStatusMessage
-                            : "Ready"))
+                    : (viewportPanel.viewport && viewportPanel.viewport.hoverStatus.length > 0
+                        ? viewportPanel.viewport.hoverStatus
+                        : (sidebar.statusHint.length > 0
+                            ? sidebar.statusHint
+                            : (mainWindow.persistentStatusMessage.length > 0
+                                ? mainWindow.persistentStatusMessage
+                                : "Ready")))
                 color: sidebar ? sidebar.textBody : "#33353c"
                 font.pixelSize: 12
                 font.weight: Font.Medium

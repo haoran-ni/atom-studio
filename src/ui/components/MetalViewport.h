@@ -3,6 +3,8 @@
 #include <QQuickItem>
 #include <QColor>
 #include <QFutureWatcher>
+#include <QHoverEvent>
+#include <QString>
 #include <QtQml/qqmlregistration.h>
 #include <memory>
 
@@ -24,6 +26,7 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(int bondCount READ bondCount NOTIFY bondCountChanged)
     Q_PROPERTY(float fps READ fps NOTIFY fpsChanged)
     Q_PROPERTY(qulonglong frameToken READ frameToken NOTIFY frameTokenChanged)
+    Q_PROPERTY(QString hoverStatus READ hoverStatus NOTIFY hoverStatusChanged)
     Q_PROPERTY(bool showBonds READ showBonds WRITE setShowBonds NOTIFY showBondsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
     Q_PROPERTY(bool showUnitCell READ showUnitCell WRITE setShowUnitCell NOTIFY showUnitCellChanged)
@@ -66,6 +69,7 @@ public:
     int bondCount() const;
     float fps() const;
     qulonglong frameToken() const;
+    QString hoverStatus() const;
     bool showBonds() const;
     QColor backgroundColor() const;
     bool showUnitCell() const;
@@ -143,6 +147,7 @@ signals:
     void bondCountChanged();
     void fpsChanged();
     void frameTokenChanged();
+    void hoverStatusChanged();
     void showBondsChanged();
     void backgroundColorChanged();
     void showUnitCellChanged();
@@ -181,6 +186,8 @@ protected:
     void releaseResources() override;
     void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
 
+    void hoverMoveEvent(QHoverEvent* event) override;
+    void hoverLeaveEvent(QHoverEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -189,6 +196,8 @@ protected:
 
 private:
     void notifyFramePresented();
+    void updateHoverStatus(const QPointF& position);
+    void setHoverStatus(const QString& status);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -233,6 +242,7 @@ private:
     float m_viewportAxesScale = 1.0f;
     float m_fps = 0.0f;
     qulonglong m_frameToken = 0;
+    QString m_hoverStatus;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;
 

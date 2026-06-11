@@ -4,6 +4,66 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-11: Status Bar Hover Details for Atoms and Bonds
+
+### Summary
+
+Added viewport hover information to the bottom status bar. When the mouse is over an atom, the status bar now reports the element symbol and Cartesian position rounded to four decimal places:
+
+```text
+Element: C    |    Position: (1.2345, 2.3456, 3.4567)
+```
+
+When the mouse is over a visible, pickable bond, the status bar reports the rendered bond length, connected atom species, and endpoint positions in the same order as the connected atoms:
+
+```text
+Bond length: 1.4321    |    Connected atoms: (C, O)    |    Atom positions: (0.0000, 0.0000, 0.0000), (1.4321, 0.0000, 0.0000)
+```
+
+The hover path reuses the existing structure picking code, so bond hover information is only available when bonds are shown and bond data exists. The normal status bar fallback behavior remains intact: file-loading text has priority, then viewport hover text, then sidebar hints, persistent messages, and finally `Ready`.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/ui/components/ViewportSelection.h/.cpp` | Added shared hover-status picking and formatting helper for atom and bond details |
+| `src/ui/components/MetalViewport.h/.mm` | Exposed `hoverStatus` to QML and updates it from hover, camera, and relevant display-state changes |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Added the same hover-status interface for the OpenGL fallback viewport |
+| `src/ui/qml/Main.qml` | Bound the footer status label to viewport hover text before sidebar hints and `Ready` |
+
+### Architecture Decisions
+
+#### 1. Hover Uses the Existing Picker
+- The hover implementation calls the same shared picking function used by selection, keeping atom and bond hit testing consistent across status display and selection behavior
+- The formatter lives in `ViewportSelection.cpp` so Metal and OpenGL do not duplicate status-string logic
+- No selection state changes happen during hover; hover only computes a transient string exposed through `hoverStatus`
+
+#### 2. Bond Length Matches the Rendered Segment
+- Bond hover formatting uses `makeBondRenderSegment()` for endpoint coordinates, so the displayed length and endpoint positions match the visible bond segment, including periodic-image offsets when present
+- Connected atoms are still reported by chemical species in the stored bond endpoint order, and the displayed endpoint positions follow that same order
+- Values are formatted with fixed four-decimal precision and small negative zero values are normalized to `0.0000`
+
+#### 3. Status Text Clears and Recomputes With View State
+- Leaving the viewport clears `hoverStatus`, restoring the existing sidebar/status fallback chain
+- Camera motion, wheel zoom, bond visibility toggles, atom scale changes, bond radius changes, structure replacement, and async bond-list completion all clear or recompute hover text to avoid stale status output
+- Loading status remains highest priority in the footer because it is a global operation message rather than pointer-local context
+
+### Build Commands
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+### Testing
+
+- Built successfully
+- All CTest tests passed: `4/4`
+- `git diff --check` passed
+- Recommended in-app visual checks: hover atoms and bonds with bonds shown; hide bonds and verify bond hover text disappears; orbit/zoom while hovering and verify status text updates or clears as the object under the cursor changes
+
+---
+
 ## 2026-06-11: Sidebar Defaults and Selection Outline Styling
 
 ### Summary

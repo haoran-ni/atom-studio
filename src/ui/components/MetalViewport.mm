@@ -185,6 +185,7 @@ int MetalViewport::bondCount() const {
 
 float MetalViewport::fps() const { return m_fps; }
 qulonglong MetalViewport::frameToken() const { return m_frameToken; }
+QString MetalViewport::hoverStatus() const { return m_hoverStatus; }
 bool MetalViewport::showBonds() const { return m_showBonds; }
 QColor MetalViewport::backgroundColor() const { return m_backgroundColor; }
 bool MetalViewport::showUnitCell() const { return m_showUnitCell; }
@@ -232,6 +233,7 @@ QVariantList MetalViewport::getAxisDirections() const {
 
 void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
+    setHoverStatus(QString());
     if (m_structure) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
         m_structure->updateColorsFromElements(scheme);
@@ -285,6 +287,9 @@ void MetalViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -334,6 +339,9 @@ void MetalViewport::setAtomScale(float scale) {
     if (!qFuzzyCompare(m_atomScale, scale)) {
         m_atomScale = scale;
         emit atomScaleChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -391,6 +399,9 @@ void MetalViewport::setBondRadius(float radius) {
             m_needsStructureUpdate = true;
         }
         emit bondRadiusChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -441,6 +452,9 @@ void MetalViewport::onBondsReady() {
             emit bondCountChanged();
             if (auto* model = StructureModel::instance())
                 model->notifyBondsUpdated();
+            if (!m_hoverStatus.isEmpty()) {
+                updateHoverStatus(m_lastMousePos);
+            }
             update();
         }
     }
@@ -921,6 +935,41 @@ void MetalViewport::geometryChange(const QRectF& newGeometry,
 // Mouse handling (identical to OpenGLViewport)
 // ---------------------------------------------------------------------------
 
+void MetalViewport::setHoverStatus(const QString& status) {
+    if (m_hoverStatus == status) return;
+    m_hoverStatus = status;
+    emit hoverStatusChanged();
+}
+
+void MetalViewport::updateHoverStatus(const QPointF& position) {
+    if (!m_structure) {
+        setHoverStatus(QString());
+        return;
+    }
+
+    render::RenderSettings pickSettings = m_renderSettings;
+    pickSettings.showBonds = m_showBonds;
+    pickSettings.showAtoms = !(m_showBonds && m_atomScale <= 0.1001f);
+    pickSettings.atomScale = m_atomScale;
+    pickSettings.bondRadius = m_bondRadius;
+
+    setHoverStatus(viewportHoverStatus(m_structure.get(), *m_camera, pickSettings,
+                                       position,
+                                       static_cast<int>(width()),
+                                       static_cast<int>(height())));
+}
+
+void MetalViewport::hoverMoveEvent(QHoverEvent* event) {
+    m_lastMousePos = event->position();
+    updateHoverStatus(event->position());
+    event->accept();
+}
+
+void MetalViewport::hoverLeaveEvent(QHoverEvent* event) {
+    setHoverStatus(QString());
+    event->accept();
+}
+
 void MetalViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
     m_mousePressPos = event->position();
@@ -945,6 +994,7 @@ void MetalViewport::mouseMoveEvent(QMouseEvent* event) {
     }
 
     emit cameraChanged();
+    updateHoverStatus(event->position());
     update();
     event->accept();
 }
@@ -975,6 +1025,7 @@ void MetalViewport::mouseReleaseEvent(QMouseEvent* event) {
             }
         }
     }
+    updateHoverStatus(releasePos);
     event->accept();
 }
 
@@ -983,6 +1034,7 @@ void MetalViewport::wheelEvent(QWheelEvent* event) {
     float factor = (delta > 0) ? 0.9f : 1.1f;
     m_camera->zoom(factor);
     emit cameraChanged();
+    updateHoverStatus(event->position());
     update();
     event->accept();
 }

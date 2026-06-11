@@ -272,6 +272,10 @@ qulonglong OpenGLViewport::frameToken() const {
     return m_frameToken;
 }
 
+QString OpenGLViewport::hoverStatus() const {
+    return m_hoverStatus;
+}
+
 bool OpenGLViewport::showBonds() const {
     return m_showBonds;
 }
@@ -402,6 +406,7 @@ QVariantList OpenGLViewport::getAxisDirections() const {
 
 void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
+    setHoverStatus(QString());
     if (m_structure) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
         m_structure->updateColorsFromElements(scheme);
@@ -451,6 +456,9 @@ void OpenGLViewport::setBondRadius(float radius) {
             m_needsStructureUpdate = true;
         }
         emit bondRadiusChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -501,6 +509,9 @@ void OpenGLViewport::onBondsReady() {
             emit bondCountChanged();
             if (auto* model = StructureModel::instance())
                 model->notifyBondsUpdated();
+            if (!m_hoverStatus.isEmpty()) {
+                updateHoverStatus(m_lastMousePos);
+            }
             update();
         }
     }
@@ -548,6 +559,9 @@ void OpenGLViewport::setShowBonds(bool show) {
     if (m_showBonds != show) {
         m_showBonds = show;
         emit showBondsChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -597,6 +611,9 @@ void OpenGLViewport::setAtomScale(float scale) {
     if (!qFuzzyCompare(m_atomScale, scale)) {
         m_atomScale = scale;
         emit atomScaleChanged();
+        if (!m_hoverStatus.isEmpty()) {
+            updateHoverStatus(m_lastMousePos);
+        }
         update();
     }
 }
@@ -863,6 +880,41 @@ bool OpenGLViewport::event(QEvent* event) {
     return QQuickFramebufferObject::event(event);
 }
 
+void OpenGLViewport::setHoverStatus(const QString& status) {
+    if (m_hoverStatus == status) return;
+    m_hoverStatus = status;
+    emit hoverStatusChanged();
+}
+
+void OpenGLViewport::updateHoverStatus(const QPointF& position) {
+    if (!m_structure) {
+        setHoverStatus(QString());
+        return;
+    }
+
+    render::RenderSettings pickSettings = m_renderSettings;
+    pickSettings.showBonds = m_showBonds;
+    pickSettings.showAtoms = !(m_showBonds && m_atomScale <= 0.1001f);
+    pickSettings.atomScale = m_atomScale;
+    pickSettings.bondRadius = m_bondRadius;
+
+    setHoverStatus(viewportHoverStatus(m_structure.get(), *m_camera, pickSettings,
+                                       position,
+                                       static_cast<int>(width()),
+                                       static_cast<int>(height())));
+}
+
+void OpenGLViewport::hoverMoveEvent(QHoverEvent* event) {
+    m_lastMousePos = event->position();
+    updateHoverStatus(event->position());
+    event->accept();
+}
+
+void OpenGLViewport::hoverLeaveEvent(QHoverEvent* event) {
+    setHoverStatus(QString());
+    event->accept();
+}
+
 void OpenGLViewport::mousePressEvent(QMouseEvent* event) {
     m_lastMousePos = event->position();
     m_mousePressPos = event->position();
@@ -891,6 +943,7 @@ void OpenGLViewport::mouseMoveEvent(QMouseEvent* event) {
     }
 
     emit cameraChanged();
+    updateHoverStatus(event->position());
     update();
     event->accept();
 }
@@ -921,6 +974,7 @@ void OpenGLViewport::mouseReleaseEvent(QMouseEvent* event) {
             }
         }
     }
+    updateHoverStatus(releasePos);
     event->accept();
 }
 
@@ -944,6 +998,7 @@ void OpenGLViewport::wheelEvent(QWheelEvent* event) {
 
     m_camera->zoom(factor);
     emit cameraChanged();
+    updateHoverStatus(event->position());
     update();
     event->accept();
 }
