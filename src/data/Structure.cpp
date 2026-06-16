@@ -2,8 +2,31 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace atom::data {
+
+namespace {
+
+template <typename T>
+void compactAtomVector(std::vector<T>& values,
+                       const std::vector<uint8_t>& removedAtoms,
+                       size_t keptCount) {
+    if (values.empty()) return;
+    if (values.size() != removedAtoms.size()) return;
+
+    size_t writeIndex = 0;
+    for (size_t readIndex = 0; readIndex < removedAtoms.size(); ++readIndex) {
+        if (removedAtoms[readIndex]) continue;
+        if (writeIndex != readIndex) {
+            values[writeIndex] = std::move(values[readIndex]);
+        }
+        ++writeIndex;
+    }
+    values.resize(keptCount);
+}
+
+} // namespace
 
 // ============================================================================
 // Lattice implementation
@@ -428,6 +451,84 @@ size_t Structure::selectedBondCount() const {
 
 bool Structure::hasSelection() const {
     return selectedAtomCount() > 0 || selectedBondCount() > 0;
+}
+
+bool Structure::deleteSelectedObjects() {
+    if (!hasSelection()) return false;
+
+    const size_t oldAtomCount = m_atomCount;
+    const auto oldSelectedAtoms = m_selectedAtoms;
+    const auto oldBonds = m_bonds;
+    const auto oldSelectedBonds = oldBonds ? oldBonds->selectionMask() : std::vector<uint8_t>{};
+
+    std::vector<uint8_t> removedAtoms(oldAtomCount, 0);
+    std::vector<size_t> atomIndexMap(oldAtomCount, std::numeric_limits<size_t>::max());
+
+    size_t keptAtomCount = 0;
+    for (size_t i = 0; i < oldAtomCount; ++i) {
+        const bool removeAtom = i < oldSelectedAtoms.size() && oldSelectedAtoms[i] != 0;
+        removedAtoms[i] = removeAtom ? 1 : 0;
+        if (!removeAtom) {
+            atomIndexMap[i] = keptAtomCount++;
+        }
+    }
+
+    compactAtomVector(m_posX, removedAtoms, keptAtomCount);
+    compactAtomVector(m_posY, removedAtoms, keptAtomCount);
+    compactAtomVector(m_posZ, removedAtoms, keptAtomCount);
+    compactAtomVector(m_atomicNumbers, removedAtoms, keptAtomCount);
+    compactAtomVector(m_symbols, removedAtoms, keptAtomCount);
+    compactAtomVector(m_velX, removedAtoms, keptAtomCount);
+    compactAtomVector(m_velY, removedAtoms, keptAtomCount);
+    compactAtomVector(m_velZ, removedAtoms, keptAtomCount);
+    compactAtomVector(m_forceX, removedAtoms, keptAtomCount);
+    compactAtomVector(m_forceY, removedAtoms, keptAtomCount);
+    compactAtomVector(m_forceZ, removedAtoms, keptAtomCount);
+    compactAtomVector(m_charges, removedAtoms, keptAtomCount);
+    compactAtomVector(m_masses, removedAtoms, keptAtomCount);
+    compactAtomVector(m_radii, removedAtoms, keptAtomCount);
+    compactAtomVector(m_colorR, removedAtoms, keptAtomCount);
+    compactAtomVector(m_colorG, removedAtoms, keptAtomCount);
+    compactAtomVector(m_colorB, removedAtoms, keptAtomCount);
+    compactAtomVector(m_colorA, removedAtoms, keptAtomCount);
+    m_selectedAtoms.assign(keptAtomCount, 0);
+    m_atomCount = keptAtomCount;
+
+    auto rebuiltBonds = std::make_shared<BondList>();
+    if (oldBonds && keptAtomCount > 0) {
+        rebuiltBonds->reserve(oldBonds->bondCount());
+        for (size_t i = 0; i < oldBonds->bondCount(); ++i) {
+            if (i < oldSelectedBonds.size() && oldSelectedBonds[i]) continue;
+
+            const Bond& bond = oldBonds->bond(i);
+            if (bond.atomIndex1 >= oldAtomCount || bond.atomIndex2 >= oldAtomCount) continue;
+            if (removedAtoms[bond.atomIndex1] || removedAtoms[bond.atomIndex2]) continue;
+
+            const size_t mappedAtom1 = atomIndexMap[bond.atomIndex1];
+            const size_t mappedAtom2 = atomIndexMap[bond.atomIndex2];
+            if (mappedAtom1 == std::numeric_limits<size_t>::max() ||
+                mappedAtom2 == std::numeric_limits<size_t>::max()) {
+                continue;
+            }
+
+            const size_t newBondIndex = rebuiltBonds->addBond(
+                static_cast<uint32_t>(mappedAtom1),
+                static_cast<uint32_t>(mappedAtom2),
+                bond.imageX,
+                bond.imageY,
+                bond.imageZ,
+                bond.order);
+            rebuiltBonds->setRadius(newBondIndex, oldBonds->radius(i));
+            rebuiltBonds->setEndpointColors(
+                newBondIndex,
+                oldBonds->startColor(i),
+                oldBonds->endColor(i));
+            rebuiltBonds->setAlpha(newBondIndex, oldBonds->alpha(i));
+        }
+    }
+    m_bonds = std::move(rebuiltBonds);
+
+    return true;
 }
 
 std::array<float, 3> Structure::position(size_t index) const {

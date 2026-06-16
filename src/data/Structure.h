@@ -227,6 +227,7 @@ public:
     void toggleAtomSelected(size_t index);
     void clearAtomSelection();
     void clearSelection();
+    bool deleteSelectedObjects();
     size_t selectedAtomCount() const;
     size_t selectedBondCount() const;
     bool hasSelection() const;

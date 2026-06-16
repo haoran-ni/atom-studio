@@ -4,6 +4,62 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-16: Selection Delete Selected Objects
+
+### Summary
+
+Added a `Delete selected objects` button to the Selection tab. The action deletes selected atoms and selected bonds from the working structure shown in the viewport, while keeping the original loaded structure untouched for `Reset to original`.
+
+Atom deletion compacts every per-atom array, including optional velocities, forces, charges, masses, radii, colors, and selection masks. Bonds connected to deleted atoms are removed automatically because their endpoints no longer exist. Surviving bonds are rebuilt with remapped atom indices and keep their radius, endpoint colors, alpha, periodic image shifts, and bond order. Bond-only deletion removes selected bonds without changing atoms.
+
+The UI action is enabled only when a structure is loaded, selection mode is active, and at least one atom or bond is selected.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/data/Structure.h/.cpp` | Added `deleteSelectedObjects()` for atom compaction, bond deletion, endpoint remapping, and selection clearing |
+| `src/ui/components/StructureModel.h/.cpp` | Added QML-invokable deletion on a cloned working structure and a `structureEdited` signal |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Added edited-structure update path that rebuilds renderer data without triggering bond redetection |
+| `src/ui/components/MetalViewport.h/.mm` | Added the same edited-structure update path for the Metal backend |
+| `src/ui/qml/Sidebar.qml` | Added the `Delete selected objects` button under the Selection tab |
+| `src/data/tests/StructureTest.cpp` | Added coverage for bond-only deletion and atom deletion with surviving bond remapping |
+
+### Architecture Decisions
+
+#### 1. Deletion Mutates Only the Working Structure
+- `StructureModel` already owns both `m_originalStructure` and `m_structure`; deletion applies only to `m_structure`
+- Before deletion, the current working structure is cloned, then the clone is edited and swapped in as the new working structure
+- The original loaded structure remains immutable, so `Reset to original` still restores the unedited file-loaded data
+
+#### 2. Atom Deletion Removes Incident Bonds
+- Any bond whose endpoint atom is deleted is removed even if the bond itself was not explicitly selected
+- Keeping such a bond would leave invalid atom indices and corrupt picking/rendering, so incident-bond removal is part of the topology edit
+- Surviving bonds are rebuilt with compacted atom indices and their existing render/style state preserved
+
+#### 3. Edited-Structure Updates Avoid Bond Redetection
+- The normal `structureUpdated` path starts async bond detection, which would recreate explicitly deleted bonds between surviving atoms
+- A separate `structureEdited` signal updates OpenGL and Metal viewports with the edited shared structure pointer and rebuilds renderer buffers without starting bond detection
+- Swapping to a cloned structure pointer also makes stale async bond-detection results from the old structure fail the existing pointer identity check
+
+### Build Commands
+
+```bash
+cmake --build build --target atom-data-structure-test
+ctest --test-dir build -R atom-data-structure --output-on-failure
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+### Testing
+
+- Built successfully
+- All CTest tests passed: `4/4`
+- `git diff --check` passed
+- Added focused tests for deleting selected bonds, deleting selected atoms, compacting optional per-atom arrays, clearing selection, and remapping/preserving surviving bond state
+
+---
+
 ## 2026-06-11: Status Bar Hover Details for Atoms and Bonds
 
 ### Summary

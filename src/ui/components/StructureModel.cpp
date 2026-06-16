@@ -8,6 +8,7 @@
 #include <QQmlEngine>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace atom::ui {
 
@@ -442,6 +443,22 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
     // selectedAtomColor/Transparency QML NOTIFY).
     emit structureGeometryChanged();
     emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::deleteSelectedObjects() {
+    if (!m_structure || !selectionEnabled() || !m_structure->hasSelection()) return false;
+
+    auto editedStructure = m_structure->clone();
+    if (!editedStructure->deleteSelectedObjects()) return false;
+
+    m_structure = std::move(editedStructure);
+    updateElementList();
+
+    emit structureChanged();
+    emit selectionChanged();
+    emit structureStyleChanged();
+    emit structureEdited(m_structure);
     return true;
 }
 

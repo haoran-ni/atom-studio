@@ -161,6 +161,8 @@ MetalViewport::MetalViewport(QQuickItem* parent)
         if (auto* model = StructureModel::instance()) {
             connect(model, &StructureModel::structureUpdated,
                     this, &MetalViewport::setStructure);
+            connect(model, &StructureModel::structureEdited,
+                    this, &MetalViewport::setEditedStructure);
             connect(model, &StructureModel::structureStyleChanged,
                     this, &MetalViewport::onStructureStyleChanged);
             connect(model, &StructureModel::structureGeometryChanged,
@@ -248,6 +250,18 @@ void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
         fitToView();
         startBondDetection();
     }
+    update();
+}
+
+void MetalViewport::setEditedStructure(std::shared_ptr<data::Structure> structure) {
+    m_structure = structure;
+    m_bondTaskPending = false;
+    m_pendingStructure.reset();
+    setHoverStatus(QString());
+    m_needsStructureUpdate = true;
+
+    emit atomCountChanged();
+    emit bondCountChanged();
     update();
 }
 

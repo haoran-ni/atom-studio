@@ -92,6 +92,7 @@ public slots:
     Q_INVOKABLE bool applyAtomTransparencyToSelection(int transparency);
     bool applyBondRadiusToSelection(float radius);
     Q_INVOKABLE bool resetSelectedObjects(float defaultBondRadius, int colorScheme);
+    Q_INVOKABLE bool deleteSelectedObjects();
     void clear();
     void notifyBondsUpdated();
 
@@ -106,6 +107,7 @@ signals:
     /// must repack geometry and rebuild acceleration structures.
     void structureGeometryChanged();
     void structureUpdated(std::shared_ptr<data::Structure> structure);
+    void structureEdited(std::shared_ptr<data::Structure> structure);
 
 private:
     void updateElementList();

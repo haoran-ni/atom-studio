@@ -242,6 +242,8 @@ OpenGLViewport::OpenGLViewport(QQuickItem* parent)
         if (auto* model = StructureModel::instance()) {
             connect(model, &StructureModel::structureUpdated,
                     this, &OpenGLViewport::setStructure);
+            connect(model, &StructureModel::structureEdited,
+                    this, &OpenGLViewport::setEditedStructure);
             connect(model, &StructureModel::structureStyleChanged,
                     this, &OpenGLViewport::onStructureStyleChanged);
             connect(model, &StructureModel::structureGeometryChanged,
@@ -422,6 +424,18 @@ void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
         startBondDetection();
     }
 
+    update();
+}
+
+void OpenGLViewport::setEditedStructure(std::shared_ptr<data::Structure> structure) {
+    m_structure = structure;
+    m_bondTaskPending = false;
+    m_pendingStructure.reset();
+    setHoverStatus(QString());
+    m_needsStructureUpdate = true;
+
+    emit atomCountChanged();
+    emit bondCountChanged();
     update();
 }
 

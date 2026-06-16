@@ -816,7 +816,6 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
-                                lastItem: true
                                 content: Component {
                                     SidebarButton {
                                         text: qsTr("Reset selected objects")
@@ -830,6 +829,21 @@ Rectangle {
                                                 sidebar.viewport ? sidebar.viewport.bondRadius : 0.1,
                                                 sidebar.viewport ? sidebar.viewport.atomColorScheme : 0)
                                         }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        text: qsTr("Delete selected objects")
+                                        Layout.fillWidth: true
+                                        enabled: StructureModel.hasStructure
+                                                 && StructureModel.selectionEnabled
+                                                 && (StructureModel.selectedAtomCount > 0
+                                                     || StructureModel.selectedBondCount > 0)
+                                        onClicked: StructureModel.deleteSelectedObjects()
                                     }
                                 }
                             }

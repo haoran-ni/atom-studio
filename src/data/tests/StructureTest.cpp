@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 namespace atom::data {
 namespace {
@@ -129,6 +130,114 @@ bool checkBondAppearanceTracksExplicitState() {
     return true;
 }
 
+bool checkSelectedBondDeletionKeepsAtoms() {
+    Structure s;
+    s.addAtom(0.0f, 0.0f, 0.0f, 6);
+    s.addAtom(1.0f, 0.0f, 0.0f, 8);
+    s.addAtom(2.0f, 0.0f, 0.0f, 1);
+
+    auto bonds = std::make_shared<BondList>();
+    bonds->addBond(0, 1);
+    bonds->addBond(1, 2);
+    bonds->addBond(0, 2);
+    bonds->setSelected(1, true);
+    s.setBondList(std::move(bonds));
+
+    if (!s.deleteSelectedObjects()) {
+        std::cerr << "Deleting a selected bond should report a change\n";
+        return false;
+    }
+
+    if (s.atomCount() != 3 || s.bonds().bondCount() != 2) {
+        std::cerr << "Bond-only deletion should keep all atoms and remove only selected bonds\n";
+        return false;
+    }
+
+    if (!s.bonds().areBonded(0, 1) || !s.bonds().areBonded(0, 2) ||
+        s.bonds().areBonded(1, 2)) {
+        std::cerr << "Bond-only deletion should preserve unselected bonds\n";
+        return false;
+    }
+
+    if (s.selectedAtomCount() != 0 || s.selectedBondCount() != 0) {
+        std::cerr << "Deletion should clear remaining selection state\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool checkSelectedAtomDeletionRemapsBonds() {
+    Structure s;
+    s.addAtom(0.0f, 0.0f, 0.0f, 6, "C");
+    s.addAtom(1.0f, 0.0f, 0.0f, 8, "O");
+    s.addAtom(2.0f, 0.0f, 0.0f, 1, "H");
+    s.addAtom(3.0f, 0.0f, 0.0f, 7, "N");
+    s.setVelocities({0.0f, 1.0f, 2.0f, 3.0f},
+                    {0.1f, 1.1f, 2.1f, 3.1f},
+                    {0.2f, 1.2f, 2.2f, 3.2f});
+    s.setCharges({0.0f, -0.5f, 0.2f, 0.3f});
+    s.setMasses({12.0f, 16.0f, 1.0f, 14.0f});
+
+    auto bonds = std::make_shared<BondList>();
+    bonds->addBond(0, 1);
+    bonds->addBond(1, 2);
+    bonds->addBond(2, 3);
+    const size_t survivingBond = bonds->addBond(0, 3);
+    bonds->setSelected(2, true);
+    s.setBondList(std::move(bonds));
+    s.bonds().setRadius(survivingBond, 0.23f);
+    s.bonds().setEndpointColors(
+        survivingBond,
+        Color(0.1f, 0.2f, 0.3f, 1.0f),
+        Color(0.4f, 0.5f, 0.6f, 1.0f));
+    s.bonds().setAlpha(survivingBond, 0.7f);
+    s.setAtomSelected(1, true);
+
+    if (!s.deleteSelectedObjects()) {
+        std::cerr << "Deleting selected atoms should report a change\n";
+        return false;
+    }
+
+    if (s.atomCount() != 3 || s.bonds().bondCount() != 1) {
+        std::cerr << "Atom deletion should remove selected atoms, selected bonds, and incident bonds\n";
+        return false;
+    }
+
+    if (s.symbol(0) != "C" || s.symbol(1) != "H" || s.symbol(2) != "N") {
+        std::cerr << "Atom deletion should compact atom arrays in order\n";
+        return false;
+    }
+
+    if (!nearlyEqual(s.velocitiesX()[1], 2.0f) ||
+        !nearlyEqual(s.charges()[1], 0.2f) ||
+        !nearlyEqual(s.masses()[2], 14.0f)) {
+        std::cerr << "Atom deletion should compact optional per-atom arrays\n";
+        return false;
+    }
+
+    const Bond& bond = s.bonds().bond(0);
+    if (bond.atomIndex1 != 0 || bond.atomIndex2 != 2) {
+        std::cerr << "Surviving bonds should be remapped to compacted atom indices\n";
+        return false;
+    }
+
+    if (!nearlyEqual(s.bonds().radius(0), 0.23f) ||
+        !nearlyEqual(s.bonds().startColor(0).r, 0.1f) ||
+        !nearlyEqual(s.bonds().endColor(0).b, 0.6f) ||
+        !nearlyEqual(s.bonds().alpha(0), 0.7f)) {
+        std::cerr << "Surviving bonds should keep their rendering state\n";
+        return false;
+    }
+
+    if (s.selectedAtomCount() != 0 || s.selectedBondCount() != 0) {
+        std::cerr << "Deletion should clear selection after atom remapping\n";
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 } // namespace atom::data
 
@@ -139,6 +248,8 @@ int main() {
     ok = atom::data::checkUnitCellCenterWithLattice() && ok;
     ok = atom::data::checkViewBoundsIncludeAtomsAndCell() && ok;
     ok = atom::data::checkBondAppearanceTracksExplicitState() && ok;
+    ok = atom::data::checkSelectedBondDeletionKeepsAtoms() && ok;
+    ok = atom::data::checkSelectedAtomDeletionRemapsBonds() && ok;
 
     if (!ok) return 1;
 

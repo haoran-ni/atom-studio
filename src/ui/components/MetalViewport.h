@@ -108,6 +108,7 @@ public:
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
+    void setEditedStructure(std::shared_ptr<atom::data::Structure> structure);
     void fitToView();
     void resetCamera();
     void setShowBonds(bool show);
