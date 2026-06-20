@@ -1,6 +1,7 @@
 #include "StructureOperations.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <queue>
 #include <vector>
@@ -51,6 +52,102 @@ static ComponentGraph buildUnwrapConnectivityGraph(const Structure& s) {
     }
 
     return graph;
+}
+
+struct UnwrapAdjEntry {
+    size_t neighbor;
+    std::array<int, 3> shift;
+};
+
+static std::array<int, 3> addOffset(const std::array<int, 3>& a,
+                                    const std::array<int, 3>& b) {
+    return {a[0] + b[0], a[1] + b[1], a[2] + b[2]};
+}
+
+static std::array<int, 3> subtractOffset(const std::array<int, 3>& a,
+                                         const std::array<int, 3>& b) {
+    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
+}
+
+static bool isZeroOffset(const std::array<int, 3>& value) {
+    return value[0] == 0 && value[1] == 0 && value[2] == 0;
+}
+
+static std::vector<std::vector<size_t>> findTrueComponents(
+    const std::vector<std::vector<UnwrapAdjEntry>>& adj,
+    const std::vector<bool>& unwrappable)
+{
+    const size_t n = adj.size();
+    std::vector<std::vector<size_t>> components;
+    std::vector<bool> visited(n, false);
+    std::queue<size_t> queue;
+
+    for (size_t start = 0; start < n; ++start) {
+        if (!unwrappable[start] || visited[start]) continue;
+
+        std::vector<size_t> component;
+        visited[start] = true;
+        queue.push(start);
+
+        while (!queue.empty()) {
+            const size_t atom = queue.front();
+            queue.pop();
+            component.push_back(atom);
+
+            for (const UnwrapAdjEntry& edge : adj[atom]) {
+                if (visited[edge.neighbor]) continue;
+                visited[edge.neighbor] = true;
+                queue.push(edge.neighbor);
+            }
+        }
+
+        components.push_back(std::move(component));
+    }
+
+    return components;
+}
+
+static std::vector<std::vector<size_t>> findVisualFragments(
+    const std::vector<size_t>& component,
+    const std::vector<uint8_t>& inComponent,
+    const std::vector<std::vector<UnwrapAdjEntry>>& adj,
+    const std::vector<std::array<int, 3>>& offsets,
+    std::vector<size_t>& atomToFragment)
+{
+    std::vector<std::vector<size_t>> fragments;
+    std::vector<uint8_t> visited(adj.size(), 0);
+    std::queue<size_t> queue;
+
+    for (const size_t start : component) {
+        if (visited[start]) continue;
+
+        const size_t fragmentIndex = fragments.size();
+        fragments.emplace_back();
+        visited[start] = 1;
+        atomToFragment[start] = fragmentIndex;
+        queue.push(start);
+
+        while (!queue.empty()) {
+            const size_t atom = queue.front();
+            queue.pop();
+            fragments.back().push_back(atom);
+
+            for (const UnwrapAdjEntry& edge : adj[atom]) {
+                const size_t neighbor = edge.neighbor;
+                if (!inComponent[neighbor] || visited[neighbor]) continue;
+
+                const std::array<int, 3> currentShift =
+                    subtractOffset(offsets[neighbor], offsets[atom]);
+                if (currentShift != edge.shift) continue;
+
+                visited[neighbor] = 1;
+                atomToFragment[neighbor] = fragmentIndex;
+                queue.push(neighbor);
+            }
+        }
+    }
+
+    return fragments;
 }
 
 std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, int nz) {
@@ -187,130 +284,136 @@ void unwrapMolecules(Structure& s) {
         unwrappable[i] = isUnwrappableElement(s.atomicNumber(i));
 
     // ------------------------------------------------------------------
-    // 3. Build adjacency list using only unwrappable-element bonds.
-    //    For wrapped fractional coordinates, each bond shift must also account
-    //    for any integer-cell wrapping already present in the stored positions.
+    // 3. Build the periodic connectivity graph using only unwrappable-element
+    //    bonds. The shift on each directed edge says where the neighbor must
+    //    be placed, relative to the current atom, after all atoms have first
+    //    been wrapped into the principal cell.
     // ------------------------------------------------------------------
-    struct AdjEntry { size_t neighbor; int dx, dy, dz; };
-    std::vector<std::vector<AdjEntry>> adj(n);
+    std::vector<std::vector<UnwrapAdjEntry>> adj(n);
 
     for (size_t b = 0; b < bonds.bondCount(); ++b) {
         const Bond& bond = bonds.bond(b);
         const size_t i = bond.atomIndex1;
         const size_t j = bond.atomIndex2;
+        if (i >= n || j >= n) continue;
         if (!unwrappable[i] || !unwrappable[j]) continue;
 
-        const int dx = static_cast<int>(bond.imageX) + atomWrap[j][0] - atomWrap[i][0];
-        const int dy = static_cast<int>(bond.imageY) + atomWrap[j][1] - atomWrap[i][1];
-        const int dz = static_cast<int>(bond.imageZ) + atomWrap[j][2] - atomWrap[i][2];
+        const std::array<int, 3> shift = {
+            static_cast<int>(bond.imageX) + atomWrap[j][0] - atomWrap[i][0],
+            static_cast<int>(bond.imageY) + atomWrap[j][1] - atomWrap[i][1],
+            static_cast<int>(bond.imageZ) + atomWrap[j][2] - atomWrap[i][2]
+        };
 
-        adj[i].push_back({j,  dx,  dy,  dz});
-        adj[j].push_back({i, -dx, -dy, -dz});
+        adj[i].push_back({j, shift});
+        adj[j].push_back({i, {-shift[0], -shift[1], -shift[2]}});
     }
 
     // ------------------------------------------------------------------
-    // 4. BFS over connected components of unwrappable atoms.
-    //    For each atom we accumulate an integer lattice-vector offset so
-    //    that the atom's effective fractional position is
-    //      wrappedFrac[i] + offset[i]
-    //    keeping it contiguous with its bonded neighbours.
+    // 4. Compare the periodic graph to the visual graph. The periodic graph
+    //    ignores image shifts and defines the true component. The visual graph
+    //    uses only bonds that are currently satisfied without adding another
+    //    periodic image. Fragments are iteratively shifted onto the largest
+    //    initial in-cell fragment, matching the Python unwrap strategy.
     // ------------------------------------------------------------------
     std::vector<std::array<int, 3>> offset(n, {0, 0, 0});
-    std::vector<bool> visited(n, false);
-    std::vector<size_t> component;
-    std::queue<size_t> queue;
+    const std::vector<std::vector<size_t>> trueComponents =
+        findTrueComponents(adj, unwrappable);
 
-    for (size_t start = 0; start < n; ++start) {
-        if (!unwrappable[start] || visited[start]) continue;
+    for (const std::vector<size_t>& component : trueComponents) {
+        if (component.empty()) continue;
 
-        component.clear();
-        visited[start] = true;
-        offset[start] = {0, 0, 0};
-        queue.push(start);
-        bool consistent = true;
+        std::vector<uint8_t> inComponent(n, 0);
+        for (const size_t atom : component) {
+            inComponent[atom] = 1;
+        }
 
-        while (!queue.empty()) {
-            const size_t u = queue.front();
-            queue.pop();
-            component.push_back(u);
+        std::vector<size_t> atomToFragment(n, static_cast<size_t>(-1));
+        std::vector<std::vector<size_t>> fragments =
+            findVisualFragments(component, inComponent, adj, offset, atomToFragment);
 
-            for (const AdjEntry& edge : adj[u]) {
-                const size_t v = edge.neighbor;
-                const std::array<int, 3> candidate = {
-                    offset[u][0] + edge.dx,
-                    offset[u][1] + edge.dy,
-                    offset[u][2] + edge.dz
-                };
+        if (fragments.size() <= 1) continue;
 
-                if (!visited[v]) {
-                    visited[v] = true;
-                    offset[v] = candidate;
-                    queue.push(v);
-                    continue;
-                }
-
-                if (offset[v] != candidate) {
-                    consistent = false;
-                }
+        size_t anchorFragment = 0;
+        for (size_t f = 1; f < fragments.size(); ++f) {
+            if (fragments[f].size() > fragments[anchorFragment].size()) {
+                anchorFragment = f;
             }
         }
 
-        if (!consistent) continue;
-
-        // --------------------------------------------------------------
-        // 5. Keep the largest wrapped fragment inside the unit cell.
-        //    Atoms sharing the same offset belong to the same wrapped
-        //    fragment in the original wrapped structure.
-        // --------------------------------------------------------------
-        std::vector<bool> inComponent(n, false);
-        for (const size_t idx : component) {
-            inComponent[idx] = true;
+        std::vector<uint8_t> anchorAtom(n, 0);
+        for (const size_t atom : fragments[anchorFragment]) {
+            anchorAtom[atom] = 1;
         }
 
-        std::vector<bool> wrappedVisited(n, false);
-        std::array<int, 3> anchorOffset = offset[component.front()];
-        size_t largestSize = 0;
-        for (const size_t idx : component) {
-            if (wrappedVisited[idx]) continue;
+        size_t previousFragmentCount = fragments.size() + 1;
+        while (fragments.size() > 1 && fragments.size() < previousFragmentCount) {
+            previousFragmentCount = fragments.size();
 
-            size_t size = 0;
-            std::queue<size_t> wrappedQueue;
-            wrappedQueue.push(idx);
-            wrappedVisited[idx] = true;
-
-            while (!wrappedQueue.empty()) {
-                const size_t u = wrappedQueue.front();
-                wrappedQueue.pop();
-                ++size;
-
-                for (const AdjEntry& edge : adj[u]) {
-                    if (edge.dx != 0 || edge.dy != 0 || edge.dz != 0) continue;
-                    const size_t v = edge.neighbor;
-                    if (!inComponent[v] || wrappedVisited[v]) continue;
-                    wrappedVisited[v] = true;
-                    wrappedQueue.push(v);
+            size_t mergedFragment = static_cast<size_t>(-1);
+            for (size_t f = 0; f < fragments.size() && mergedFragment == static_cast<size_t>(-1); ++f) {
+                for (const size_t atom : fragments[f]) {
+                    if (anchorAtom[atom]) {
+                        mergedFragment = f;
+                        break;
+                    }
                 }
             }
+            if (mergedFragment == static_cast<size_t>(-1)) break;
 
-            if (size > largestSize) {
-                largestSize = size;
-                anchorOffset = offset[idx];
+            std::vector<uint8_t> inMerged(n, 0);
+            for (const size_t atom : fragments[mergedFragment]) {
+                inMerged[atom] = 1;
             }
-        }
 
-        // --------------------------------------------------------------
-        // 6. Apply the final fractional coordinates back to Cartesian.
-        // --------------------------------------------------------------
-        for (const size_t idx : component) {
-            const double fx = wrappedFrac[idx][0] + (offset[idx][0] - anchorOffset[0]);
-            const double fy = wrappedFrac[idx][1] + (offset[idx][1] - anchorOffset[1]);
-            const double fz = wrappedFrac[idx][2] + (offset[idx][2] - anchorOffset[2]);
-            const auto cart = lat.fractionalToCartesian(fx, fy, fz);
-            s.setPosition(idx,
-                          static_cast<float>(cart[0]),
-                          static_cast<float>(cart[1]),
-                          static_cast<float>(cart[2]));
+            bool movedFragment = false;
+            for (const size_t atom : fragments[mergedFragment]) {
+                for (const UnwrapAdjEntry& edge : adj[atom]) {
+                    const size_t neighbor = edge.neighbor;
+                    if (!inComponent[neighbor] || inMerged[neighbor]) continue;
+
+                    const size_t fragmentToMove = atomToFragment[neighbor];
+                    if (fragmentToMove == static_cast<size_t>(-1) ||
+                        fragmentToMove == mergedFragment) {
+                        continue;
+                    }
+
+                    const std::array<int, 3> desiredNeighborOffset =
+                        addOffset(offset[atom], edge.shift);
+                    const std::array<int, 3> delta =
+                        subtractOffset(desiredNeighborOffset, offset[neighbor]);
+                    if (isZeroOffset(delta)) continue;
+
+                    for (const size_t movingAtom : fragments[fragmentToMove]) {
+                        offset[movingAtom] = addOffset(offset[movingAtom], delta);
+                    }
+
+                    movedFragment = true;
+                    break;
+                }
+                if (movedFragment) break;
+            }
+
+            if (!movedFragment) break;
+
+            std::fill(atomToFragment.begin(), atomToFragment.end(), static_cast<size_t>(-1));
+            fragments = findVisualFragments(component, inComponent, adj, offset, atomToFragment);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 5. Apply final wrapped fractional coordinates plus fragment shifts.
+    // ------------------------------------------------------------------
+    for (size_t idx = 0; idx < n; ++idx) {
+        if (!unwrappable[idx]) continue;
+
+        const double fx = wrappedFrac[idx][0] + offset[idx][0];
+        const double fy = wrappedFrac[idx][1] + offset[idx][1];
+        const double fz = wrappedFrac[idx][2] + offset[idx][2];
+        const auto cart = lat.fractionalToCartesian(fx, fy, fz);
+        s.setPosition(idx,
+                      static_cast<float>(cart[0]),
+                      static_cast<float>(cart[1]),
+                      static_cast<float>(cart[2]));
     }
 }
 

@@ -124,6 +124,45 @@ bool checkNonOrganicElementsAlsoUnwrap() {
     return true;
 }
 
+bool checkPeriodicCycleDoesNotBlockFragmentMerge() {
+    Structure s;
+    auto& lat = s.lattice();
+    lat.defined = true;
+    lat.matrix = {{
+        {{10.0, 0.0, 0.0}},
+        {{0.0, 10.0, 0.0}},
+        {{0.0, 0.0, 10.0}},
+    }};
+    lat.pbc = {true, true, true};
+
+    s.addAtom(7.0f, 5.0f, 5.0f, 6);
+    s.addAtom(8.0f, 5.0f, 5.0f, 6);
+    s.addAtom(9.0f, 5.0f, 5.0f, 6);
+    s.addAtom(9.5f, 5.0f, 5.0f, 6);
+    s.addAtom(0.5f, 5.0f, 5.0f, 6);
+
+    BondList bonds;
+    bonds.addBond(0, 1, 0, 0, 0);
+    bonds.addBond(1, 2, 0, 0, 0);
+    bonds.addBond(0, 2, 1, 0, 0); // Inconsistent periodic cycle.
+    bonds.addBond(2, 3, 0, 0, 0);
+    bonds.addBond(3, 4, 1, 0, 0); // Chopped fragment to merge.
+    s.setBondList(std::make_shared<BondList>(bonds));
+
+    unwrapMolecules(s);
+
+    if (!nearlyEqual(s.positionsX()[0], 7.0) ||
+        !nearlyEqual(s.positionsX()[1], 8.0) ||
+        !nearlyEqual(s.positionsX()[2], 9.0) ||
+        !nearlyEqual(s.positionsX()[3], 9.5) ||
+        !nearlyEqual(s.positionsX()[4], 10.5)) {
+        std::cerr << "Periodic cycle conflict should not prevent visual fragment merge\n";
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 } // namespace atom::data
 
@@ -133,6 +172,7 @@ int main() {
     ok = atom::data::checkWrappedAnchorPreserved() && ok;
     ok = atom::data::checkInconsistentCycleDoesNotMoveAtoms() && ok;
     ok = atom::data::checkNonOrganicElementsAlsoUnwrap() && ok;
+    ok = atom::data::checkPeriodicCycleDoesNotBlockFragmentMerge() && ok;
 
     if (!ok) return 1;
 

@@ -4,6 +4,54 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-06-20: Fragment-Based Unwrap for Periodic Slab Systems
+
+### Summary
+
+Replaced the unwrap implementation with a fragment-merging algorithm modeled after the existing Python workflow. The new logic compares the periodic connectivity graph against the currently visible in-cell fragment graph, chooses the largest initial visual fragment as the anchor, and iteratively shifts neighboring fragments by recorded bond image shifts until the periodic component is visually reconnected.
+
+This fixes molecule/slab cases such as `relaxed_interface_113.in`, where the adsorbate and TiO2 slab are one connected periodic graph but the slab contains periodic cycles with conflicting image shifts. The old implementation required one globally consistent lattice-image assignment for the entire component and skipped the whole component when a slab cycle conflicted. The new implementation no longer lets those periodic substrate cycles block visual fragment merging.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/data/StructureOperations.cpp` | Replaced global consistency-based unwrap with periodic-component vs visual-fragment merging, anchored on the largest initial in-cell fragment |
+| `src/data/tests/StructureOperationsTest.cpp` | Added regression coverage for an inconsistent periodic cycle that must not prevent a chopped fragment from merging |
+
+### Architecture Decisions
+
+#### 1. Unwrap Now Solves the Visualization Fragment Problem
+- The periodic graph still defines the true connected component using the existing `BondList` and image shifts
+- The visual graph treats only currently satisfied in-cell bonds as connected, so wrapped/chopped fragments are explicitly identified
+- Fragments are shifted as whole groups, matching the Python approach and avoiding atom-by-atom drift inside already contiguous pieces
+
+#### 2. Largest Initial In-Cell Fragment Is the Anchor
+- The anchor is chosen before any shifts from the largest visual fragment in the principal cell
+- Other fragments move toward that anchor rather than recentering or globally minimizing offsets
+- This preserves the most substantial currently visible part of the structure while reconnecting smaller chopped fragments around it
+
+#### 3. Periodic Cycles No Longer Abort the Component
+- Periodic slabs can contain valid graph cycles that wind around the unit cell and therefore cannot be assigned one finite, globally consistent image offset
+- Such conflicts are expected for substrate crystals and should not prevent molecular fragments from reconnecting for visualization
+- The new loop only requires local fragment-to-fragment bond shifts and recalculates visual fragments after each merge
+
+### Build Commands
+
+```bash
+cmake --build build
+ctest --test-dir build --output-on-failure -R 'atom-data-'
+```
+
+### Testing
+
+- Built successfully
+- All data-layer CTest tests passed: `4/4`
+- Added focused regression test for a connected graph with an inconsistent periodic cycle plus a chopped fragment
+- Diagnostic check on `/Users/haoran/Downloads/TPA_TiO2_110_oc25_relaxed/relaxed_interface_113.in` showed the single 108-atom periodic component reducing from 5 visual fragments to 1; the first 18 adsorbate atoms end in one visual fragment
+
+---
+
 ## 2026-06-16: Selection Delete Selected Objects
 
 ### Summary
