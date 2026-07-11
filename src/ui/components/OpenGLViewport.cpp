@@ -396,6 +396,9 @@ float OpenGLViewport::viewportAxesScale() const {
 
 bool OpenGLViewport::isPerspective() const { return m_camera->isPerspective(); }
 float OpenGLViewport::fieldOfView() const { return m_camera->fieldOfView(); }
+int OpenGLViewport::rotationConstraint() const {
+    return static_cast<int>(m_camera->rotationConstraint());
+}
 
 QVariantList OpenGLViewport::getAxisDirections() const {
     QMatrix4x4 view = m_camera->viewMatrix();
@@ -846,6 +849,19 @@ void OpenGLViewport::setFieldOfView(float fov) {
         m_camera->setFieldOfView(fov);
         emit projectionChanged();
         update();
+    }
+}
+
+void OpenGLViewport::setRotationConstraint(int constraint) {
+    if (constraint < static_cast<int>(render::RotationConstraint::None) ||
+        constraint > static_cast<int>(render::RotationConstraint::XZPlane)) {
+        return;
+    }
+
+    const auto value = static_cast<render::RotationConstraint>(constraint);
+    if (m_camera->rotationConstraint() != value) {
+        m_camera->setRotationConstraint(value);
+        emit rotationConstraintChanged();
     }
 }
 

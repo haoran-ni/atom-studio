@@ -59,6 +59,7 @@ class MetalViewport : public QQuickItem {
     Q_PROPERTY(float viewportAxesScale READ viewportAxesScale WRITE setViewportAxesScale NOTIFY viewportAxesScaleChanged)
     Q_PROPERTY(bool isPerspective READ isPerspective WRITE setIsPerspective NOTIFY projectionChanged)
     Q_PROPERTY(float fieldOfView READ fieldOfView WRITE setFieldOfView NOTIFY projectionChanged)
+    Q_PROPERTY(int rotationConstraint READ rotationConstraint WRITE setRotationConstraint NOTIFY rotationConstraintChanged)
 
 public:
     explicit MetalViewport(QQuickItem* parent = nullptr);
@@ -102,6 +103,7 @@ public:
     float viewportAxesScale() const;
     bool isPerspective() const;
     float fieldOfView() const;
+    int rotationConstraint() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
     Q_INVOKABLE void setViewDirection(int direction);
@@ -142,6 +144,7 @@ public slots:
     void setViewportAxesScale(float value);
     void setIsPerspective(bool perspective);
     void setFieldOfView(float fov);
+    void setRotationConstraint(int constraint);
 
 signals:
     void atomCountChanged();
@@ -180,6 +183,7 @@ signals:
     void viewportAxesYChanged();
     void viewportAxesScaleChanged();
     void projectionChanged();
+    void rotationConstraintChanged();
     void cameraChanged();
 
 protected:

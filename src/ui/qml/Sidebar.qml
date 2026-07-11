@@ -1113,6 +1113,25 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Rotation constraint"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                        SidebarComboBox {
+                                            Layout.fillWidth: true
+                                            model: [qsTr("None"), qsTr("XY plane"), qsTr("YZ plane"), qsTr("XZ plane")]
+                                            currentIndex: sidebar.viewport ? sidebar.viewport.rotationConstraint : 0
+                                            onActivated: function(index) {
+                                                if (sidebar.viewport) {
+                                                    sidebar.viewport.rotationConstraint = index
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
                                 lastItem: !(sidebar.viewport ? sidebar.viewport.isPerspective : true)
                                 visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
                                 content: Component {
@@ -1655,7 +1674,7 @@ Rectangle {
                                         }
 
                                         Label {
-                                            text: qsTr("Use the Camera tab to switch projection mode and jump to standard view directions.")
+                                            text: qsTr("Use the Camera tab to switch projection mode, constrain rotation, and jump to standard view directions.")
                                             color: sidebar.textBody
                                             font.pixelSize: 13
                                             wrapMode: Text.WordWrap

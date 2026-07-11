@@ -7,6 +7,7 @@
 namespace atom::render {
 
 enum class ViewDirection { PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ };
+enum class RotationConstraint { None, XYPlane, YZPlane, XZPlane };
 
 /**
  * @brief Orbit camera for 3D visualization
@@ -27,6 +28,11 @@ public:
     void pan(float deltaX, float deltaY);
     void zoom(float factor);
     void setDistance(float distance);
+
+    // Orbit constraint. Plane constraints rotate around the corresponding
+    // world-space plane normal (XY -> Z, YZ -> X, XZ -> Y).
+    void setRotationConstraint(RotationConstraint constraint);
+    RotationConstraint rotationConstraint() const { return m_rotationConstraint; }
 
     // Preset views
     void setPresetView(ViewDirection dir);
@@ -95,6 +101,7 @@ private:
     // Orbit parameters
     QVector3D m_target = {0, 0, 0};
     QQuaternion m_orientation;   // Camera orientation (replaces azimuth + elevation)
+    RotationConstraint m_rotationConstraint = RotationConstraint::None;
     float m_distance = 50.0f;
 
     // Projection parameters

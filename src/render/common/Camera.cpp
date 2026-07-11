@@ -42,6 +42,48 @@ void Camera::setPresetView(ViewDirection dir) {
 }
 
 void Camera::orbit(float deltaAzimuth, float deltaElevation) {
+    if (m_rotationConstraint != RotationConstraint::None) {
+        QVector3D rotationAxis;
+        switch (m_rotationConstraint) {
+            case RotationConstraint::XYPlane: rotationAxis = {0, 0, 1}; break;
+            case RotationConstraint::YZPlane: rotationAxis = {1, 0, 0}; break;
+            case RotationConstraint::XZPlane: rotationAxis = {0, 1, 0}; break;
+            case RotationConstraint::None: break;
+        }
+
+        // Project the world-space rotation axis into the viewport. Only the
+        // component of the drag perpendicular to that projected axis controls
+        // rotation. Screen Y points down, hence the negated up-axis component.
+        const float projectedAxisX =
+            QVector3D::dotProduct(rotationAxis, rightVector());
+        const float projectedAxisY =
+            -QVector3D::dotProduct(rotationAxis, upVector());
+        const float projectedLengthSquared =
+            projectedAxisX * projectedAxisX + projectedAxisY * projectedAxisY;
+
+        float rotationAngle = deltaAzimuth;
+        constexpr float minProjectedLengthSquared = 1.0e-4f;
+        if (projectedLengthSquared > minProjectedLengthSquared) {
+            const float inverseLength = 1.0f / qSqrt(projectedLengthSquared);
+            const float perpendicularX = -projectedAxisY * inverseLength;
+            const float perpendicularY = projectedAxisX * inverseLength;
+            rotationAngle = deltaAzimuth * perpendicularX
+                          + deltaElevation * perpendicularY;
+        }
+
+        // When the axis points into the viewport its projection has no stable
+        // direction, so rotationAngle intentionally retains the horizontal input.
+        if (qFuzzyIsNull(rotationAngle)) {
+            return;
+        }
+
+        QQuaternion rotation =
+            QQuaternion::fromAxisAndAngle(rotationAxis, rotationAngle);
+        m_orientation = (rotation * m_orientation).normalized();
+        m_viewDirty = true;
+        return;
+    }
+
     // Horizontal: rotate around camera's current up axis (true trackball feel)
     QVector3D cameraUp = m_orientation.rotatedVector(QVector3D(0, 1, 0));
     QQuaternion yaw = QQuaternion::fromAxisAndAngle(cameraUp, deltaAzimuth);
@@ -52,6 +94,10 @@ void Camera::orbit(float deltaAzimuth, float deltaElevation) {
 
     m_orientation = (pitch * yaw * m_orientation).normalized();
     m_viewDirty = true;
+}
+
+void Camera::setRotationConstraint(RotationConstraint constraint) {
+    m_rotationConstraint = constraint;
 }
 
 void Camera::pan(float deltaX, float deltaY) {

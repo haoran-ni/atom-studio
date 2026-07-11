@@ -4,6 +4,61 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-07-11: Camera Rotation Plane Constraints
+
+### Summary
+
+Added a `Rotation constraint` dropdown to the Camera sidebar section with `None`, `XY plane`, `YZ plane`, and `XZ plane` options. `None` remains the default free-trackball behavior. The plane options restrict camera orbit to the corresponding world-space plane normal: XY rotates around Z, YZ rotates around X, and XZ rotates around Y.
+
+Constrained rotation follows the selected axis as it appears in the viewport. Mouse movement is projected onto the screen-space direction perpendicular to the visible rotation axis, while movement parallel to that axis is ignored. When the rotation axis points directly toward or away from the camera and has no stable screen-space direction, horizontal dragging is used as a deterministic fallback.
+
+### Files Modified
+
+| File | Purpose |
+|------|---------|
+| `src/render/common/Camera.h/.cpp` | Added the shared rotation-constraint enum, persistent constraint state, world-axis orbit restriction, and projected-axis mouse mapping |
+| `src/ui/components/OpenGLViewport.h/.cpp` | Exposed the rotation constraint as a QML property for the OpenGL backend |
+| `src/ui/components/MetalViewport.h/.mm` | Exposed the same rotation-constraint property for the Metal backend |
+| `src/ui/qml/Sidebar.qml` | Added the Camera-section dropdown and updated the Camera quick-guide text |
+| `src/render/CMakeLists.txt` | Registered the focused camera regression test with CTest |
+| `src/render/tests/CameraTest.cpp` | Added coverage for plane-to-axis mappings, perpendicular drag control, parallel drag rejection, reset persistence, and the view-aligned fallback |
+
+### Architecture Decisions
+
+#### 1. Constraints Live in the Shared Camera
+- Rotation constraints are backend-independent input behavior and therefore belong in `render::Camera`, not in OpenGL- or Metal-specific renderer code
+- Both active viewport backends expose the same integer-valued QML property and delegate the actual orbit calculation to the shared camera
+- The selected constraint persists through `Reset Camera` and preset view-direction changes because those actions change the view without changing the interaction mode
+
+#### 2. Plane Constraints Map to World-Space Normals
+- XY plane rotation uses the world Z axis
+- YZ plane rotation uses the world X axis
+- XZ plane rotation uses the world Y axis
+- Selecting a constraint does not snap or otherwise change the current camera orientation
+
+#### 3. Drag Direction Follows the Projected Axis
+- The constrained world axis is projected onto the camera right/up basis to obtain its direction in the viewport
+- The mouse delta is projected onto the normalized screen-space perpendicular, producing one signed rotational degree of freedom
+- A small projection threshold switches to horizontal input when the axis is nearly view-aligned, avoiding unstable direction changes around the degenerate case
+
+### Build Commands
+
+```bash
+cmake --build build -j4
+ctest --test-dir build --output-on-failure
+qmllint -I src/ui/qml src/ui/qml/Sidebar.qml
+```
+
+### Testing
+
+- Built the complete application successfully, including synchronized bundled Python
+- All CTest tests passed: `5/5`
+- Added focused camera tests for all three plane constraints, screen-perpendicular input, ignored parallel input, reset persistence, and horizontal fallback when the axis points into the viewport
+- `git diff --check` passed
+- QML linting reported no syntax errors; existing custom-module import and unqualified-access warnings remain
+
+---
+
 ## 2026-06-20: Fragment-Based Unwrap for Periodic Slab Systems
 
 ### Summary

@@ -123,3 +123,11 @@ target_link_libraries(atom-render PUBLIC
 target_link_libraries(atom-render PUBLIC
     ${RENDER_BACKEND_LIBS}
 )
+
+if(BUILD_TESTING)
+    add_executable(atom-render-camera-test
+        tests/CameraTest.cpp
+    )
+    target_link_libraries(atom-render-camera-test PRIVATE atom-render)
+    add_test(NAME atom-render-camera COMMAND atom-render-camera-test)
+endif()
