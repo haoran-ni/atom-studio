@@ -1132,17 +1132,17 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
-                                lastItem: !(sidebar.viewport ? sidebar.viewport.isPerspective : true)
-                                visible: sidebar.viewport ? sidebar.viewport.isPerspective : true
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Field of View")
                                         statusHintTarget: sidebar
+                                        tooltipText: qsTr("Perspective vertical field of view in degrees. A smaller value makes the structure appear larger.")
                                         integer: true
                                         from: 10
                                         to: 120
                                         stepSize: 1
                                         defaultValue: 45
+                                        enabled: sidebar.viewport ? sidebar.viewport.isPerspective : true
                                         sourceValue: sidebar.viewport ? sidebar.viewport.fieldOfView : 45
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
@@ -1153,9 +1153,69 @@ Rectangle {
                                 }
                             }
 
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Camera Distance")
+                                        statusHintTarget: sidebar
+                                        tooltipText: qsTr("Perspective distance from the camera target in structure coordinate units.")
+                                        from: 0.1
+                                        to: 100000
+                                        stepSize: 0.1
+                                        decimals: 2
+                                        defaultValue: 50
+                                        inputWidth: 76
+                                        logarithmic: true
+                                        enabled: sidebar.viewport ? sidebar.viewport.isPerspective : true
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.cameraDistance : 50
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.cameraDistance = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             SidebarBranchRow {
-                                lastItem: true
+                                content: Component {
+                                    NumericSliderControl {
+                                        title: qsTr("Orthographic Scale")
+                                        statusHintTarget: sidebar
+                                        tooltipText: qsTr("Orthographic visible half-height in structure coordinate units. A smaller value makes the structure appear larger.")
+                                        from: 0.001
+                                        to: 10000
+                                        stepSize: 0.001
+                                        decimals: 3
+                                        defaultValue: 10
+                                        inputWidth: 76
+                                        logarithmic: true
+                                        enabled: sidebar.viewport ? !sidebar.viewport.isPerspective : false
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.orthographicScale : 10
+                                        onValueApplied: function(newValue) {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.orthographicScale = newValue
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarCheckBox {
+                                        text: qsTr("Auto-fit on structure load")
+                                        checked: sidebar.viewport ? sidebar.viewport.autoFitOnLoad : true
+                                        onToggled: {
+                                            if (sidebar.viewport) {
+                                                sidebar.viewport.autoFitOnLoad = checked
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
                                 content: Component {
                                     ColumnLayout {
                                         spacing: 5

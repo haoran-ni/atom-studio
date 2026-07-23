@@ -15,6 +15,10 @@ bool sameOrientation(const QQuaternion& lhs, const QQuaternion& rhs) {
     return std::abs(QQuaternion::dotProduct(lhs.normalized(), rhs.normalized())) > 0.99999f;
 }
 
+bool nearlyEqual(float lhs, float rhs) {
+    return std::abs(lhs - rhs) < 1.0e-4f;
+}
+
 } // namespace
 
 int main() {
@@ -87,6 +91,43 @@ int main() {
          * fallbackInitial).normalized();
     if (!sameOrientation(fallbackCamera.orientation(), fallbackExpected)) {
         std::cerr << "View-aligned rotation axis did not use horizontal fallback\n";
+        return 1;
+    }
+
+    Camera scaleCamera;
+    scaleCamera.setSceneExtent(20.0f);
+    scaleCamera.zoom(0.5f);
+    if (!nearlyEqual(scaleCamera.perspectiveDistance(), 25.0f) ||
+        !nearlyEqual(scaleCamera.orthoScale(), 10.0f)) {
+        std::cerr << "Perspective zoom changed the orthographic scale\n";
+        return 1;
+    }
+
+    scaleCamera.setFieldOfView(60.0f);
+    if (!nearlyEqual(scaleCamera.perspectiveDistance(), 25.0f)) {
+        std::cerr << "Field of view changed the perspective distance\n";
+        return 1;
+    }
+
+    scaleCamera.setProjection(false);
+    scaleCamera.zoom(0.5f);
+    if (!nearlyEqual(scaleCamera.orthoScale(), 5.0f) ||
+        !nearlyEqual(scaleCamera.perspectiveDistance(), 25.0f)) {
+        std::cerr << "Orthographic zoom changed the perspective distance\n";
+        return 1;
+    }
+
+    scaleCamera.setSceneExtent(100.0f);
+    if (!nearlyEqual(scaleCamera.orthoScale(), 5.0f) ||
+        !nearlyEqual(scaleCamera.perspectiveDistance(), 25.0f)) {
+        std::cerr << "Recentering scene bounds changed a stored view scale\n";
+        return 1;
+    }
+
+    scaleCamera.setProjection(true);
+    if (!nearlyEqual(scaleCamera.distance(), 25.0f) ||
+        !nearlyEqual(scaleCamera.orthoScale(), 5.0f)) {
+        std::cerr << "Projection switching did not restore its mode-specific scale\n";
         return 1;
     }
 

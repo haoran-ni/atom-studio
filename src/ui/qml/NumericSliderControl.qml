@@ -15,22 +15,60 @@ ColumnLayout {
     property real defaultValue: 0
     property real sourceValue: defaultValue
     property int inputWidth: 64
+    property real from: 0
+    property real to: 1
+    property real stepSize: 0
+    property bool logarithmic: false
 
-    property alias from: slider.from
-    property alias to: slider.to
-    property alias stepSize: slider.stepSize
-    property alias currentValue: slider.value
+    readonly property real currentValue: normalizedValue(sliderValue(slider.value))
 
     signal valueApplied(real newValue)
 
     Layout.fillWidth: true
     spacing: 3
+    opacity: enabled ? 1.0 : 0.45
+
+    function usesLogarithmicScale() {
+        return logarithmic && from > 0 && to > from
+    }
+
+    function boundedValue(rawValue) {
+        return Math.max(from, Math.min(to, rawValue))
+    }
 
     function normalizedValue(rawValue) {
         if (!Number.isFinite(rawValue)) {
             return defaultValue
         }
         return integer ? Math.round(rawValue) : rawValue
+    }
+
+    function sliderPosition(rawValue) {
+        const value = boundedValue(normalizedValue(rawValue))
+        if (!usesLogarithmicScale()) {
+            return value
+        }
+        return (Math.log(value) - Math.log(from)) / (Math.log(to) - Math.log(from))
+    }
+
+    function sliderValue(position) {
+        if (!usesLogarithmicScale()) {
+            return position
+        }
+        return Math.exp(Math.log(from) + position * (Math.log(to) - Math.log(from)))
+    }
+
+    function valueFromUserSlider(position) {
+        let value = normalizedValue(sliderValue(position))
+        if (usesLogarithmicScale() && stepSize > 0) {
+            value = Math.round((value - from) / stepSize) * stepSize + from
+        }
+        return boundedValue(value)
+    }
+
+    function showValue(rawValue) {
+        slider.value = sliderPosition(rawValue)
+        valueField.text = formatValue(currentValue)
     }
 
     function formatValue(rawValue) {
@@ -44,24 +82,23 @@ ColumnLayout {
     function errorMessage() {
         if (integer) {
             return qsTr("Invalid value. Enter an integer between %1 and %2.")
-                .arg(Math.round(slider.from))
-                .arg(Math.round(slider.to))
+                .arg(Math.round(control.from))
+                .arg(Math.round(control.to))
         }
 
         return qsTr("Invalid value. Enter a number between %1 and %2.")
-            .arg(Number(slider.from).toFixed(decimals))
-            .arg(Number(slider.to).toFixed(decimals))
+            .arg(Number(control.from).toFixed(decimals))
+            .arg(Number(control.to).toFixed(decimals))
     }
 
     function revertText() {
-        valueField.text = formatValue(slider.value)
+        valueField.text = formatValue(currentValue)
     }
 
     function applyValue(newValue) {
         const normalized = normalizedValue(newValue)
-        slider.value = normalized
-        valueField.text = formatValue(slider.value)
-        valueApplied(normalized)
+        showValue(normalized)
+        valueApplied(currentValue)
     }
 
     function updateStatusHint() {
@@ -111,7 +148,7 @@ ColumnLayout {
             }
         }
 
-        if (parsed < slider.from || parsed > slider.to) {
+        if (parsed < control.from || parsed > control.to) {
             validationDialog.message = errorMessage()
             validationDialog.open()
             revertText()
@@ -119,18 +156,21 @@ ColumnLayout {
         }
 
         applyValue(parsed)
+        // Pressing Enter otherwise leaves the field focused indefinitely.
+        // While focused, source updates are intentionally ignored so an
+        // in-progress edit is not overwritten. Release focus after a
+        // successful commit so camera zoom changes can update the value again.
+        valueField.focus = false
     }
 
     onSourceValueChanged: {
         if (!valueField.activeFocus) {
-            slider.value = normalizedValue(sourceValue)
-            valueField.text = formatValue(slider.value)
+            showValue(sourceValue)
         }
     }
 
     Component.onCompleted: {
-        slider.value = normalizedValue(sourceValue)
-        valueField.text = formatValue(slider.value)
+        showValue(sourceValue)
     }
 
     Component.onDestruction: {
@@ -216,6 +256,9 @@ ColumnLayout {
         implicitHeight: 22
         topPadding: 3
         bottomPadding: 3
+        from: control.usesLogarithmicScale() ? 0 : control.from
+        to: control.usesLogarithmicScale() ? 1 : control.to
+        stepSize: control.usesLogarithmicScale() ? 0 : control.stepSize
 
         background: Rectangle {
             x: slider.leftPadding
@@ -245,7 +288,13 @@ ColumnLayout {
         }
 
         onValueChanged: control.revertText()
-        onMoved: control.valueApplied(control.normalizedValue(value))
+        onMoved: {
+            const appliedValue = control.valueFromUserSlider(value)
+            if (control.usesLogarithmicScale()) {
+                slider.value = control.sliderPosition(appliedValue)
+            }
+            control.valueApplied(appliedValue)
+        }
     }
 
     Dialog {

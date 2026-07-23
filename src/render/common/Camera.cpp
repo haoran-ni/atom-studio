@@ -10,6 +10,7 @@ Camera::Camera() {
 void Camera::reset() {
     m_target = QVector3D(0, 0, 0);
     m_distance = 50.0f;
+    m_perspectiveDistance = 50.0f;
     m_fov = 45.0f;
     m_orthoScale = 10.0f;
     // Default view: Z-up, azimuth=45° from +X, elevation=30° above XY plane.
@@ -116,6 +117,7 @@ void Camera::zoom(float factor) {
     if (m_perspective) {
         m_distance *= factor;
         m_distance = qBound(0.1f, m_distance, 100000.0f);
+        m_perspectiveDistance = m_distance;
         m_near = qMax(0.01f, m_distance * 0.001f);
         if (m_sceneExtent > 0.0f) {
             m_far = m_distance + m_sceneExtent * 3.0f;
@@ -123,17 +125,44 @@ void Camera::zoom(float factor) {
             m_far = m_distance * 10.0f;
         }
         m_viewDirty = true;
+        m_projDirty = true;
+    } else {
+        // Ortho: only shrink/grow the visible half-extent; distance and planes stay fixed.
+        m_orthoScale *= factor;
+        float minOrthoScale =
+            (m_sceneExtent > 0.0f) ? m_sceneExtent * 0.002f : 0.001f;
+        m_orthoScale = qBound(minOrthoScale, m_orthoScale, 10000.0f);
+        m_projDirty = true;
     }
-    // Ortho: only shrink/grow the visible half-extent; distance and planes stay fixed
-    m_orthoScale *= factor;
-    float minOrthoScale = (m_sceneExtent > 0.0f) ? m_sceneExtent * 0.002f : 0.001f;
-    m_orthoScale = qBound(minOrthoScale, m_orthoScale, 10000.0f);
-    m_projDirty = true;
 }
 
 void Camera::setDistance(float distance) {
-    m_distance = qBound(0.1f, distance, 100000.0f);
+    m_perspectiveDistance = qBound(0.1f, distance, 100000.0f);
+    if (!m_perspective) {
+        return;
+    }
+    m_distance = m_perspectiveDistance;
+    m_near = qMax(0.01f, m_distance * 0.001f);
+    m_far = (m_sceneExtent > 0.0f)
+        ? m_distance + m_sceneExtent * 3.0f
+        : m_distance * 10.0f;
     m_viewDirty = true;
+    m_projDirty = true;
+}
+
+void Camera::setSceneExtent(float extent) {
+    m_sceneExtent = qMax(0.0f, extent);
+    if (m_perspective) {
+        m_near = qMax(0.01f, m_distance * 0.001f);
+    } else {
+        m_distance = qMax(m_sceneExtent * 2.0f, 1.0f);
+        m_near = 0.01f;
+        m_viewDirty = true;
+    }
+    m_far = (m_sceneExtent > 0.0f)
+        ? m_distance + m_sceneExtent * 3.0f
+        : m_distance * 10.0f;
+    m_projDirty = true;
 }
 
 void Camera::fitToView(const QVector3D& center, float extent) {
@@ -144,6 +173,7 @@ void Camera::fitToView(const QVector3D& center, float extent) {
         if (m_perspective) {
             float fovRad = qDegreesToRadians(m_fov * 0.5f);
             m_distance    = (extent * 0.5f) / qTan(fovRad) * 1.5f;
+            m_perspectiveDistance = m_distance;
             m_sceneExtent = extent;
             m_near = qMax(0.01f, m_distance * 0.001f);
             m_far  = m_distance * 10.0f;
@@ -193,15 +223,22 @@ QVector3D Camera::upVector() const {
 
 void Camera::setProjection(bool perspective) {
     if (!perspective && m_perspective) {
+        m_perspectiveDistance = m_distance;
         // Switching perspective → ortho: restore a safe camera distance using
-        // the scene extent recorded by the last fitToView() call.  Using the
-        // stored value avoids a chicken-and-egg problem where m_orthoScale has
-        // been modified by perspective zooms and no longer represents the true
-        // scene scale.
+        // the current scene extent. Using the stored value avoids a
+        // chicken-and-egg problem where m_orthoScale represents the visible
+        // height rather than the structure's true extent.
         float ext = (m_sceneExtent > 0.0f) ? m_sceneExtent : m_orthoScale / 0.6f;
         m_distance = qMax(ext * 2.0f, 1.0f);
         m_near = 0.01f;
         m_far  = m_distance + ext * 3.0f;
+        m_viewDirty = true;
+    } else if (perspective && !m_perspective) {
+        m_distance = m_perspectiveDistance;
+        m_near = qMax(0.01f, m_distance * 0.001f);
+        m_far = (m_sceneExtent > 0.0f)
+            ? m_distance + m_sceneExtent * 3.0f
+            : m_distance * 10.0f;
         m_viewDirty = true;
     }
     m_perspective = perspective;
@@ -214,7 +251,9 @@ void Camera::setFieldOfView(float fov) {
 }
 
 void Camera::setOrthoScale(float scale) {
-    m_orthoScale = qBound(0.1f, scale, 10000.0f);
+    const float minScale =
+        (m_sceneExtent > 0.0f) ? m_sceneExtent * 0.002f : 0.001f;
+    m_orthoScale = qBound(minScale, scale, 10000.0f);
     m_projDirty = true;
 }
 

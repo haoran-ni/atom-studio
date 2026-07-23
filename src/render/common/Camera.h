@@ -28,6 +28,7 @@ public:
     void pan(float deltaX, float deltaY);
     void zoom(float factor);
     void setDistance(float distance);
+    void setSceneExtent(float extent);
 
     // Orbit constraint. Plane constraints rotate around the corresponding
     // world-space plane normal (XY -> Z, YZ -> X, XZ -> Y).
@@ -55,6 +56,7 @@ public:
     QQuaternion orientation() const { return m_orientation; }
     void setOrientation(const QQuaternion& q);
     float distance() const { return m_distance; }
+    float perspectiveDistance() const { return m_perspectiveDistance; }
     // Scene-scale reference used for size-in-world overlays (e.g. gizmos).
     // Returns m_distance in perspective (tracks zoom) and m_orthoScale in
     // orthographic (distance is fixed; orthoScale tracks zoom instead).
@@ -103,13 +105,14 @@ private:
     QQuaternion m_orientation;   // Camera orientation (replaces azimuth + elevation)
     RotationConstraint m_rotationConstraint = RotationConstraint::None;
     float m_distance = 50.0f;
+    float m_perspectiveDistance = 50.0f;
 
     // Projection parameters
     bool m_perspective = true;
     float m_fov = 45.0f;         // Field of view in degrees
     float m_orthoScale  = 10.0f;  // Orthographic scale
-    float m_sceneExtent =  0.0f;  // Scene extent from last fitToView(); used to
-                                  // set ortho distance/planes on mode switch
+    float m_sceneExtent =  0.0f;  // Current scene extent; used for clipping and
+                                  // to set ortho distance on mode switch
     float m_aspectRatio = 1.0f;
     float m_near = 0.1f;
     float m_far = 10000.0f;

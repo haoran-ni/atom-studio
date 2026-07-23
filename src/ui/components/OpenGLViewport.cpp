@@ -396,6 +396,9 @@ float OpenGLViewport::viewportAxesScale() const {
 
 bool OpenGLViewport::isPerspective() const { return m_camera->isPerspective(); }
 float OpenGLViewport::fieldOfView() const { return m_camera->fieldOfView(); }
+float OpenGLViewport::cameraDistance() const { return m_camera->perspectiveDistance(); }
+float OpenGLViewport::orthographicScale() const { return m_camera->orthoScale(); }
+bool OpenGLViewport::autoFitOnLoad() const { return m_autoFitOnLoad; }
 int OpenGLViewport::rotationConstraint() const {
     return static_cast<int>(m_camera->rotationConstraint());
 }
@@ -423,7 +426,12 @@ void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
     emit bondCountChanged();
 
     if (m_structure) {
-        fitToView();
+        if (m_autoFitOnLoad) {
+            fitToView();
+        } else {
+            updateCameraForStructure(false);
+            emit cameraChanged();
+        }
         startBondDetection();
     }
 
@@ -540,7 +548,7 @@ void OpenGLViewport::onBondsReady() {
     }
 }
 
-void OpenGLViewport::fitToView() {
+void OpenGLViewport::updateCameraForStructure(bool fitScale) {
     if (!m_structure || m_structure->atomCount() == 0) return;
 
     const auto bbox = m_structure->computeViewBoundingBox();
@@ -550,7 +558,19 @@ void OpenGLViewport::fitToView() {
     QVector3D center(centerData[0], centerData[1], centerData[2]);
     float extent = bbox.maxExtent();
 
-    m_camera->fitToView(center, extent > 0 ? extent : 10.0f);
+    extent = extent > 0 ? extent : 10.0f;
+    if (fitScale) {
+        m_camera->fitToView(center, extent);
+    } else {
+        m_camera->setTarget(center);
+        m_camera->setSceneExtent(extent);
+    }
+}
+
+void OpenGLViewport::fitToView() {
+    if (!m_structure || m_structure->atomCount() == 0) return;
+
+    updateCameraForStructure(true);
     emit cameraChanged();
     update();
 }
@@ -840,6 +860,7 @@ void OpenGLViewport::setIsPerspective(bool perspective) {
     if (m_camera->isPerspective() != perspective) {
         m_camera->setProjection(perspective);
         emit projectionChanged();
+        emit cameraChanged();
         update();
     }
 }
@@ -850,6 +871,32 @@ void OpenGLViewport::setFieldOfView(float fov) {
         emit projectionChanged();
         update();
     }
+}
+
+void OpenGLViewport::setCameraDistance(float distance) {
+    if (!std::isfinite(distance)) return;
+    const float previous = m_camera->perspectiveDistance();
+    m_camera->setDistance(distance);
+    if (!qFuzzyCompare(previous, m_camera->perspectiveDistance())) {
+        emit cameraChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setOrthographicScale(float scale) {
+    if (!std::isfinite(scale)) return;
+    const float previous = m_camera->orthoScale();
+    m_camera->setOrthoScale(scale);
+    if (!qFuzzyCompare(previous, m_camera->orthoScale())) {
+        emit cameraChanged();
+        update();
+    }
+}
+
+void OpenGLViewport::setAutoFitOnLoad(bool enabled) {
+    if (m_autoFitOnLoad == enabled) return;
+    m_autoFitOnLoad = enabled;
+    emit autoFitOnLoadChanged();
 }
 
 void OpenGLViewport::setRotationConstraint(int constraint) {

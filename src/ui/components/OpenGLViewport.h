@@ -72,6 +72,9 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(float viewportAxesScale READ viewportAxesScale WRITE setViewportAxesScale NOTIFY viewportAxesScaleChanged)
     Q_PROPERTY(bool isPerspective READ isPerspective WRITE setIsPerspective NOTIFY projectionChanged)
     Q_PROPERTY(float fieldOfView READ fieldOfView WRITE setFieldOfView NOTIFY projectionChanged)
+    Q_PROPERTY(float cameraDistance READ cameraDistance WRITE setCameraDistance NOTIFY cameraChanged)
+    Q_PROPERTY(float orthographicScale READ orthographicScale WRITE setOrthographicScale NOTIFY cameraChanged)
+    Q_PROPERTY(bool autoFitOnLoad READ autoFitOnLoad WRITE setAutoFitOnLoad NOTIFY autoFitOnLoadChanged)
     Q_PROPERTY(int rotationConstraint READ rotationConstraint WRITE setRotationConstraint NOTIFY rotationConstraintChanged)
 
 public:
@@ -118,6 +121,9 @@ public:
     float viewportAxesScale() const;
     bool isPerspective() const;
     float fieldOfView() const;
+    float cameraDistance() const;
+    float orthographicScale() const;
+    bool autoFitOnLoad() const;
     int rotationConstraint() const;
 
     Q_INVOKABLE QVariantList getAxisDirections() const;
@@ -159,6 +165,9 @@ public slots:
     void setViewportAxesScale(float value);
     void setIsPerspective(bool perspective);
     void setFieldOfView(float fov);
+    void setCameraDistance(float distance);
+    void setOrthographicScale(float scale);
+    void setAutoFitOnLoad(bool enabled);
     void setRotationConstraint(int constraint);
 
 signals:
@@ -198,6 +207,7 @@ signals:
     void viewportAxesYChanged();
     void viewportAxesScaleChanged();
     void projectionChanged();
+    void autoFitOnLoadChanged();
     void rotationConstraintChanged();
     void cameraChanged();
 
@@ -215,6 +225,7 @@ protected:
 
 private:
     void notifyFramePresented();
+    void updateCameraForStructure(bool fitScale);
     void updateHoverStatus(const QPointF& position);
     void setHoverStatus(const QString& status);
 
@@ -270,6 +281,7 @@ private:
     bool m_needsCameraUpdate = false;
     bool m_rendererModeChanged = false;
     bool m_showRotationCenter = false;
+    bool m_autoFitOnLoad = true;
 
     // Async bond detection
     struct BondResult {
