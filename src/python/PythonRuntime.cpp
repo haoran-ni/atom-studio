@@ -7,6 +7,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdlib>
+#include <stdexcept>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -118,15 +119,45 @@ fs::path getAppDirectory() {
 #endif
 }
 
-/**
- * @brief Check if bundled Python exists and set environment variables
- *
- * On macOS bundle:
- *   Contents/Resources/python/lib/pythonX.Y (standard library)
- *   Contents/Resources/python/lib/pythonX.Y/site-packages (ASE, NumPy)
- *
- * Returns true if bundled Python was found and configured
- */
+#ifdef __APPLE__
+void initializeBundledInterpreter() {
+    const fs::path pythonBase = getAppDirectory() / "Resources" / "python";
+    const fs::path pythonLibDir = findMatchingBundledPythonLibDir(pythonBase / "lib");
+    if (pythonLibDir.empty() || !fs::exists(pythonLibDir / "encodings")) {
+        throw std::runtime_error("The application is missing its compatible bundled Python runtime: "
+                                 + pythonBase.string());
+    }
+
+    PyConfig config;
+    PyConfig_InitIsolatedConfig(&config);
+    config.site_import = 0; // No .pth files, sitecustomize, or usercustomize.
+    config.write_bytecode = 0; // Keep the signed application bundle read-only.
+    config.module_search_paths_set = 1;
+
+    auto check = [&config](PyStatus status) {
+        if (PyStatus_Exception(status)) {
+            const std::string error = status.err_msg ? status.err_msg : "Python configuration failed";
+            PyConfig_Clear(&config);
+            throw std::runtime_error(error);
+        }
+    };
+    const std::wstring home = pythonBase.wstring();
+    const std::wstring executable = getExecutablePath().wstring();
+    check(PyConfig_SetString(&config, &config.home, home.c_str()));
+    check(PyConfig_SetString(&config, &config.executable, executable.c_str()));
+    check(PyConfig_SetString(&config, &config.base_executable, executable.c_str()));
+    for (const fs::path& path : {pythonLibDir, pythonLibDir / "lib-dynload",
+                                pythonLibDir / "site-packages"}) {
+        check(PyWideStringList_Append(&config.module_search_paths, path.wstring().c_str()));
+    }
+
+    // pybind11 clears config, including on initialization failure. Passing false
+    // also prevents pybind11 from adding the working directory to sys.path.
+    py::initialize_interpreter(&config, 0, nullptr, false);
+    std::cout << "[PythonRuntime] Using isolated bundled Python: " << pythonBase << std::endl;
+}
+#else
+// Preserve the existing Windows/Linux development setup.
 bool configureBundledPython() {
     fs::path appDir = getAppDirectory();
     if (appDir.empty()) {
@@ -134,43 +165,7 @@ bool configureBundledPython() {
         return false;
     }
 
-    std::cout << "[PythonRuntime] App directory: " << appDir << std::endl;
-
-#ifdef __APPLE__
-    // Look for bundled Python in Resources/python
-    fs::path pythonBase = appDir / "Resources" / "python";
-    if (!fs::exists(pythonBase)) {
-        std::cout << "[PythonRuntime] Bundled Python not found at: " << pythonBase << std::endl;
-        return false;
-    }
-
-    fs::path libDir = pythonBase / "lib";
-    fs::path pythonLibDir = findMatchingBundledPythonLibDir(libDir);
-
-    if (pythonLibDir.empty() || !fs::exists(pythonLibDir)) {
-        std::cout << "[PythonRuntime] Compatible bundled Python not found in: " << libDir << std::endl;
-        return false;
-    }
-
-    // Set PYTHONHOME to the python base directory
-    std::string pythonHome = pythonBase.string();
-    setenv("PYTHONHOME", pythonHome.c_str(), 1);
-
-    // Set PYTHONPATH to include site-packages
-    fs::path sitePackages = pythonLibDir / "site-packages";
-    std::string pythonPath = pythonLibDir.string();
-    if (fs::exists(sitePackages)) {
-        pythonPath = sitePackages.string() + ":" + pythonPath;
-    }
-    setenv("PYTHONPATH", pythonPath.c_str(), 1);
-
-    std::cout << "[PythonRuntime] Using bundled Python" << std::endl;
-    std::cout << "[PythonRuntime] PYTHONHOME=" << pythonHome << std::endl;
-    std::cout << "[PythonRuntime] PYTHONPATH=" << pythonPath << std::endl;
-
-    return true;
-
-#elif defined(_WIN32)
+#ifdef _WIN32
     // Windows bundled Python structure
     fs::path pythonBase = appDir / "python";
     if (!fs::exists(pythonBase)) {
@@ -226,6 +221,7 @@ bool configureBundledPython() {
     return true;
 #endif
 }
+#endif
 
 } // anonymous namespace
 
@@ -240,6 +236,10 @@ bool PythonRuntime::initialize() {
     }
 
     try {
+#ifdef __APPLE__
+        initializeBundledInterpreter();
+        m_usingBundledPython = true;
+#else
         // Try to configure bundled Python first
         // If bundled Python exists, use it; otherwise fall back to system Python
         m_usingBundledPython = configureBundledPython();
@@ -250,6 +250,7 @@ bool PythonRuntime::initialize() {
 
         // Initialize Python interpreter
         py::initialize_interpreter();
+#endif
 
         // Use a scope to ensure all pybind11 objects are destroyed before releasing GIL
         {
@@ -291,9 +292,7 @@ bool PythonRuntime::initialize() {
 
             } catch (const py::error_already_set& e) {
                 if (m_usingBundledPython) {
-                    std::cerr << "[PythonRuntime] ERROR: Failed to load ASE from bundled Python: "
-                              << e.what() << std::endl;
-                    std::cerr << "[PythonRuntime] The application bundle may be corrupted." << std::endl;
+                    throw;
                 } else {
                     std::cerr << "[PythonRuntime] WARNING: ASE not found. "
                               << "Please install ASE: pip install ase" << std::endl;
@@ -306,11 +305,18 @@ bool PythonRuntime::initialize() {
 
     } catch (const py::error_already_set& e) {
         std::cerr << "[PythonRuntime] Python initialization error: " << e.what() << std::endl;
-        return false;
     } catch (const std::exception& e) {
         std::cerr << "[PythonRuntime] Initialization error: " << e.what() << std::endl;
-        return false;
     }
+
+    // Destroy Python exceptions before finalizing their interpreter.
+    if (m_initialized) {
+        finalize();
+    } else if (Py_IsInitialized()) {
+        py::finalize_interpreter();
+    }
+    m_usingBundledPython = false;
+    return false;
 }
 
 void PythonRuntime::finalize() {

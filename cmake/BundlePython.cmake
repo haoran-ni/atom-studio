@@ -21,7 +21,7 @@ endforeach()
 
 function(query_python output_var code)
     execute_process(
-        COMMAND "${PYTHON_EXECUTABLE}" -c "${code}"
+        COMMAND "${PYTHON_EXECUTABLE}" -I -c "${code}"
         RESULT_VARIABLE query_result
         OUTPUT_VARIABLE query_output
         ERROR_VARIABLE query_error
@@ -41,6 +41,8 @@ function(write_stdlib_manifest manifest_file)
 set(ATOM_STUDIO_BUNDLED_PYTHON_EXECUTABLE "@PYTHON_EXECUTABLE@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_PREFIX "@PYTHON_PREFIX@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_VERSION "@PYTHON_VERSION@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_FULL_VERSION "@PYTHON_FULL_VERSION@")
+set(ATOM_STUDIO_BUNDLED_PYTHON_ARCHITECTURE "@PYTHON_ARCHITECTURE@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_STDLIB_SRC "@PYTHON_STDLIB_SRC@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_EXT_SUFFIX "@PYTHON_EXT_SUFFIX@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM "@CMAKE_SYSTEM_NAME@")
@@ -50,6 +52,8 @@ set(ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM "@CMAKE_SYSTEM_NAME@")
     string(REPLACE "@PYTHON_EXECUTABLE@" "${PYTHON_EXECUTABLE}" manifest_contents "${manifest_contents}")
     string(REPLACE "@PYTHON_PREFIX@" "${PYTHON_PREFIX}" manifest_contents "${manifest_contents}")
     string(REPLACE "@PYTHON_VERSION@" "${PYTHON_VERSION}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_FULL_VERSION@" "${PYTHON_FULL_VERSION}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_ARCHITECTURE@" "${PYTHON_ARCHITECTURE}" manifest_contents "${manifest_contents}")
     string(REPLACE "@PYTHON_STDLIB_SRC@" "${PYTHON_STDLIB_SRC}" manifest_contents "${manifest_contents}")
     string(REPLACE "@PYTHON_EXT_SUFFIX@" "${PYTHON_EXT_SUFFIX}" manifest_contents "${manifest_contents}")
     string(REPLACE "@CMAKE_SYSTEM_NAME@" "${CMAKE_SYSTEM_NAME}" manifest_contents "${manifest_contents}")
@@ -115,7 +119,7 @@ endfunction()
 
 function(sync_site_packages)
     execute_process(
-        COMMAND "${PYTHON_EXECUTABLE}" "${PYTHON_PACKAGE_SYNC_SCRIPT}"
+        COMMAND "${PYTHON_EXECUTABLE}" -I "${PYTHON_PACKAGE_SYNC_SCRIPT}"
             --requirements-file "${PYTHON_REQUIREMENTS_FILE}"
             --target-site-packages "${SITE_PACKAGES}"
             --manifest-file "${PACKAGE_MANIFEST_FILE}"
@@ -136,6 +140,27 @@ function(sync_site_packages)
 endfunction()
 
 function(validate_bundle output_result output_error)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        # Validate with our embedded interpreter and bundled native libraries,
+        # never with the developer's Python executable as the runtime under test.
+        execute_process(
+            COMMAND "${PYTHON_EXECUTABLE}" -I "${PYTHON_NATIVE_BUNDLE_SCRIPT}"
+                --app "${APP_BUNDLE_PATH}"
+                --executable "${APP_EXECUTABLE}"
+                --python-library "${PYTHON_LIBRARY}"
+                --check-executable "${PYTHON_CHECK_EXECUTABLE}"
+            RESULT_VARIABLE validation_result
+            OUTPUT_VARIABLE validation_output
+            ERROR_VARIABLE validation_error
+        )
+        if(NOT "${validation_output}" STREQUAL "")
+            message(STATUS "${validation_output}")
+        endif()
+        set(${output_result} "${validation_result}" PARENT_SCOPE)
+        set(${output_error} "${validation_error}" PARENT_SCOPE)
+        return()
+    endif()
+
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         set(path_separator ";")
     else()
@@ -168,6 +193,8 @@ message(STATUS "Synchronizing bundled Python runtime...")
 
 query_python(PYTHON_PREFIX "import sys; print(sys.prefix)")
 query_python(PYTHON_VERSION "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+query_python(PYTHON_FULL_VERSION "import sys; print(sys.version)")
+query_python(PYTHON_ARCHITECTURE "import platform; print(platform.machine())")
 query_python(PYTHON_STDLIB_SRC "import sysconfig; print(sysconfig.get_path('stdlib'))")
 query_python(PYTHON_EXT_SUFFIX "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX') or '')")
 
@@ -211,6 +238,12 @@ else()
     elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_VERSION}" STREQUAL "${PYTHON_VERSION}")
         set(rebuild_stdlib TRUE)
         set(rebuild_reason "Python version changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_FULL_VERSION}" STREQUAL "${PYTHON_FULL_VERSION}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python build changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_ARCHITECTURE}" STREQUAL "${PYTHON_ARCHITECTURE}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "Python architecture changed")
     elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_STDLIB_SRC}" STREQUAL "${PYTHON_STDLIB_SRC}")
         set(rebuild_stdlib TRUE)
         set(rebuild_reason "Python stdlib source changed")

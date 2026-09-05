@@ -1,4 +1,5 @@
 # Build directories
+.venv-build/
 build/
 build-*/
 out/

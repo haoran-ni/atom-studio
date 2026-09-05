@@ -24,22 +24,27 @@ A high-performance desktop application for visualization of atomic structures.
 
 1. **Install dependencies:**
    ```bash
-   brew install qt cmake
+   brew install qt cmake pybind11 python
    ```
+   Apple's Xcode Command Line Tools (or Xcode) must also be installed.
 
-2. **Run the setup script** (one-time, creates AGL stub for Qt6):
+2. **Prepare a dedicated build-time Python environment:**
    ```bash
-   chmod +x scripts/setup-macos.sh
-   ./scripts/setup-macos.sh
+   python3 -m venv .venv-build
+   .venv-build/bin/python -m pip install -r cmake/python-requirements.txt
    ```
+   ASE installs NumPy and its other dependencies. No AGL setup script or global
+   framework modification is needed.
 
 3. **Build:**
    ```bash
-   cmake --preset=default
+   cmake --preset=default -DPython3_EXECUTABLE="$PWD/.venv-build/bin/python"
    cmake --build build
    ```
 
-   The normal build also synchronizes the bundled Python runtime automatically.
+   The normal build automatically bundles the selected Python interpreter library,
+   standard library, ASE, and their native dependencies. It also validates isolated
+   Python startup and structure I/O without using an external Python runtime.
 
 4. **Run:**
    ```bash
@@ -79,13 +84,31 @@ cmake --build build-vcpkg
 
 ### macOS
 
-To create a self-contained app bundle with all dependencies:
+To build a Release app and package its Qt dependencies:
 
 ```bash
-cmake --build build --target deploy
+cmake --preset=release -DPython3_EXECUTABLE="$PWD/.venv-build/bin/python"
+cmake --build build-release
+cmake --build build-release --target deploy
+ctest --test-dir build-release --output-on-failure
 ```
 
-The resulting `build/bin/atom-studio.app` can be distributed to other macOS users.
+The result is `build-release/bin/atom-studio.app`. A successfully deployed bundle
+does not require users to install Python, Conda, ASE, or Qt. Check `macdeployqt`
+output for unresolved-framework errors; its exit status alone is not sufficient.
+Python is private to the app: it ignores external
+Python settings and packages, does not modify the user's Python environment,
+and reports a broken bundle instead of falling back to an external interpreter.
+
+Normal builds bundle Python; `deploy` additionally packages Qt. The Python bundle
+test checks relocation, conflicting environment settings, native dependencies,
+ASE file I/O, and rejection of missing or incompatible runtime files. Python GUI
+modules such as Tk are not a supported app interface.
+
+Developer ID signing, notarization, and DMG/PKG creation are not yet automated.
+Release architecture and minimum macOS version must also be selected and verified
+before public distribution. Python package versions currently follow the selected
+build environment; use a controlled environment for release builds.
 
 ## Project Structure
 

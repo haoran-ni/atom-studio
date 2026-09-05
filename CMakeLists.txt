@@ -51,6 +51,7 @@ message(STATUS "pybind11 found: ${pybind11_VERSION}")
 
 set(PYTHON_BUNDLE_REQUIREMENTS_FILE "${CMAKE_SOURCE_DIR}/cmake/python-requirements.txt")
 set(PYTHON_PACKAGE_SYNC_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/sync_python_packages.py")
+set(PYTHON_NATIVE_BUNDLE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/bundle_macos_python.py")
 
 # Platform-specific settings
 if(APPLE)
@@ -65,19 +66,7 @@ if(APPLE)
     set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-    # Fix for deprecated AGL framework on modern macOS
-    # AGL (Apple GL) was deprecated and removed - create a stub framework to satisfy Qt's OpenGL module
-    # Build stub as a framework during CMake configure
-    enable_language(C)
     enable_language(OBJCXX)
-    add_library(AGL SHARED ${CMAKE_SOURCE_DIR}/cmake/agl_stub.c)
-    set_target_properties(AGL PROPERTIES
-        FRAMEWORK TRUE
-        FRAMEWORK_VERSION A
-        MACOSX_FRAMEWORK_IDENTIFIER com.apple.agl
-        PUBLIC_HEADER ""
-        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Frameworks
-    )
 endif()
 
 # Add subdirectories
@@ -111,14 +100,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets
 )
 
-# Add framework search path for AGL stub on macOS
-if(APPLE)
-    add_dependencies(${PROJECT_NAME} AGL)
-    target_link_options(${PROJECT_NAME} PRIVATE
-        -F${CMAKE_BINARY_DIR}/Frameworks
-    )
-endif()
-
 # Set runtime output directory
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -134,18 +115,29 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist.in
     )
 
-    # Post-build: Copy AGL stub framework into app bundle
     set(APP_BUNDLE_PATH "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}.app")
-    set(APP_FRAMEWORKS_DIR "${APP_BUNDLE_PATH}/Contents/Frameworks")
     set(PYTHON_RUNTIME_BUNDLE_ROOT "${APP_BUNDLE_PATH}")
-
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMENT "Copying AGL stub framework into app bundle..."
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${APP_FRAMEWORKS_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_BINARY_DIR}/Frameworks/AGL.framework"
-            "${APP_FRAMEWORKS_DIR}/AGL.framework"
+    # A Qt-free build utility validates the same embedded runtime as the app.
+    add_executable(atom-python-runtime-check src/python/tests/BundledRuntimeCheck.cpp)
+    target_link_libraries(atom-python-runtime-check PRIVATE atom-python)
+    set_target_properties(atom-python-runtime-check PROPERTIES MACOSX_BUNDLE FALSE)
+    set(PYTHON_NATIVE_BUNDLE_ARGS
+        -DPYTHON_LIBRARY=$<TARGET_FILE:Python3::Python>
+        -DPYTHON_NATIVE_BUNDLE_SCRIPT=${PYTHON_NATIVE_BUNDLE_SCRIPT}
+        -DAPP_EXECUTABLE=$<TARGET_FILE:${PROJECT_NAME}>
+        -DPYTHON_CHECK_EXECUTABLE=$<TARGET_FILE:atom-python-runtime-check>
     )
+    set(PYTHON_NATIVE_BUNDLE_DEPENDS atom-python-runtime-check ${PYTHON_NATIVE_BUNDLE_SCRIPT})
+    if(BUILD_TESTING)
+        add_test(NAME atom-python-bundle
+            COMMAND "${Python3_EXECUTABLE}" -I
+                "${CMAKE_SOURCE_DIR}/scripts/tests/check_macos_python_bundle.py"
+                --app "${APP_BUNDLE_PATH}"
+                --check-executable $<TARGET_FILE:atom-python-runtime-check>
+                --python-library $<TARGET_FILE:Python3::Python>
+        )
+        set_tests_properties(atom-python-bundle PROPERTIES TIMEOUT 120)
+    endif()
 endif()
 
 add_custom_target(bundle-python ALL
@@ -156,11 +148,13 @@ add_custom_target(bundle-python ALL
         -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
         -DPYTHON_REQUIREMENTS_FILE=${PYTHON_BUNDLE_REQUIREMENTS_FILE}
         -DPYTHON_PACKAGE_SYNC_SCRIPT=${PYTHON_PACKAGE_SYNC_SCRIPT}
+        ${PYTHON_NATIVE_BUNDLE_ARGS}
         -P ${CMAKE_SOURCE_DIR}/cmake/BundlePython.cmake
     DEPENDS
         ${PROJECT_NAME}
         ${PYTHON_BUNDLE_REQUIREMENTS_FILE}
         ${PYTHON_PACKAGE_SYNC_SCRIPT}
+        ${PYTHON_NATIVE_BUNDLE_DEPENDS}
     VERBATIM
 )
 
@@ -175,9 +169,6 @@ if(APPLE)
     add_custom_target(deploy
         COMMENT "Deploying Qt frameworks and bundled Python into app bundle..."
         COMMAND "${QT_BIN_DIR}/macdeployqt" "${APP_BUNDLE_PATH}" -qmldir=${CMAKE_SOURCE_DIR}/src/ui/qml
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_BINARY_DIR}/Frameworks/AGL.framework"
-            "${APP_FRAMEWORKS_DIR}/AGL.framework"
         DEPENDS ${PROJECT_NAME} bundle-python
     )
 endif()

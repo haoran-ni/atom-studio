@@ -52,7 +52,8 @@ public:
      * @brief Check if using bundled Python
      *
      * Returns true if the application is using bundled Python from the
-     * app bundle/installation directory, false if using system Python.
+     * app bundle/installation directory. macOS requires the bundled runtime;
+     * Windows/Linux may fall back to the development Python installation.
      */
     bool isUsingBundledPython() const { return m_usingBundledPython; }
 

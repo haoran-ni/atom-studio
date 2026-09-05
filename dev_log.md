@@ -4,6 +4,42 @@ This file records development sessions and decisions for future reference.
 
 ---
 
+## 2026-09-05: macOS Build Setup and Private Python Runtime
+
+Removed the historical AGL stub, its global setup script, and CMake build/copy
+steps. The current Qt toolchain configures and builds without AGL. The README now
+documents Qt/CMake/pybind11 prerequisites and a dedicated build-time Python venv.
+
+Normal macOS builds now package the selected Python shared library and recursively
+resolve the native dependencies of the standard library and installed ASE package
+set. `scripts/bundle_macos_python.py` modifies only app-bundle copies, uses relative
+load commands, checks architecture compatibility, signs modified native binaries
+ad hoc, and caches unchanged inputs. The stdlib manifest now also tracks the full
+Python build version and CPU architecture.
+
+macOS startup uses isolated `PyConfig` with explicit bundled module paths. It does
+not read user Python settings, import site customization, modify Python environment
+variables, or fall back to external Python. Bytecode writes are disabled, and a
+missing ASE package is an initialization failure.
+
+Validation: Debug and fresh Release builds passed. The Qt-free runtime check
+verified bundled import origins and loaded native-library paths, ASE structure
+I/O, NumPy/SciPy, compression, SSL imports, and SQLite under conflicting Python
+settings. All six CTest tests passed, including relocation to a path containing
+spaces and Unicode, and rejection of missing/incompatible runtimes or missing ASE.
+An incremental Debug build confirmed all Python payloads were already up to date.
+
+The Python integration test also passed after Qt deployment, and the fresh deployed
+bundle contains no AGL framework. The local `macdeployqt` reported unresolved
+frameworks (including StateMachine, PDF, 3D, and VirtualKeyboard modules) despite
+returning success. This remains a separate Qt deployment issue; the artifact is
+not yet certified for public distribution.
+
+Public-release signing/notarization, installer creation, dependency version locking,
+and the supported macOS/architecture matrix remain separate delivery work.
+
+---
+
 ## 2026-07-11: Camera Rotation Plane Constraints
 
 ### Summary
