@@ -7,10 +7,18 @@
         <file alias="CollapsibleSection.qml">../src/ui/qml/CollapsibleSection.qml</file>
         <file alias="PropertyRow.qml">../src/ui/qml/PropertyRow.qml</file>
         <file alias="NumericSliderControl.qml">../src/ui/qml/NumericSliderControl.qml</file>
-        <file alias="RGBColorPicker.qml">../src/ui/qml/RGBColorPicker.qml</file>
+        <file alias="ColorPicker.qml">../src/ui/qml/ColorPicker.qml</file>
+        <file alias="ColorPickerPopup.qml">../src/ui/qml/ColorPickerPopup.qml</file>
+        <file alias="ColorChannelSlider.qml">../src/ui/qml/ColorChannelSlider.qml</file>
+        <file alias="ColorSpectrum.qml">../src/ui/qml/ColorSpectrum.qml</file>
+        <file alias="ColorSwatch.qml">../src/ui/qml/ColorSwatch.qml</file>
+        <file alias="ColorUtils.js">../src/ui/qml/ColorUtils.js</file>
         <file alias="InfoOverlayBox.qml">../src/ui/qml/InfoOverlayBox.qml</file>
     </qresource>
     <qresource prefix="/icons">
+        <file alias="color-ring.svg">icons/color-ring.svg</file>
+        <file alias="close.svg">icons/close.svg</file>
+        <file alias="plus.svg">icons/plus.svg</file>
         <file alias="atom.svg">icons/atom.svg</file>
         <file alias="background.svg">icons/background.svg</file>
         <file alias="bond.svg">icons/bond.svg</file>

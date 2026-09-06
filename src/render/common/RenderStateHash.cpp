@@ -48,6 +48,7 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hi(settings.backgroundColor.red()));
     combine(hi(settings.backgroundColor.green()));
     combine(hi(settings.backgroundColor.blue()));
+    combine(hi(settings.backgroundColor.alpha()));
     combine(hb(settings.outlineEnabled));
     combine(hf(settings.outlineWidth));
     combine(hi(settings.outlineColor.red()));
@@ -75,7 +76,6 @@ uint64_t computeRasterFrameHash(const Camera& camera, const RenderSettings& sett
     // Visibility/tessellation not covered by the RT accumulation hash
     combine(hb(settings.showAtoms));
     combine(hi(settings.cylinderSegments));
-    combine(hi(settings.backgroundColor.alpha()));
 
     // Unit cell overlay
     combine(hb(settings.showUnitCell));

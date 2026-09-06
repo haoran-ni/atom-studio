@@ -88,3 +88,23 @@ if(APPLE)
     target_link_libraries(atom-ui PUBLIC "-framework Metal" "-framework QuartzCore")
     target_compile_definitions(atom-ui PUBLIC ATOM_HAS_METAL)
 endif()
+
+# Exercise color editing and popup ownership without an embedded Python runtime.
+if(BUILD_TESTING)
+    find_package(Qt6 QUIET COMPONENTS QuickTest)
+    if(TARGET Qt6::QuickTest)
+        add_executable(atom-ui-color-picker-test
+            tests/ColorPickerTest.cpp
+            ${PROJECT_SOURCE_DIR}/resources/resources.qrc
+        )
+        target_link_libraries(atom-ui-color-picker-test PRIVATE Qt6::QuickTest Qt6::QuickControls2)
+        target_compile_definitions(atom-ui-color-picker-test PRIVATE
+            QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests"
+        )
+        add_test(NAME atom-ui-color-picker COMMAND atom-ui-color-picker-test -platform offscreen)
+        set_tests_properties(atom-ui-color-picker PROPERTIES
+            ENVIRONMENT "QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
+            TIMEOUT 30
+        )
+    endif()
+endif()

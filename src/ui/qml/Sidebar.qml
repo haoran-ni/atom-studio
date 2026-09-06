@@ -11,6 +11,7 @@ Rectangle {
     property string statusHint: ""
     property var statusHintOwner: null
     readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
+    readonly property color defaultBackgroundColor: "white"
 
     readonly property color panelBgTop: "#fbfbfc"
     readonly property color panelBgBottom: "#efeff2"
@@ -23,6 +24,26 @@ Rectangle {
     readonly property color textBody: "#33353c"
     readonly property color textMuted: "#7a7d87"
     readonly property color connectorColor: "#6e727d"
+
+    ColorPickerPopup {
+        id: sharedColorPicker
+    }
+
+    Connections {
+        target: StructureModel
+        function onSelectionChanged() {
+            if (sharedColorPicker.owner && sharedColorPicker.owner.selectionDependent)
+                sharedColorPicker.release(sharedColorPicker.owner)
+        }
+    }
+
+    Connections {
+        target: sidebarScrollView.contentItem
+        function onContentYChanged() {
+            if (sharedColorPicker.visible)
+                sharedColorPicker.close()
+        }
+    }
 
     function showMaxRTSamplesError(message) {
         maxRTSamplesErrorMessage = message
@@ -405,6 +426,7 @@ Rectangle {
         spacing: 10
 
         ScrollView {
+            id: sidebarScrollView
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -763,7 +785,9 @@ Rectangle {
                             SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
-                                    RGBColorPicker {
+                                    ColorPicker {
+                                        pickerPopup: sharedColorPicker
+                                        title: qsTr("Stroke Color")
                                         defaultColor: Qt.rgba(0, 0, 0, 1.0)
                                         sourceColor: sidebar.viewport ? sidebar.viewport.outlineColor : defaultColor
                                         onColorApplied: function(c) {
@@ -896,17 +920,14 @@ Rectangle {
 
                             SidebarBranchRow {
                                 content: Component {
-                                    ColumnLayout {
-                                        spacing: 5
+                                    ColorPicker {
+                                        pickerPopup: sharedColorPicker
+                                        selectionDependent: true
                                         enabled: StructureModel.selectionEnabled && StructureModel.selectedAtomCount > 0
-                                        opacity: enabled ? 1.0 : 0.4
-                                        Label { text: qsTr("Color"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                        RGBColorPicker {
-                                            defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
-                                            sourceColor: StructureModel.selectedAtomColor
-                                            onColorApplied: function(c) {
-                                                StructureModel.applyAtomColorToSelection(c)
-                                            }
+                                        defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
+                                        sourceColor: StructureModel.selectedAtomColor
+                                        onColorApplied: function(c) {
+                                            StructureModel.applyAtomColorToSelection(c)
                                         }
                                     }
                                 }
@@ -1068,7 +1089,8 @@ Rectangle {
                             SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
-                                    RGBColorPicker {
+                                    ColorPicker {
+                                        pickerPopup: sharedColorPicker
                                         defaultColor: Qt.rgba(0, 0, 0, 1.0)
                                         sourceColor: sidebar.viewport ? sidebar.viewport.unitCellColor : defaultColor
                                         onColorApplied: function(c) {
@@ -1631,10 +1653,10 @@ Rectangle {
 
                             SidebarBranchRow {
                                 content: Component {
-                                    RGBColorPicker {
-                                        id: backgroundColorPicker
+                                    ColorPicker {
+                                        pickerPopup: sharedColorPicker
                                         showAlpha: true
-                                        defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
+                                        defaultColor: sidebar.defaultBackgroundColor
                                         sourceColor: sidebar.viewport ? sidebar.viewport.backgroundColor : defaultColor
                                         onColorApplied: function(c) {
                                             if (sidebar.viewport) {
@@ -1653,7 +1675,7 @@ Rectangle {
                                         Layout.fillWidth: true
                                         onClicked: {
                                             if (sidebar.viewport) {
-                                                sidebar.viewport.backgroundColor = backgroundColorPicker.defaultColor
+                                                sidebar.viewport.backgroundColor = sidebar.defaultBackgroundColor
                                             }
                                         }
                                     }

@@ -130,4 +130,8 @@ if(BUILD_TESTING)
     )
     target_link_libraries(atom-render-camera-test PRIVATE atom-render)
     add_test(NAME atom-render-camera COMMAND atom-render-camera-test)
+
+    add_executable(atom-render-state-hash-test tests/RenderStateHashTest.cpp)
+    target_link_libraries(atom-render-state-hash-test PRIVATE atom-render)
+    add_test(NAME atom-render-state-hash COMMAND atom-render-state-hash-test)
 endif()

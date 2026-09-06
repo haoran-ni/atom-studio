@@ -6,6 +6,7 @@ A high-performance desktop application for visualization of atomic structures.
 
 - Interactive visualization panel
 - Bright neutral right-hand sidebar with section icons and tunable-parameter hierarchy lines
+- Compact color controls with Grid, Spectrum, and RGB/hex tabs, background opacity, and session swatches
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized
 - Supports various atomic structure file formats
@@ -131,7 +132,8 @@ atom-studio/
 │       │   ├── CollapsibleSection.qml  # Reusable collapsible section
 │       │   ├── PropertyRow.qml         # Reusable label/value row
 │       │   ├── NumericSliderControl.qml # Reusable slider + text + reset
-│       │   ├── RGBColorPicker.qml      # Reusable RGB color picker
+│       │   ├── ColorPicker.qml         # Compact color row and rainbow button
+│       │   ├── ColorPickerPopup.qml    # Shared Grid/Spectrum/Sliders editor
 │       │   ├── InfoOverlayBox.qml      # Reusable semi-transparent overlay
 │       │   └── AppMenuActions.qml      # Shared File/Edit menu actions
 │       └── components/     # C++ UI components
