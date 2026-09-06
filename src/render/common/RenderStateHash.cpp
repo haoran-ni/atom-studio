@@ -35,7 +35,6 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hf(settings.bondRadius));
     combine(hb(settings.showBonds));
     combine(hb(settings.enableShadows));
-    combine(hf(settings.shadowOpacity));
     combine(hb(settings.enableAmbientOcclusion));
     combine(hi(settings.aoSamples));
     combine(hf(settings.aoRadius));

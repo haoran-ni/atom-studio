@@ -511,8 +511,6 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->device, m_impl->atomSelectionBuffer,
         atomSelectionData.data(), atomSelectionData.size() * sizeof(uint32_t));
 
-    m_hasTransparency = packedColorsHaveTransparency(colorData);
-
     // ── Bond buffers ──────────────────────────────────────────
 
     m_bondCount = static_cast<int>(bondRenderSegmentCount(m_structure));
@@ -540,10 +538,6 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondSelectionBuffer = fillSharedBuffer(
             m_impl->device, m_impl->bondSelectionBuffer,
             bondSelectionData.data(), bondSelectionData.size() * sizeof(uint32_t));
-
-        m_hasTransparency = m_hasTransparency ||
-                            packedColorsHaveTransparency(packedBonds.startColors) ||
-                            packedColorsHaveTransparency(packedBonds.endColors);
     } else {
         m_impl->bondStartBuffer = nil;
         m_impl->bondEndBuffer = nil;
@@ -670,8 +664,6 @@ void MetalRayTracingRenderer::uploadAppearanceData() {
         m_impl->device, m_impl->atomSelectionBuffer,
         atomSelectionData.data(), atomSelectionData.size() * sizeof(uint32_t));
 
-    m_hasTransparency = packedColorsHaveTransparency(colorData);
-
     if (m_bondCount > 0) {
         std::vector<float> startColors;
         std::vector<float> endColors;
@@ -687,10 +679,6 @@ void MetalRayTracingRenderer::uploadAppearanceData() {
         m_impl->bondSelectionBuffer = fillSharedBuffer(
             m_impl->device, m_impl->bondSelectionBuffer,
             bondSelectionData.data(), bondSelectionData.size() * sizeof(uint32_t));
-
-        m_hasTransparency = m_hasTransparency ||
-                            packedColorsHaveTransparency(startColors) ||
-                            packedColorsHaveTransparency(endColors);
     }
 }
 
@@ -742,7 +730,6 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.height = m_height;
     rt.frameCount = static_cast<uint32_t>(m_sampleCount);
     rt.enableShadows = m_settings.enableShadows ? 1 : 0;
-    rt.shadowOpacity = m_settings.shadowOpacity;
     rt.enableAO = m_settings.enableAmbientOcclusion ? 1 : 0;
     rt.aoSamples = m_settings.aoSamples;
     rt.aoRadius = m_settings.aoRadius;
@@ -753,7 +740,6 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.showAtoms = m_settings.showAtoms ? 1 : 0;
     rt.showBonds = m_settings.showBonds ? 1 : 0;
     rt.isPerspective = camera.isPerspective() ? 1 : 0;
-    rt.hasTransparency = m_hasTransparency ? 1 : 0;
 
     // Stroke outlines: pixel→world scale factor valid for both projections
     // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).

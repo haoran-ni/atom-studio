@@ -134,4 +134,12 @@ if(BUILD_TESTING)
     add_executable(atom-render-state-hash-test tests/RenderStateHashTest.cpp)
     target_link_libraries(atom-render-state-hash-test PRIVATE atom-render)
     add_test(NAME atom-render-state-hash COMMAND atom-render-state-hash-test)
+
+    add_executable(atom-render-opaque-test tests/OpaqueRenderingTest.cpp)
+    target_link_libraries(atom-render-opaque-test PRIVATE atom-render)
+    add_test(NAME atom-render-opaque COMMAND atom-render-opaque-test)
+    set_tests_properties(atom-render-opaque PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        SKIP_RETURN_CODE 77
+    )
 endif()

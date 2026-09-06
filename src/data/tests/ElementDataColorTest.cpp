@@ -14,8 +14,7 @@ bool nearlyEqual(float a, float b, float eps = 1e-6f) {
 bool checkColor(const Color& color, float r, float g, float b) {
     return nearlyEqual(color.r, r) &&
            nearlyEqual(color.g, g) &&
-           nearlyEqual(color.b, b) &&
-           nearlyEqual(color.a, 1.0f);
+           nearlyEqual(color.b, b);
 }
 
 bool checkElementColorTables() {

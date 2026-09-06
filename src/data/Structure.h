@@ -69,7 +69,7 @@ struct Lattice {
  *
  * Rendering properties (computed from atomic numbers or set directly):
  * - radii
- * - colors (RGBA)
+ * - colors (RGB)
  */
 class Structure {
 public:
@@ -182,15 +182,13 @@ public:
     const float* radii() const { return m_radii.data(); }
     float* radii() { return m_radii.data(); }
 
-    // Colors (RGBA)
+    // Colors (RGB; scene objects are opaque)
     const float* colorsR() const { return m_colorR.data(); }
     const float* colorsG() const { return m_colorG.data(); }
     const float* colorsB() const { return m_colorB.data(); }
-    const float* colorsA() const { return m_colorA.data(); }
     float* colorsR() { return m_colorR.data(); }
     float* colorsG() { return m_colorG.data(); }
     float* colorsB() { return m_colorB.data(); }
-    float* colorsA() { return m_colorA.data(); }
 
     /**
      * @brief Update colors from element types using the selected ASE color scheme
@@ -200,15 +198,11 @@ public:
 
     /**
      * @brief Update stored bond endpoint colors from their connected atom colors.
-     *
-     * Bond transparency is preserved.
      */
     void updateBondColorsFromAtomColors();
 
     /**
      * @brief Update stored bond endpoint colors from connected atom element defaults.
-     *
-     * Bond transparency is preserved.
      */
     void updateBondColorsFromElements(
         ElementColorScheme scheme = ElementColorScheme::Jmol);
@@ -309,7 +303,7 @@ public:
     std::vector<float> packPositionsAndRadii() const;
 
     /**
-     * @brief Pack colors in RGBA format
+     * @brief Pack RGB colors into four-component GPU data with an opaque fourth component
      */
     std::vector<float> packColors() const;
 
@@ -338,7 +332,6 @@ private:
     std::vector<float> m_colorR;
     std::vector<float> m_colorG;
     std::vector<float> m_colorB;
-    std::vector<float> m_colorA;
     std::vector<uint8_t> m_selectedAtoms;
 
     // Lattice

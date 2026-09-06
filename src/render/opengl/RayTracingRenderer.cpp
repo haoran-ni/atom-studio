@@ -60,7 +60,7 @@ uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
 uniform float uShininess;
-uniform vec3 uBackgroundColor;
+uniform vec4 uBackgroundColor;
 
 // Progressive rendering
 uniform uint uFrameCount;
@@ -78,11 +78,9 @@ uniform bool uShowBonds;
 // Feature toggles
 uniform bool uEnableShadows;
 uniform bool uEnableAO;
-uniform float uShadowOpacity;
 uniform int uAOSamples;
 uniform float uAORadius;
 uniform int uIsPerspective;
-uniform bool uHasTransparency;  // false = all primitives opaque (skip alpha fetches)
 
 // ---------- PCG random number generator ----------
 
@@ -240,18 +238,6 @@ bool testNodeAABB(int nodeIndex, vec3 ro, vec3 invRd, float tMax, out float tNea
     return intersectAABB(ro, invRd, bmin, bmax, tMax, tNear);
 }
 
-float primitiveAlpha(uint primIndex) {
-    if (primIndex < uint(uAtomCount)) {
-        return texelFetch(uAtomColors, int(primIndex)).a;
-    }
-
-    int bondIdx = int(primIndex) - uAtomCount;
-    if (bondIdx < 0 || bondIdx >= uBondCount) return 0.0;
-    vec4 startColor = texelFetch(uBondStartColors, bondIdx);
-    vec4 endColor = texelFetch(uBondEndColors, bondIdx);
-    return max(startColor.a, endColor.a);
-}
-
 void traceClosest(vec3 ro, vec3 rd, int skipIndex, out float hitT, out int hitIndex) {
     hitT = 1e30;
     hitIndex = -1;
@@ -274,7 +260,6 @@ void traceClosest(vec3 ro, vec3 rd, int skipIndex, out float hitT, out int hitIn
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
                 if (int(primIndex) == skipIndex) continue;
-                if (uHasTransparency && primitiveAlpha(primIndex) <= 0.001) continue;
 
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
@@ -328,15 +313,14 @@ void traceClosest(vec3 ro, vec3 rd, int skipIndex, out float hitT, out int hitIn
     }
 }
 
-// Alpha-weighted any-hit test for shadow/AO.
-float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
-    if (uBVHNodeCount <= 0) return 0.0;
+// Opaque any-hit test for shadows and ambient occlusion.
+bool traceOccluded(vec3 ro, vec3 rd, float maxDist) {
+    if (uBVHNodeCount <= 0) return false;
 
     vec3 invRd = 1.0 / rd;
     int stack[BVH_STACK_SIZE];
     int sp = 0;
     stack[sp++] = 0;
-    float occlusionAlpha = 0.0;
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
@@ -349,14 +333,6 @@ float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
             for (uint i = 0u; i < primCount; ++i) {
                 uint primIndex = texelFetch(uBVHPrimIndices, int(first + i)).x;
                 if (primIndex >= uint(totalPrims)) continue;
-                // All-opaque scenes skip the alpha fetch; alpha = 1 then also
-                // makes the >= 0.999 checks below early-out on the first hit.
-                float alpha = 1.0;
-                if (uHasTransparency) {
-                    alpha = primitiveAlpha(primIndex);
-                    if (alpha <= 0.001) continue;
-                }
-
                 if (primIndex < uint(uAtomCount)) {
                     if (!uShowAtoms) continue;
                     vec4 atom = texelFetch(uAtomPositions, int(primIndex));
@@ -369,13 +345,11 @@ float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
                         float sqrtDisc = sqrt(disc);
                         float t = -b - sqrtDisc;
                         if (t > 0.001 && t < maxDist) {
-                            occlusionAlpha = max(occlusionAlpha, alpha);
-                            if (occlusionAlpha >= 0.999) return 1.0;
+                            return true;
                         }
                         t = -b + sqrtDisc;
                         if (t > 0.001 && t < maxDist) {
-                            occlusionAlpha = max(occlusionAlpha, alpha);
-                            if (occlusionAlpha >= 0.999) return 1.0;
+                            return true;
                         }
                     }
                 } else if (uShowBonds) {
@@ -385,8 +359,7 @@ float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
                     float bondRadius = texelFetch(uBondRadii, bondIdx).x;
                     float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.001 && t < maxDist) {
-                        occlusionAlpha = max(occlusionAlpha, alpha);
-                        if (occlusionAlpha >= 0.999) return 1.0;
+                        return true;
                     }
                 }
             }
@@ -406,7 +379,7 @@ float traceOcclusionAlpha(vec3 ro, vec3 rd, float maxDist) {
         }
     }
 
-    return occlusionAlpha;
+    return false;
 }
 
 // ---------- Hemisphere sampling for AO ----------
@@ -471,7 +444,7 @@ void main() {
     traceClosest(rayOrigin, rayDir, -1, hitT, hitIndex);
 
     if (hitIndex < 0) {
-        fragColor = vec4(uBackgroundColor, 1.0);
+        fragColor = vec4(uBackgroundColor.rgb * uBackgroundColor.a, uBackgroundColor.a);
         return;
     }
 
@@ -479,7 +452,6 @@ void main() {
     vec3 hitPos = rayOrigin + rayDir * hitT;
     vec3 normal;
     vec3 surfaceColor;
-    float surfaceAlpha;
     float biasRadius;
 
     if (hitIndex < uAtomCount) {
@@ -488,7 +460,6 @@ void main() {
         vec4 atomColor = texelFetch(uAtomColors, hitIndex);
         normal = normalize(hitPos - atomData.xyz);
         surfaceColor = atomColor.rgb;
-        surfaceAlpha = atomColor.a;
         biasRadius = atomData.w * uAtomScale;
     } else {
         // Cylinder hit
@@ -524,7 +495,6 @@ void main() {
         }
         vec4 bondColor = h < splitT ? startColor : endColor;
         surfaceColor = bondColor.rgb;
-        surfaceAlpha = bondColor.a;
         biasRadius = bondRadius;
     }
 
@@ -548,8 +518,7 @@ void main() {
     // Shadow
     float shadow = 1.0;
     if (uEnableShadows) {
-        float shadowAlpha = traceOcclusionAlpha(biasedOrigin, lightDir, 10000.0);
-        shadow = 1.0 - clamp(uShadowOpacity, 0.0, 1.0) * shadowAlpha;
+        shadow = traceOccluded(biasedOrigin, lightDir, 10000.0) ? 0.0 : 1.0;
     }
 
     // Ambient occlusion
@@ -558,14 +527,14 @@ void main() {
         float occluded = 0.0;
         for (int i = 0; i < uAOSamples; i++) {
             vec3 aoDir = cosineWeightedHemisphere(normal);
-            occluded += traceOcclusionAlpha(biasedOrigin, aoDir, uAORadius);
+            occluded += traceOccluded(biasedOrigin, aoDir, uAORadius) ? 1.0 : 0.0;
         }
         ao = 1.0 - occluded / float(uAOSamples);
     }
 
     // AO only modulates ambient (indirect light); direct light uses shadow only
     vec3 result = ambient * ao + (diffuse + specular) * shadow;
-    fragColor = vec4(mix(uBackgroundColor, result, clamp(surfaceAlpha, 0.0, 1.0)), 1.0);
+    fragColor = vec4(result, 1.0);
 }
 )";
 
@@ -592,10 +561,8 @@ uniform sampler2D uAccumTexture;
 uniform float uSampleCount;
 
 void main() {
-    vec3 accum = texture(uAccumTexture, vTexCoord).rgb;
-    vec3 color = accum / max(uSampleCount, 1.0);
-
-    fragColor = vec4(color, 1.0);
+    vec4 accum = texture(uAccumTexture, vTexCoord);
+    fragColor = accum / max(uSampleCount, 1.0);
 }
 )";
 
@@ -747,7 +714,8 @@ void RayTracingRenderer::render(const Camera& camera, const RenderSettings& sett
     if (m_atomCount == 0) {
         // No atoms — just clear with background color
         QColor bg = m_settings.backgroundColor;
-        glClearColor(bg.redF(), bg.greenF(), bg.blueF(), 1.0f);
+        glClearColor(bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(),
+                     bg.blueF() * bg.alphaF(), bg.alphaF());
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (m_settings.showViewportAxes) {
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -952,8 +920,6 @@ void RayTracingRenderer::uploadSceneData() {
     glBindTexture(GL_TEXTURE_BUFFER, m_atomColorTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, m_atomColorBuf);
 
-    m_hasTransparency = packedColorsHaveTransparency(colorData);
-
     // ── Bond TBOs ──────────────────────────────────────────────
 
     m_bondCount = static_cast<int>(bondRenderSegmentCount(m_structure));
@@ -993,10 +959,6 @@ void RayTracingRenderer::uploadSceneData() {
         glActiveTexture(GL_TEXTURE10);
         glBindTexture(GL_TEXTURE_BUFFER, m_bondRadiusTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, m_bondRadiusBuf);
-
-        m_hasTransparency = m_hasTransparency ||
-                            packedColorsHaveTransparency(packedBonds.startColors) ||
-                            packedColorsHaveTransparency(packedBonds.endColors);
     }
 
     // ── Unified BVH (atoms + bonds) ───────────────────────────
@@ -1040,7 +1002,6 @@ void RayTracingRenderer::uploadSceneData() {
     BVHData bvh = buildBVH(primBounds.data(), totalPrims);
     assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
     assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
-
 
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
@@ -1104,8 +1065,6 @@ void RayTracingRenderer::uploadAppearanceData() {
     uploadTBOData(m_atomColorBuf, colorData.data(),
                   static_cast<GLsizeiptr>(colorData.size() * sizeof(float)));
 
-    m_hasTransparency = packedColorsHaveTransparency(colorData);
-
     if (m_bondCount > 0) {
         std::vector<float> startColors;
         std::vector<float> endColors;
@@ -1115,10 +1074,6 @@ void RayTracingRenderer::uploadAppearanceData() {
                       static_cast<GLsizeiptr>(startColors.size() * sizeof(float)));
         uploadTBOData(m_bondEndColorBuf, endColors.data(),
                       static_cast<GLsizeiptr>(endColors.size() * sizeof(float)));
-
-        m_hasTransparency = m_hasTransparency ||
-                            packedColorsHaveTransparency(startColors) ||
-                            packedColorsHaveTransparency(endColors);
     }
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 }
@@ -1211,7 +1166,6 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uAtomScale", m_settings.atomScale);
     m_rtShader->setUniformValue("uShowAtoms", m_settings.showAtoms);
     m_rtShader->setUniformValue("uShowBonds", m_settings.showBonds);
-    m_rtShader->setUniformValue("uHasTransparency", m_hasTransparency);
 
     // Light direction is already in world space
     m_rtShader->setUniformValue("uLightDir", m_settings.lightDirWorld());
@@ -1223,7 +1177,7 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     // Background color
     QColor bg = m_settings.backgroundColor;
     m_rtShader->setUniformValue("uBackgroundColor",
-                                 QVector3D(bg.redF(), bg.greenF(), bg.blueF()));
+                                 QVector4D(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF()));
 
     // Progressive rendering
     m_rtShader->setUniformValue("uFrameCount", static_cast<GLuint>(m_sampleCount));
@@ -1231,7 +1185,6 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     // Feature toggles
     m_rtShader->setUniformValue("uEnableShadows", m_settings.enableShadows);
     m_rtShader->setUniformValue("uEnableAO", m_settings.enableAmbientOcclusion);
-    m_rtShader->setUniformValue("uShadowOpacity", m_settings.shadowOpacity);
     m_rtShader->setUniformValue("uAOSamples", m_settings.aoSamples);
     m_rtShader->setUniformValue("uAORadius", m_settings.aoRadius);
 

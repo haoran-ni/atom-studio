@@ -23,11 +23,9 @@ struct BondRenderSegment {
     float startColorR = 0.0f;
     float startColorG = 0.0f;
     float startColorB = 0.0f;
-    float startColorA = 1.0f;
     float endColorR = 0.0f;
     float endColorG = 0.0f;
     float endColorB = 0.0f;
-    float endColorA = 1.0f;
     float bondRadius = 0.1f;
     float selected = 0.0f;
 };
@@ -57,15 +55,11 @@ std::vector<float> packAtomRenderColors(const data::Structure* structure);
 std::vector<uint32_t> packAtomSelectionMask(const data::Structure* structure);
 std::vector<uint32_t> packBondSelectionMask(const data::Structure* structure);
 
-/// Packs only the bond endpoint colors (RGBA per bond) — appearance-only
+/// Packs only the bond endpoint colors (RGB with opaque padding per bond) — appearance-only
 /// updates that skip geometry repacking.
 void packBondRenderColors(const data::Structure* structure,
                           std::vector<float>& startColors,
                           std::vector<float>& endColors);
-
-/// True if any alpha in a packed RGBA float array is below fully opaque.
-/// Lets RT shaders skip per-primitive alpha fetches for all-opaque scenes.
-bool packedColorsHaveTransparency(const std::vector<float>& rgba);
 
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
                                         const data::Bond& bond,

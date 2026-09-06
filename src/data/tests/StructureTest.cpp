@@ -117,13 +117,12 @@ bool checkBondAppearanceTracksExplicitState() {
         return false;
     }
 
-    s.bonds().setAlpha(0, 0.4f);
     s.updateBondColorsFromElements(ElementColorScheme::Cpk);
     const auto carbon = ElementData::colorForElement(6, ElementColorScheme::Cpk);
     if (!nearlyEqual(s.bonds().startColor(0).r, carbon.r) ||
-        !nearlyEqual(s.bonds().startColor(0).a, 0.4f) ||
-        !nearlyEqual(s.bonds().endColor(0).a, 0.4f)) {
-        std::cerr << "Bond color updates should preserve stored bond transparency\n";
+        !nearlyEqual(s.bonds().startColor(0).g, carbon.g) ||
+        !nearlyEqual(s.bonds().startColor(0).b, carbon.b)) {
+        std::cerr << "Bond color updates should use the requested element scheme\n";
         return false;
     }
 
@@ -189,9 +188,8 @@ bool checkSelectedAtomDeletionRemapsBonds() {
     s.bonds().setRadius(survivingBond, 0.23f);
     s.bonds().setEndpointColors(
         survivingBond,
-        Color(0.1f, 0.2f, 0.3f, 1.0f),
-        Color(0.4f, 0.5f, 0.6f, 1.0f));
-    s.bonds().setAlpha(survivingBond, 0.7f);
+        Color(0.1f, 0.2f, 0.3f),
+        Color(0.4f, 0.5f, 0.6f));
     s.setAtomSelected(1, true);
 
     if (!s.deleteSelectedObjects()) {
@@ -224,8 +222,7 @@ bool checkSelectedAtomDeletionRemapsBonds() {
 
     if (!nearlyEqual(s.bonds().radius(0), 0.23f) ||
         !nearlyEqual(s.bonds().startColor(0).r, 0.1f) ||
-        !nearlyEqual(s.bonds().endColor(0).b, 0.6f) ||
-        !nearlyEqual(s.bonds().alpha(0), 0.7f)) {
+        !nearlyEqual(s.bonds().endColor(0).b, 0.6f)) {
         std::cerr << "Surviving bonds should keep their rendering state\n";
         return false;
     }

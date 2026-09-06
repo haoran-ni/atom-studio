@@ -93,11 +93,9 @@ public:
 
     Color startColor(size_t bondIndex) const { return m_startColors[bondIndex]; }
     Color endColor(size_t bondIndex) const { return m_endColors[bondIndex]; }
-    float alpha(size_t bondIndex) const { return m_startColors[bondIndex].a; }
     void setStartColor(size_t bondIndex, Color color);
     void setEndColor(size_t bondIndex, Color color);
     void setEndpointColors(size_t bondIndex, Color startColor, Color endColor);
-    void setAlpha(size_t bondIndex, float alpha);
 
     // Selection state
     bool selected(size_t bondIndex) const { return m_selected[bondIndex] != 0; }

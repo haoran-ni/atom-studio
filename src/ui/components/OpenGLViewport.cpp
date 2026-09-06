@@ -182,7 +182,6 @@ public:
         viewport->m_renderSettings.maxRTSamples = viewport->m_maxRTSamples;
         viewport->m_renderSettings.enableAmbientOcclusion = viewport->m_enableAO;
         viewport->m_renderSettings.enableShadows = viewport->m_enableShadows;
-        viewport->m_renderSettings.shadowOpacity = viewport->m_shadowOpacity;
         viewport->m_renderSettings.aoSamples = viewport->m_aoSamples;
         viewport->m_renderSettings.aoRadius = viewport->m_aoRadius;
         viewport->m_renderSettings.ambientStrength = viewport->m_ambientStrength;
@@ -328,10 +327,6 @@ bool OpenGLViewport::enableAO() const {
 
 bool OpenGLViewport::enableShadows() const {
     return m_enableShadows;
-}
-
-float OpenGLViewport::shadowOpacity() const {
-    return m_shadowOpacity;
 }
 
 int OpenGLViewport::aoSamples() const {
@@ -714,15 +709,6 @@ void OpenGLViewport::setEnableShadows(bool enable) {
     }
 }
 
-void OpenGLViewport::setShadowOpacity(float opacity) {
-    const float clamped = std::clamp(opacity, 0.0f, 1.0f);
-    if (!qFuzzyCompare(m_shadowOpacity, clamped)) {
-        m_shadowOpacity = clamped;
-        emit shadowOpacityChanged();
-        update();
-    }
-}
-
 void OpenGLViewport::setAOSamples(int samples) {
     const int clamped = std::clamp(samples, 1, 16);
     if (m_aoSamples != clamped) {
@@ -918,7 +904,7 @@ void OpenGLViewport::notifyFramePresented() {
 }
 
 void OpenGLViewport::onStructureStyleChanged() {
-    // Appearance only (colors, transparency, selection styling) — the
+    // Appearance only (colors, selection styling) — the
     // renderers refresh color buffers without rebuilding geometry or BVH.
     m_needsAppearanceUpdate = true;
     update();

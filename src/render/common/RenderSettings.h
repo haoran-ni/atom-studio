@@ -68,7 +68,6 @@ struct RenderSettings {
     // Effects
     bool enableAmbientOcclusion = false;
     bool enableShadows = false;
-    float shadowOpacity = 1.0f;      // RT direct-light shadow strength (0=off, 1=full)
     int msaaSamples = 4;
 
     // Ray tracing

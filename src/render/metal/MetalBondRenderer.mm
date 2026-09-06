@@ -110,8 +110,8 @@ void MetalBondRenderer::setBondData(const data::Structure* structure) {
         const BondRenderSegment& segment = segments[i];
         instances[i].start = simd_make_float3(segment.startX, segment.startY, segment.startZ);
         instances[i].end   = simd_make_float3(segment.endX, segment.endY, segment.endZ);
-        instances[i].startColor = simd_make_float4(segment.startColorR, segment.startColorG, segment.startColorB, segment.startColorA);
-        instances[i].endColor = simd_make_float4(segment.endColorR, segment.endColorG, segment.endColorB, segment.endColorA);
+        instances[i].startColor = simd_make_float4(segment.startColorR, segment.startColorG, segment.startColorB, 1.0f);
+        instances[i].endColor = simd_make_float4(segment.endColorR, segment.endColorG, segment.endColorB, 1.0f);
         instances[i].startRadius = segment.startRadius;
         instances[i].endRadius = segment.endRadius;
         instances[i].bondRadius = segment.bondRadius;

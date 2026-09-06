@@ -41,7 +41,6 @@ class StructureModel : public QObject {
     Q_PROPERTY(int selectedAtomCount READ selectedAtomCount NOTIFY selectionChanged)
     Q_PROPERTY(int selectedBondCount READ selectedBondCount NOTIFY selectionChanged)
     Q_PROPERTY(QColor selectedAtomColor READ selectedAtomColor NOTIFY structureStyleChanged)
-    Q_PROPERTY(int selectedAtomTransparency READ selectedAtomTransparency NOTIFY structureStyleChanged)
 
 public:
     explicit StructureModel(QObject* parent = nullptr);
@@ -73,7 +72,6 @@ public:
     bool hasActiveAtomSelection() const;
     bool hasActiveBondSelection() const;
     QColor selectedAtomColor() const;
-    int selectedAtomTransparency() const;
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
@@ -89,7 +87,6 @@ public slots:
     bool applyAtomScaleToSelection(float scale, float globalAtomScale);
     bool applyAtomColorSchemeToSelection(int scheme);
     Q_INVOKABLE bool applyAtomColorToSelection(const QColor& color);
-    Q_INVOKABLE bool applyAtomTransparencyToSelection(int transparency);
     bool applyBondRadiusToSelection(float radius);
     Q_INVOKABLE bool resetSelectedObjects(float defaultBondRadius, int colorScheme);
     Q_INVOKABLE bool deleteSelectedObjects();
@@ -100,7 +97,7 @@ signals:
     void structureChanged();
     void selectionModeChanged();
     void selectionChanged();
-    /// Appearance-only change (colors, transparency, selection styling).
+    /// Appearance-only change (colors, selection styling).
     /// Renderers may refresh color data without rebuilding geometry/BVH.
     void structureStyleChanged();
     /// Geometry-affecting style change (atom radii, bond radii). Renderers

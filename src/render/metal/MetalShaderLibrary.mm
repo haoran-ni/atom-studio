@@ -80,7 +80,6 @@ struct RTUniforms {
     int      height;
     uint     frameCount;
     int      enableShadows;
-    float    shadowOpacity;
     int      enableAO;
     int      aoSamples;
     float    aoRadius;
@@ -94,7 +93,6 @@ struct RTUniforms {
     float    outlineScale;
     float4   outlineColor;
     float    outlineWorldMax;
-    int      hasTransparency;
     float    selectionOutlineScale;
     float    selectionOutlineWorldMax;
 };
@@ -235,7 +233,6 @@ struct SphereShadeResult {
 SphereShadeResult sphere_shade(SphereVertexOut in, constant SceneUniforms& scene)
 {
     SphereShadeResult out;
-    if (in.color.a <= 0.001f) discard_fragment();
 
     float3 C = in.viewCenter;
     float R = in.radius;
@@ -303,7 +300,7 @@ SphereShadeResult sphere_shade(SphereVertexOut in, constant SceneUniforms& scene
 
     if (isOutline) {
         SphereShadeResult outlineOut;
-        outlineOut.color = float4(in.outlineColor.rgb, in.color.a);
+        outlineOut.color = float4(in.outlineColor.rgb, 1.0);
         float4 outlineClip = scene.projectionMatrix * float4(hitPos, 1.0);
         outlineOut.depth = outlineClip.z / outlineClip.w;
         return outlineOut;
@@ -322,7 +319,7 @@ SphereShadeResult sphere_shade(SphereVertexOut in, constant SceneUniforms& scene
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    out.color = float4(ambient + diffuse + specular, in.color.a);
+    out.color = float4(ambient + diffuse + specular, 1.0);
 
     // Custom depth: Metal NDC depth is [0,1]
     float4 clipPos = scene.projectionMatrix * float4(hitPos, 1.0);
@@ -431,7 +428,6 @@ fragment float4 bond_fragment(
 {
     float3 normal = normalize(in.normalView);
     float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
-    if (bondColor.a <= 0.001f) discard_fragment();
 
     // Light direction is in view space (camera-relative)
     float3 lightDir = normalize(scene.lightDir);
@@ -444,7 +440,7 @@ fragment float4 bond_fragment(
     float spec = pow(max(dot(normal, halfDir), 0.0), scene.shininess);
     float3 specular = scene.specular * spec * float3(1.0);
 
-    return float4(ambient + diffuse + specular, bondColor.a);
+    return float4(ambient + diffuse + specular, 1.0);
 }
 
 // -------------------------------------------------------
@@ -521,10 +517,8 @@ fragment float4 bond_outline_fragment(
     BondVertexOut in [[stage_in]],
     constant SceneUniforms& scene [[buffer(0)]])
 {
-    float4 bondColor = (in.axial < in.splitT) ? in.startColor : in.endColor;
     if (in.outlineWidthPx <= 0.0f) discard_fragment();
-    if (bondColor.a <= 0.001f) discard_fragment();
-    return float4(in.outlineColor.rgb, bondColor.a);
+    return float4(in.outlineColor.rgb, 1.0);
 }
 
 // -------------------------------------------------------
@@ -1154,34 +1148,15 @@ bool testNodeAABB(int nodeIndex,
     return intersectAABB(ro, invRd, bmin, bmax, tMax, tNearOut);
 }
 
-float primitiveAlpha(uint primIndex,
-                     device const float4* atomColors,
-                     int atomCount,
-                     device const float4* bondStartColors,
-                     device const float4* bondEndColors,
-                     int bondCount) {
-    if (primIndex < uint(atomCount)) {
-        return atomColors[primIndex].a;
-    }
-
-    int bondIdx = int(primIndex) - atomCount;
-    if (bondIdx < 0 || bondIdx >= bondCount) return 0.0f;
-    return max(bondStartColors[bondIdx].a, bondEndColors[bondIdx].a);
-}
-
 void traceClosest(float3 ro, float3 rd,
                   device const float4* atomPositions,
-                  device const float4* atomColors,
                   device const uint* atomSelections,
                   int atomCount, float atomScale, bool showAtoms,
                   device const float4* bondStartPositions,
                   device const float4* bondEndPositions,
-                  device const float4* bondStartColors,
-                  device const float4* bondEndColors,
                   device const float* bondRadii,
                   device const uint* bondSelections,
                   int bondCount, bool showBonds,
-                  bool anyTransparent,
                   device const float4* bvhNodeMinData,
                   device const float4* bvhNodeMaxData,
                   device const uint4* bvhNodeMeta,
@@ -1218,9 +1193,6 @@ void traceClosest(float3 ro, float3 rd,
                 uint primIndex = bvhPrimIndices[first + i];
                 if (primIndex >= uint(totalPrims)) continue;
                 if (int(primIndex) == skipIndex) continue;
-                if (anyTransparent &&
-                    primitiveAlpha(primIndex, atomColors, atomCount,
-                                   bondStartColors, bondEndColors, bondCount) <= 0.001f) continue;
 
                 if (primIndex < uint(atomCount)) {
                     if (!showAtoms) continue;
@@ -1312,30 +1284,25 @@ void traceClosest(float3 ro, float3 rd,
     }
 }
 
-float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
-                          device const float4* atomPositions,
-                          device const float4* atomColors,
-                          int atomCount, float atomScale, bool showAtoms,
-                          device const float4* bondStartPositions,
-                          device const float4* bondEndPositions,
-                          device const float4* bondStartColors,
-                          device const float4* bondEndColors,
-                          device const float* bondRadii,
-                          int bondCount, bool showBonds,
-                          bool anyTransparent,
-                          device const float4* bvhNodeMinData,
-                          device const float4* bvhNodeMaxData,
-                          device const uint4* bvhNodeMeta,
-                          device const uint* bvhPrimIndices,
-                          int bvhNodeCount) {
-    if (bvhNodeCount <= 0) return 0.0f;
+bool traceOccluded(float3 ro, float3 rd, float maxDist,
+                   device const float4* atomPositions,
+                   int atomCount, float atomScale, bool showAtoms,
+                   device const float4* bondStartPositions,
+                   device const float4* bondEndPositions,
+                   device const float* bondRadii,
+                   int bondCount, bool showBonds,
+                   device const float4* bvhNodeMinData,
+                   device const float4* bvhNodeMaxData,
+                   device const uint4* bvhNodeMeta,
+                   device const uint* bvhPrimIndices,
+                   int bvhNodeCount) {
+    if (bvhNodeCount <= 0) return false;
 
     int totalPrims = atomCount + bondCount;
     float3 invRd = 1.0 / rd;
     int stack[BVH_STACK_SIZE];
     int sp = 0;
     stack[sp++] = 0;
-    float occlusionAlpha = 0.0f;
 
     while (sp > 0) {
         int nodeIndex = stack[--sp];
@@ -1347,15 +1314,6 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
             for (uint i = 0; i < primCount; ++i) {
                 uint primIndex = bvhPrimIndices[first + i];
                 if (primIndex >= uint(totalPrims)) continue;
-                // All-opaque scenes skip the alpha fetch; alpha = 1 then also
-                // makes the >= 0.999 checks below early-out on the first hit.
-                float alpha = 1.0f;
-                if (anyTransparent) {
-                    alpha = primitiveAlpha(primIndex, atomColors, atomCount,
-                                           bondStartColors, bondEndColors, bondCount);
-                    if (alpha <= 0.001f) continue;
-                }
-
                 if (primIndex < uint(atomCount)) {
                     if (!showAtoms) continue;
                     float4 atom = atomPositions[primIndex];
@@ -1368,13 +1326,11 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
                         float sqrtDisc = sqrt(disc);
                         float t = -b - sqrtDisc;
                         if (t > 0.001 && t < maxDist) {
-                            occlusionAlpha = max(occlusionAlpha, alpha);
-                            if (occlusionAlpha >= 0.999f) return 1.0f;
+                            return true;
                         }
                         t = -b + sqrtDisc;
                         if (t > 0.001 && t < maxDist) {
-                            occlusionAlpha = max(occlusionAlpha, alpha);
-                            if (occlusionAlpha >= 0.999f) return 1.0f;
+                            return true;
                         }
                     }
                 } else if (showBonds) {
@@ -1384,8 +1340,7 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
                     float bondRadius = bondRadii[bondIdx];
                     float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
                     if (t > 0.001 && t < maxDist) {
-                        occlusionAlpha = max(occlusionAlpha, alpha);
-                        if (occlusionAlpha >= 0.999f) return 1.0f;
+                        return true;
                     }
                 }
             }
@@ -1407,7 +1362,7 @@ float traceOcclusionAlpha(float3 ro, float3 rd, float maxDist,
         }
     }
 
-    return occlusionAlpha;
+    return false;
 }
 
 bool traceAnyHit(float3 ro, float3 rd, float maxDist,
@@ -1557,13 +1512,11 @@ fragment float4 rt_fragment(
     int hitIndex;
     bool hitOutline;
     bool hitSelectionOutline;
-    bool anyTransparent = rt.hasTransparency != 0;
-    traceClosest(rayOrigin, rayDir, atomPositions, atomColors,
+    traceClosest(rayOrigin, rayDir, atomPositions,
                  atomSelections,
                  rt.atomCount, rt.atomScale, showAtoms,
                  bondStartPositions, bondEndPositions,
-                 bondStartColors, bondEndColors,
-                 bondRadii, bondSelections, rt.bondCount, showBonds, anyTransparent,
+                 bondRadii, bondSelections, rt.bondCount, showBonds,
                  bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                  rt.bvhNodeCount, -1,
                  rt.outlineScale, rt.selectionOutlineScale,
@@ -1577,19 +1530,14 @@ fragment float4 rt_fragment(
 
     if (hitOutline) {
         // Flat, unlit stroke color — solid and sharp; no shadows or AO.
-        float alpha = clamp(primitiveAlpha(uint(hitIndex), atomColors, rt.atomCount,
-                                           bondStartColors, bondEndColors, rt.bondCount),
-                            0.0f, 1.0f);
-        float3 background = rt.backgroundColor.rgb * rt.backgroundColor.a;
         float3 outlineColor = hitSelectionOutline ? kSelectionOutlineColor : rt.outlineColor.rgb;
-        return float4(background * (1.0f - alpha) + outlineColor * alpha, 1.0);
+        return float4(outlineColor, 1.0);
     }
 
     // Shading
     float3 hitPos = rayOrigin + rayDir * hitT;
     float3 normal;
     float3 surfaceColor;
-    float surfaceAlpha;
     float biasRadius;
 
     if (hitIndex < rt.atomCount) {
@@ -1598,7 +1546,6 @@ fragment float4 rt_fragment(
         float4 atomColor = atomColors[hitIndex];
         normal = normalize(hitPos - atomData.xyz);
         surfaceColor = atomColor.rgb;
-        surfaceAlpha = atomColor.a;
         biasRadius = atomData.w * rt.atomScale;
     } else {
         // Cylinder hit
@@ -1634,7 +1581,6 @@ fragment float4 rt_fragment(
         }
         float4 bondColor = h < splitT ? startColor : endColor;
         surfaceColor = bondColor.rgb;
-        surfaceAlpha = bondColor.a;
         biasRadius = bondRadius;
     }
 
@@ -1655,14 +1601,13 @@ fragment float4 rt_fragment(
     // Shadow
     float shadow = 1.0;
     if (rt.enableShadows) {
-        float shadowAlpha = traceOcclusionAlpha(
+        shadow = traceOccluded(
             biasedOrigin, lightDir, 10000.0,
-            atomPositions, atomColors, rt.atomCount, rt.atomScale, showAtoms,
-            bondStartPositions, bondEndPositions, bondStartColors, bondEndColors,
-            bondRadii, rt.bondCount, showBonds, anyTransparent,
+            atomPositions, rt.atomCount, rt.atomScale, showAtoms,
+            bondStartPositions, bondEndPositions,
+            bondRadii, rt.bondCount, showBonds,
             bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
-            rt.bvhNodeCount);
-        shadow = 1.0 - clamp(rt.shadowOpacity, 0.0f, 1.0f) * shadowAlpha;
+            rt.bvhNodeCount) ? 0.0 : 1.0;
     }
 
     // Ambient occlusion
@@ -1671,21 +1616,19 @@ fragment float4 rt_fragment(
         float occluded = 0.0;
         for (int i = 0; i < rt.aoSamples; i++) {
             float3 aoDir = cosineWeightedHemisphere(normal, rng_state);
-            occluded += traceOcclusionAlpha(
+            occluded += traceOccluded(
                 biasedOrigin, aoDir, rt.aoRadius,
-                atomPositions, atomColors, rt.atomCount, rt.atomScale, showAtoms,
-                bondStartPositions, bondEndPositions, bondStartColors, bondEndColors,
-                bondRadii, rt.bondCount, showBonds, anyTransparent,
+                atomPositions, rt.atomCount, rt.atomScale, showAtoms,
+                bondStartPositions, bondEndPositions,
+                bondRadii, rt.bondCount, showBonds,
                 bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
-                rt.bvhNodeCount);
+                rt.bvhNodeCount) ? 1.0 : 0.0;
         }
         ao = 1.0 - occluded / float(rt.aoSamples);
     }
 
     float3 result = ambient * ao + (diffuse + specular) * shadow;
-    float alpha = clamp(surfaceAlpha, 0.0f, 1.0f);
-    float3 background = rt.backgroundColor.rgb * rt.backgroundColor.a;
-    return float4(background * (1.0f - alpha) + result * alpha, 1.0);
+    return float4(result, 1.0);
 }
 
 // -------------------------------------------------------
@@ -1786,11 +1729,7 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"sphere_fragment"];
         desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-        desc.colorAttachments[0].blendingEnabled = YES;
-        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
-        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
-        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].blendingEnabled = NO;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {
@@ -1827,11 +1766,7 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"bond_fragment"];
         desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-        desc.colorAttachments[0].blendingEnabled = YES;
-        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
-        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
-        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].blendingEnabled = NO;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {
@@ -1868,11 +1803,7 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"bond_outline_fragment"];
         desc.rasterSampleCount = rasterSamples;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-        desc.colorAttachments[0].blendingEnabled = YES;
-        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
-        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
-        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].blendingEnabled = NO;
         desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
 
         if (!desc.vertexFunction || !desc.fragmentFunction) {

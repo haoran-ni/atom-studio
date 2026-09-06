@@ -33,7 +33,7 @@ struct SceneUniforms {
 // Per-instance sphere data — [[buffer(2)]] in sphere shader
 struct SphereInstance {
     simd_float4 positionAndRadius;    // xyz = world center, w = covalent radius
-    simd_float4 color;                // rgba
+    simd_float4 color;                // rgb, opaque padding
     float       selected;             // 1 when selected, 0 otherwise
     float       _pad0;
     float       _pad1;
@@ -46,8 +46,8 @@ struct BondInstance {
     float       _pad0;
     simd_float3 end;
     float       _pad1;
-    simd_float4 startColor;           // rgba
-    simd_float4 endColor;             // rgba
+    simd_float4 startColor;           // rgb, opaque padding
+    simd_float4 endColor;             // rgb, opaque padding
     float       startRadius;
     float       endRadius;
     float       bondRadius;
@@ -78,7 +78,6 @@ struct RTUniforms {
     int32_t       height;
     uint32_t      frameCount;
     int32_t       enableShadows;
-    float         shadowOpacity;
     int32_t       enableAO;
     int32_t       aoSamples;
     float         aoRadius;
@@ -92,7 +91,6 @@ struct RTUniforms {
     float         outlineScale;      // widthPx × pixelScale; × hit distance (persp) or absolute (ortho); 0 = off
     simd_float4   outlineColor;      // rgb stroke color
     float         outlineWorldMax;   // conservative world-space width bound for BVH AABB padding
-    int32_t       hasTransparency;   // 0 = all primitives opaque (skip alpha fetches)
     float         selectionOutlineScale;    // selected widthPx × pixelScale
     float         selectionOutlineWorldMax; // conservative selected outline AABB padding
 };

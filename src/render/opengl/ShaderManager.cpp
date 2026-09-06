@@ -79,7 +79,6 @@ uniform int uIsPerspective;
 out vec4 fragColor;
 
 void main() {
-    if (vColor.a <= 0.001) discard;
 
     vec3 C = vViewCenter;
     float R = vRadius;
@@ -135,7 +134,7 @@ void main() {
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, vColor.a);
+    fragColor = vec4(result, 1.0);
 
     // Update depth buffer for correct intersections
     vec4 clipPos = uProjectionMatrix * vec4(hitPos, 1.0);
@@ -228,7 +227,6 @@ out vec4 fragColor;
 void main() {
     vec3 normal = normalize(vNormalView);
     vec4 bondColor = (vAxial < vSplitT) ? vStartColor : vEndColor;
-    if (bondColor.a <= 0.001) discard;
 
     // Light direction is in view space (camera-relative)
     vec3 lightDir = normalize(uLightDir);
@@ -247,7 +245,7 @@ void main() {
     vec3 specular = uSpecular * spec * vec3(1.0);
 
     vec3 result = ambient + diffuse + specular;
-    fragColor = vec4(result, bondColor.a);
+    fragColor = vec4(result, 1.0);
 }
 )";
 

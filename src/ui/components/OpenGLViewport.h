@@ -54,7 +54,6 @@ class OpenGLViewport : public QQuickFramebufferObject {
     Q_PROPERTY(int maxRTSamples READ maxRTSamples WRITE setMaxRTSamples NOTIFY maxRTSamplesChanged)
     Q_PROPERTY(bool enableAO READ enableAO WRITE setEnableAO NOTIFY enableAOChanged)
     Q_PROPERTY(bool enableShadows READ enableShadows WRITE setEnableShadows NOTIFY enableShadowsChanged)
-    Q_PROPERTY(float shadowOpacity READ shadowOpacity WRITE setShadowOpacity NOTIFY shadowOpacityChanged)
     Q_PROPERTY(int aoSamples READ aoSamples WRITE setAOSamples NOTIFY aoSamplesChanged)
     Q_PROPERTY(float aoRadius READ aoRadius WRITE setAORadius NOTIFY aoRadiusChanged)
     Q_PROPERTY(float ambientStrength READ ambientStrength WRITE setAmbientStrength NOTIFY ambientStrengthChanged)
@@ -103,7 +102,6 @@ public:
     int maxRTSamples() const;
     bool enableAO() const;
     bool enableShadows() const;
-    float shadowOpacity() const;
     int aoSamples() const;
     float aoRadius() const;
     float ambientStrength() const;
@@ -147,7 +145,6 @@ public slots:
     void setMaxRTSamples(int samples);
     void setEnableAO(bool enable);
     void setEnableShadows(bool enable);
-    void setShadowOpacity(float opacity);
     void setAOSamples(int samples);
     void setAORadius(float radius);
     void setAmbientStrength(float strength);
@@ -190,7 +187,6 @@ signals:
     void maxRTSamplesChanged();
     void enableAOChanged();
     void enableShadowsChanged();
-    void shadowOpacityChanged();
     void aoSamplesChanged();
     void aoRadiusChanged();
     void ambientStrengthChanged();
@@ -254,7 +250,6 @@ private:
     int m_maxRTSamples = 1000;
     bool m_enableAO = false;
     bool m_enableShadows = false;
-    float m_shadowOpacity = 1.0f;
     int m_aoSamples = 4;
     float m_aoRadius = 3.0f;
     float m_ambientStrength = 0.35f;

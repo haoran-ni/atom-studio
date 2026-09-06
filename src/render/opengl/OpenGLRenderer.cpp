@@ -53,8 +53,7 @@ bool OpenGLRenderer::initialize() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_BLEND);
 
     m_initialized = true;
     qInfo() << "OpenGLRenderer initialized successfully";
@@ -124,8 +123,7 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
     // Enable depth testing
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_BLEND);
 
     // Render unit-cell object (thick wireframe cuboid built from lattice)
     m_unitCellRenderer.render(camera, settings);

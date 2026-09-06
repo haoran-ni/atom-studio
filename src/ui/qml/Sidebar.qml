@@ -86,7 +86,6 @@ Rectangle {
         sidebar.viewport.maxRTSamples = 1000
         sidebar.viewport.enableAO = false
         sidebar.viewport.enableShadows = false
-        sidebar.viewport.shadowOpacity = 1.0
         sidebar.viewport.aoSamples = 4
         sidebar.viewport.aoRadius = 3.0
         sidebar.viewport.ambientStrength = 0.35
@@ -934,27 +933,6 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
-                                content: Component {
-                                    NumericSliderControl {
-                                        title: qsTr("Transparency")
-                                        statusHintTarget: sidebar
-                                        tooltipText: qsTr("Transparency for selected atoms. 0 keeps selected atoms opaque; 100 makes them invisible.")
-                                        integer: true
-                                        from: 0
-                                        to: 100
-                                        stepSize: 1
-                                        defaultValue: 0
-                                        enabled: StructureModel.selectionEnabled && StructureModel.selectedAtomCount > 0
-                                        sourceValue: StructureModel.selectedAtomTransparency
-                                        onValueApplied: function(newValue) {
-                                            StructureModel.applyAtomTransparencyToSelection(Math.round(newValue))
-                                        }
-                                    }
-                                }
-                            }
-
-
-                            SidebarBranchRow {
                                 lastItem: true
                                 content: Component {
                                     NumericSliderControl {
@@ -1463,29 +1441,6 @@ Rectangle {
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.diffuseStrength = newValue
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            SidebarBranchRow {
-                                visible: sidebar.rtSettingsVisible
-                                content: Component {
-                                    NumericSliderControl {
-                                        title: qsTr("Shadow opacity")
-                                        statusHintTarget: sidebar
-                                        tooltipText: qsTr("Strength of ray-traced shadows. 0 disables shadow darkening, 1 keeps fully dark shadows.")
-                                        from: 0
-                                        to: 1
-                                        stepSize: 0.01
-                                        decimals: 2
-                                        defaultValue: 1.0
-                                        enabled: sidebar.viewport ? sidebar.viewport.enableShadows : false
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.shadowOpacity : 1.0
-                                        onValueApplied: function(newValue) {
-                                            if (sidebar.viewport) {
-                                                sidebar.viewport.shadowOpacity = newValue
                                             }
                                         }
                                     }

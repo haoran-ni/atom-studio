@@ -193,7 +193,6 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
                     s->colorsR()[idx] = src.colorsR()[at];
                     s->colorsG()[idx] = src.colorsG()[at];
                     s->colorsB()[idx] = src.colorsB()[at];
-                    s->colorsA()[idx] = src.colorsA()[at];
                 }
             }
         }

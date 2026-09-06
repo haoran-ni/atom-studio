@@ -68,7 +68,7 @@ private:
 
     // Instance data
     QOpenGLBuffer m_instancePosBuffer;   // vec4: xyz + radius
-    QOpenGLBuffer m_instanceColorBuffer; // vec4: rgba
+    QOpenGLBuffer m_instanceColorBuffer; // vec4: rgb, opaque padding
 
     size_t m_atomCount = 0;
     bool m_initialized = false;

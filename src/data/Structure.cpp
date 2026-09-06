@@ -229,7 +229,6 @@ std::unique_ptr<Structure> Structure::clone() const {
     s->m_colorR = m_colorR;
     s->m_colorG = m_colorG;
     s->m_colorB = m_colorB;
-    s->m_colorA = m_colorA;
     s->m_selectedAtoms = m_selectedAtoms;
 
     s->m_lattice = m_lattice;
@@ -253,7 +252,6 @@ void Structure::reserve(size_t count) {
     m_colorR.reserve(count);
     m_colorG.reserve(count);
     m_colorB.reserve(count);
-    m_colorA.reserve(count);
     m_selectedAtoms.reserve(count);
 }
 
@@ -267,7 +265,6 @@ void Structure::resize(size_t count) {
     m_colorR.resize(count, 1.0f);
     m_colorG.resize(count, 1.0f);
     m_colorB.resize(count, 1.0f);
-    m_colorA.resize(count, 1.0f);
     m_selectedAtoms.resize(count, 0);
     m_atomCount = count;
 }
@@ -282,7 +279,6 @@ void Structure::clear() {
     m_colorR.clear();
     m_colorG.clear();
     m_colorB.clear();
-    m_colorA.clear();
     m_selectedAtoms.clear();
 
     m_velX.clear();
@@ -317,7 +313,6 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
     m_colorR.push_back(color.r);
     m_colorG.push_back(color.g);
     m_colorB.push_back(color.b);
-    m_colorA.push_back(color.a);
     m_selectedAtoms.push_back(0);
 
     return index;
@@ -490,7 +485,6 @@ bool Structure::deleteSelectedObjects() {
     compactAtomVector(m_colorR, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorG, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorB, removedAtoms, keptAtomCount);
-    compactAtomVector(m_colorA, removedAtoms, keptAtomCount);
     m_selectedAtoms.assign(keptAtomCount, 0);
     m_atomCount = keptAtomCount;
 
@@ -523,7 +517,6 @@ bool Structure::deleteSelectedObjects() {
                 newBondIndex,
                 oldBonds->startColor(i),
                 oldBonds->endColor(i));
-            rebuiltBonds->setAlpha(newBondIndex, oldBonds->alpha(i));
         }
     }
     m_bonds = std::move(rebuiltBonds);
@@ -548,7 +541,7 @@ float Structure::radius(size_t index) const {
 }
 
 Color Structure::color(size_t index) const {
-    return Color(m_colorR[index], m_colorG[index], m_colorB[index], m_colorA[index]);
+    return Color(m_colorR[index], m_colorG[index], m_colorB[index]);
 }
 
 void Structure::setPosition(size_t index, float x, float y, float z) {
@@ -727,7 +720,7 @@ std::vector<float> Structure::packColors() const {
         data[i * 4 + 0] = m_colorR[i];
         data[i * 4 + 1] = m_colorG[i];
         data[i * 4 + 2] = m_colorB[i];
-        data[i * 4 + 3] = m_colorA[i];
+        data[i * 4 + 3] = 1.0f;  // Fixed opaque GPU padding
     }
     return data;
 }

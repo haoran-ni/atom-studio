@@ -7,6 +7,7 @@ A high-performance desktop application for visualization of atomic structures.
 - Interactive visualization panel
 - Bright neutral right-hand sidebar with section icons and tunable-parameter hierarchy lines
 - Compact color controls with Grid, Spectrum, and RGB/hex tabs, background opacity, and session swatches
+- Opaque atoms and bonds, with optional ray-traced shadows and ambient occlusion
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized
 - Supports various atomic structure file formats

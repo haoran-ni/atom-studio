@@ -3,8 +3,6 @@
 #include "../../data/BondList.h"
 #include "../../data/Structure.h"
 
-#include <array>
-
 namespace atom::render {
 
 namespace {
@@ -21,11 +19,11 @@ void appendPackedPosition(std::vector<float>& packed,
 }
 
 void appendPackedColor(std::vector<float>& packed,
-                       float r, float g, float b, float a) {
+                       float r, float g, float b) {
     packed.push_back(r);
     packed.push_back(g);
     packed.push_back(b);
-    packed.push_back(a);
+    packed.push_back(1.0f);  // Match four-component GPU color layouts.
 }
 
 } // namespace
@@ -54,13 +52,12 @@ std::vector<float> packAtomRenderColors(const data::Structure* structure) {
     const float* cr = structure->colorsR();
     const float* cg = structure->colorsG();
     const float* cb = structure->colorsB();
-    const float* ca = structure->colorsA();
 
     for (size_t i = 0; i < count; ++i) {
         data[i * 4 + 0] = cr[i];
         data[i * 4 + 1] = cg[i];
         data[i * 4 + 2] = cb[i];
-        data[i * 4 + 3] = ca[i];
+        data[i * 4 + 3] = 1.0f;
     }
 
     return data;
@@ -108,22 +105,9 @@ void packBondRenderColors(const data::Structure* structure,
     for (size_t i = 0; i < count; ++i) {
         const data::Color storedStartColor = bonds.startColor(i);
         const data::Color storedEndColor = bonds.endColor(i);
-        std::array<float, 4> startColor = {
-            storedStartColor.r, storedStartColor.g, storedStartColor.b, storedStartColor.a
-        };
-        std::array<float, 4> endColor = {
-            storedEndColor.r, storedEndColor.g, storedEndColor.b, storedEndColor.a
-        };
-        appendPackedColor(startColors, startColor[0], startColor[1], startColor[2], startColor[3]);
-        appendPackedColor(endColors, endColor[0], endColor[1], endColor[2], endColor[3]);
+        appendPackedColor(startColors, storedStartColor.r, storedStartColor.g, storedStartColor.b);
+        appendPackedColor(endColors, storedEndColor.r, storedEndColor.g, storedEndColor.b);
     }
-}
-
-bool packedColorsHaveTransparency(const std::vector<float>& rgba) {
-    for (size_t i = 3; i < rgba.size(); i += 4) {
-        if (rgba[i] < 0.999f) return true;
-    }
-    return false;
 }
 
 BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
@@ -161,20 +145,12 @@ BondRenderSegment makeBondRenderSegment(const data::Structure& structure,
     segment.endRadius = radii[a2];
     const data::Color storedStartColor = bonds.startColor(bondIndex);
     const data::Color storedEndColor = bonds.endColor(bondIndex);
-    std::array<float, 4> startColor = {
-        storedStartColor.r, storedStartColor.g, storedStartColor.b, storedStartColor.a
-    };
-    std::array<float, 4> endColor = {
-        storedEndColor.r, storedEndColor.g, storedEndColor.b, storedEndColor.a
-    };
-    segment.startColorR = startColor[0];
-    segment.startColorG = startColor[1];
-    segment.startColorB = startColor[2];
-    segment.startColorA = startColor[3];
-    segment.endColorR = endColor[0];
-    segment.endColorG = endColor[1];
-    segment.endColorB = endColor[2];
-    segment.endColorA = endColor[3];
+    segment.startColorR = storedStartColor.r;
+    segment.startColorG = storedStartColor.g;
+    segment.startColorB = storedStartColor.b;
+    segment.endColorR = storedEndColor.r;
+    segment.endColorG = storedEndColor.g;
+    segment.endColorB = storedEndColor.b;
     segment.bondRadius = bonds.radius(bondIndex);
     segment.selected = (bondIndex < bonds.bondCount() && bonds.selected(bondIndex)) ? 1.0f : 0.0f;
 
@@ -220,9 +196,9 @@ PackedBondRenderData packBondRenderData(const data::Structure* structure,
         packed.startRadii.push_back(segment.startRadius);
         packed.endRadii.push_back(segment.endRadius);
         appendPackedColor(packed.startColors,
-                          segment.startColorR, segment.startColorG, segment.startColorB, segment.startColorA);
+                          segment.startColorR, segment.startColorG, segment.startColorB);
         appendPackedColor(packed.endColors,
-                          segment.endColorR, segment.endColorG, segment.endColorB, segment.endColorA);
+                          segment.endColorR, segment.endColorG, segment.endColorB);
         packed.bondRadii.push_back(segment.bondRadius);
         packed.selected.push_back(segment.selected);
     }

@@ -65,8 +65,8 @@ private:
     // Instance data
     QOpenGLBuffer m_instanceStartBuffer;  // vec3: start position
     QOpenGLBuffer m_instanceEndBuffer;    // vec3: end position
-    QOpenGLBuffer m_instanceStartColorBuffer;  // vec4: rgba
-    QOpenGLBuffer m_instanceEndColorBuffer;    // vec4: rgba
+    QOpenGLBuffer m_instanceStartColorBuffer;  // vec4: rgb, opaque padding
+    QOpenGLBuffer m_instanceEndColorBuffer;    // vec4: rgb, opaque padding
     QOpenGLBuffer m_instanceRadiusBuffer;      // vec2: start/end radii
 
     int m_cylinderIndexCount = 0;

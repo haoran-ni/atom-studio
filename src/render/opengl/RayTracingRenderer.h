@@ -74,7 +74,7 @@ private:
     // Atom data via Texture Buffer Objects
     GLuint m_atomPosBuf = 0;      // Buffer: vec4(x, y, z, radius) per atom
     GLuint m_atomPosTex = 0;      // Texture view (RGBA32F)
-    GLuint m_atomColorBuf = 0;    // Buffer: vec4(r, g, b, a) per atom
+    GLuint m_atomColorBuf = 0;    // Buffer: vec4(r, g, b, 1) per atom
     GLuint m_atomColorTex = 0;    // Texture view (RGBA32F)
 
     // Bond data via Texture Buffer Objects
@@ -82,9 +82,9 @@ private:
     GLuint m_bondStartTex = 0;    // Texture view (RGBA32F)
     GLuint m_bondEndBuf = 0;      // Buffer: vec4(x, y, z, endRadius) per bond
     GLuint m_bondEndTex = 0;      // Texture view (RGBA32F)
-    GLuint m_bondStartColorBuf = 0;  // Buffer: vec4(r, g, b, a) per bond start
+    GLuint m_bondStartColorBuf = 0;  // Buffer: vec4(r, g, b, 1) per bond start
     GLuint m_bondStartColorTex = 0;  // Texture view (RGBA32F)
-    GLuint m_bondEndColorBuf = 0;    // Buffer: vec4(r, g, b, a) per bond end
+    GLuint m_bondEndColorBuf = 0;    // Buffer: vec4(r, g, b, 1) per bond end
     GLuint m_bondEndColorTex = 0;    // Texture view (RGBA32F)
     GLuint m_bondRadiusBuf = 0;      // Buffer: float radius per bond
     GLuint m_bondRadiusTex = 0;      // Texture view (R32F)
@@ -112,7 +112,6 @@ private:
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_appearanceDirty = false;
-    bool m_hasTransparency = false;
     uint64_t m_lastStateHash = 0;
     std::unordered_map<GLuint, GLsizeiptr> m_tboCapacity;
 };
