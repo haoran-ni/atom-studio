@@ -46,6 +46,7 @@ static simd_float4x4 qMatToSimd(const QMatrix4x4& m) {
 
 struct MetalRayTracingRenderer::Impl {
     struct OutputSlot {
+        uint64_t frameRequestToken = 0;
         id<MTLTexture> msaaOutputTexture = nil;
         id<MTLTexture> outputTexture = nil;
         id<MTLTexture> msaaOverlayDepthTexture = nil;
@@ -283,6 +284,8 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     if (outputSlotIndex < 0) {
         return;
     }
+    m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)].frameRequestToken =
+        settings.frameRequestToken;
 
     // Single command buffer for the entire frame — sub-passes encode into it
     // as separate render command encoders, committed once at the end.
@@ -385,13 +388,15 @@ void MetalRayTracingRenderer::resetAccumulation() {
     m_outputGeneration = m_impl->asyncState->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
 }
 
-void* MetalRayTracingRenderer::outputTexture() {
+void* MetalRayTracingRenderer::outputTexture(uint64_t& frameRequestToken) {
+    frameRequestToken = 0;
     const int readySlot = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
     if (readySlot < 0 || readySlot >= kOutputSlotCount) {
         return nullptr;
     }
 
     m_lastPresentedSlot = readySlot;
+    frameRequestToken = m_impl->outputSlots[static_cast<size_t>(readySlot)].frameRequestToken;
     return (__bridge void*)m_impl->outputSlots[readySlot].outputTexture;
 }
 

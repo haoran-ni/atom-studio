@@ -467,9 +467,10 @@ Rectangle {
                                     SidebarComboBox {
                                         Layout.fillWidth: true
                                         displayText: qsTr("Export Structures")
-                                        model: [".xyz", ".in", "POSCAR", ".cif"]
-                                        enabled: false
-                                        onActivated: console.log("Export structures as " + currentText)
+                                        model: FileController.structureExportFormats
+                                        enabled: StructureModel.hasStructure && !FileController.isLoading
+                                                 && !FileController.isExporting
+                                        onActivated: FileController.openSaveStructureDialog(currentText)
                                     }
                                 }
                             }
@@ -489,13 +490,22 @@ Rectangle {
                                             }
                                             enabled: StructureModel.hasStructure
                                             onActivated: FileController.openSaveImageDialog(
-                                                currentText, exportImagesIncludeAxes.checked)
+                                                currentText, exportImagesIncludeAxes.checked,
+                                                exportImagesTransparentBackground.checked)
                                         }
 
                                         SidebarCheckBox {
                                             id: exportImagesIncludeAxes
                                             text: qsTr("Include Axes")
                                             enabled: StructureModel.hasStructure
+                                        }
+
+                                        SidebarCheckBox {
+                                            id: exportImagesTransparentBackground
+                                            text: qsTr("Transparent Background")
+                                            enabled: StructureModel.hasStructure
+                                            ToolTip.visible: hovered
+                                            ToolTip.text: qsTr("Use a transparent background when exporting PNG images.")
                                         }
                                     }
                                 }

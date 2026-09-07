@@ -9,6 +9,7 @@ Rectangle {
     property var viewport: viewportLoader.item
     property bool suppressBackground: false
     property var pendingExportState: null
+    property bool imageExportInProgress: false
 
     color: "#e6e6e6"
 
@@ -25,15 +26,28 @@ Rectangle {
                 && viewportPanel.viewport.showViewportAxes !== undefined) {
             viewportPanel.viewport.showViewportAxes = state.previousViewportAxesVisible
         }
-        viewportPanel.suppressBackground = false
+        if (state.overrideBackground && viewportPanel.viewport) {
+            viewportPanel.viewport.backgroundColor = state.previousBackgroundColor
+        }
+        viewportPanel.suppressBackground = state.previousSuppressBackground
+        imageExportInProgress = false
     }
 
     function runImageExport(state) {
         pendingExportState = null
-        viewportPanel.grabToImage(function(result) {
-            result.saveToFile(state.filePath)
-            restoreExportState(state)
+        var started = viewportPanel.grabToImage(function(result) {
+            try {
+                if (!result.saveToFile(state.filePath)) {
+                    console.warn("ViewportPanel: Could not save image to " + state.filePath)
+                }
+            } finally {
+                restoreExportState(state)
+            }
         })
+        if (!started) {
+            restoreExportState(state)
+            console.warn("ViewportPanel: Could not capture image")
+        }
     }
 
     // Platform-conditional viewport: Metal on macOS, OpenGL elsewhere
@@ -321,40 +335,50 @@ Rectangle {
     // Image export handler
     Connections {
         target: FileController
-        function onSaveImagePathSelected(filePath, format, includeAxes) {
+        function onSaveImagePathSelected(filePath, format, includeAxes, transparentBackground) {
             if (format === ".pdf") {
                 console.warn("ViewportPanel: PDF export not yet implemented")
                 return
             }
+            if (imageExportInProgress) {
+                return
+            }
             var hadViewport = !!viewportPanel.viewport
+            var background = hadViewport ? viewportPanel.viewport.backgroundColor : Qt.rgba(1, 1, 1, 1)
+            var overrideBackground = transparentBackground && format === ".png" && hadViewport
             var isTransparent = viewportPanel.viewport &&
-                                viewportPanel.viewport.backgroundColor.a < 0.99
+                                (overrideBackground || background.a < 0.99)
             var state = {
                 filePath: filePath,
                 hadViewport: hadViewport,
+                overrideBackground: overrideBackground,
+                // Copy the color channels: a QML value-type reference follows later property changes.
+                previousBackgroundColor: Qt.rgba(background.r, background.g, background.b, background.a),
+                previousSuppressBackground: viewportPanel.suppressBackground,
                 previousInfoOverlayVisible: infoOverlay.visible,
                 previousAxisOverlayVisible: axisOverlay.visible,
                 previousViewportAxesVisible: hadViewport
                                              && viewportPanel.viewport.showViewportAxes !== undefined
                                              ? viewportPanel.viewport.showViewportAxes
                                              : true,
-                waitForViewportFrame: !includeAxes
-                                      && hadViewport
-                                      && viewportPanel.viewport.showViewportAxes !== undefined
-                                      && viewportPanel.viewport.frameToken !== undefined,
-                startingFrameToken: hadViewport && viewportPanel.viewport.frameToken !== undefined
-                                    ? viewportPanel.viewport.frameToken
-                                    : 0
+                requestedFrameToken: 0
             }
+            imageExportInProgress = true
             infoOverlay.visible = false
             if (!includeAxes) axisOverlay.visible = false
             if (!includeAxes && hadViewport && viewportPanel.viewport.showViewportAxes !== undefined) {
                 viewportPanel.viewport.showViewportAxes = false
             }
+            if (overrideBackground) {
+                viewportPanel.viewport.backgroundColor = Qt.rgba(background.r, background.g, background.b, 0)
+            }
             if (isTransparent) viewportPanel.suppressBackground = true
 
-            if (state.waitForViewportFrame) {
+            if (hadViewport) {
                 pendingExportState = state
+                // Wait for this request's completed output, not a notification
+                // for a previously rendered texture that can still contain axes.
+                state.requestedFrameToken = viewportPanel.viewport.requestFrame()
                 return
             }
 
@@ -371,7 +395,7 @@ Rectangle {
                 return
             }
 
-            if (viewportPanel.viewport.frameToken <= pendingExportState.startingFrameToken) {
+            if (viewportPanel.viewport.frameToken < pendingExportState.requestedFrameToken) {
                 return
             }
 

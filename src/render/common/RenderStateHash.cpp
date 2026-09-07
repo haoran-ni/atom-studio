@@ -68,6 +68,9 @@ uint64_t computeRasterFrameHash(const Camera& camera, const RenderSettings& sett
         h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     };
 
+    // Explicit requests must produce a frame even when its pixels are unchanged.
+    combine(settings.frameRequestToken);
+
     // Viewport size
     combine(hi(width));
     combine(hi(height));

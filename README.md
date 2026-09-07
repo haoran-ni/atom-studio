@@ -8,10 +8,30 @@ A high-performance desktop application for visualization of atomic structures.
 - Bright neutral right-hand sidebar with section icons and tunable-parameter hierarchy lines
 - Compact color controls with Grid, Spectrum, and RGB/hex tabs, background opacity, and session swatches
 - Opaque atoms and bonds, with optional ray-traced shadows and ambient occlusion
+- PNG image export with optional transparent background and axes
+- Export the current edited structure as FHI-aims `.in`, CIF, POSCAR, or extended XYZ
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized
 - Supports various atomic structure file formats
 - Cross-platform: Windows, macOS, and Linux
+
+## Structure Export
+
+Choose a format from **Files → Export Structures** in the sidebar. Export uses
+the current working structure, including deleted atoms and replicated unit cells,
+with its current atom types, positions, and lattice. Cartesian coordinates and
+lattice lengths use ångströms; atoms are never wrapped into the cell.
+
+- **FHI-aims `.in`**: Cartesian `atom` records and `lattice_vector` records when a lattice exists.
+- **`.cif`**: explicit atomic sites with P1 symmetry, cell lengths/angles, and fractional positions.
+  Without a lattice, writes Cartesian sites and omits the cell and symmetry records.
+- **POSCAR**: lattice vectors and Cartesian positions, grouped by element.
+  A structure without a lattice produces an error.
+- **`.xyz`**: extended XYZ using `Lattice`, `Properties=species:S:1:pos:R:3`, and `pbc`
+  metadata. Without a lattice, omits `Lattice` and writes nonperiodic boundary flags.
+
+Exports run in the background from a snapshot taken when the save path is confirmed.
+The destination is replaced only after the complete file has been written successfully.
 
 ## Requirements
 

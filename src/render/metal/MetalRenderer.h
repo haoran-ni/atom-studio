@@ -34,7 +34,8 @@ public:
     /// Returns the most recently completed color texture (id<MTLTexture> as
     /// void*), or nullptr while no frame has finished yet. Marks the returned
     /// slot as presented so it is not reused while the scene graph samples it.
-    void* colorTexture();
+    /// Also returns the request token attached to that completed texture.
+    void* colorTexture(uint64_t& frameRequestToken);
 
     /// True when render() was called while a frame was still in flight, so
     /// the latest scene state has not been submitted yet. The viewport should

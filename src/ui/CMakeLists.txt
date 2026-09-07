@@ -89,8 +89,15 @@ if(APPLE)
     target_compile_definitions(atom-ui PUBLIC ATOM_HAS_METAL)
 endif()
 
-# Exercise color editing and popup ownership without an embedded Python runtime.
+# Exercise structure export and QML controls without an embedded Python runtime.
 if(BUILD_TESTING)
+    add_executable(atom-ui-structure-export-test tests/StructureExportTest.cpp)
+    target_link_libraries(atom-ui-structure-export-test PRIVATE atom-ui)
+    add_test(NAME atom-structure-export
+        COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/tests/check_structure_exports.py"
+            --exporter $<TARGET_FILE:atom-ui-structure-export-test>)
+    set_tests_properties(atom-structure-export PROPERTIES TIMEOUT 90)
+
     find_package(Qt6 QUIET COMPONENTS QuickTest)
     if(TARGET Qt6::QuickTest)
         add_executable(atom-ui-color-picker-test
@@ -101,8 +108,23 @@ if(BUILD_TESTING)
         target_compile_definitions(atom-ui-color-picker-test PRIVATE
             QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests"
         )
-        add_test(NAME atom-ui-color-picker COMMAND atom-ui-color-picker-test -platform offscreen)
+        add_test(NAME atom-ui-color-picker COMMAND atom-ui-color-picker-test -platform offscreen
+            -input "${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_ColorPicker.qml")
         set_tests_properties(atom-ui-color-picker PROPERTIES
+            ENVIRONMENT "QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
+            TIMEOUT 30
+        )
+
+        add_executable(atom-ui-image-export-test
+            tests/ImageExportTest.cpp
+            ${PROJECT_SOURCE_DIR}/resources/resources.qrc
+        )
+        target_link_libraries(atom-ui-image-export-test PRIVATE Qt6::QuickTest Qt6::QuickControls2)
+        target_compile_definitions(atom-ui-image-export-test PRIVATE
+            QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/image_export"
+        )
+        add_test(NAME atom-ui-image-export COMMAND atom-ui-image-export-test -platform offscreen)
+        set_tests_properties(atom-ui-image-export PROPERTIES
             ENVIRONMENT "QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
             TIMEOUT 30
         )

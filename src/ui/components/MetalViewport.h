@@ -72,6 +72,8 @@ public:
     int bondCount() const;
     float fps() const;
     qulonglong frameToken() const;
+    /// Request a frame with the current properties; frameToken acknowledges completion.
+    Q_INVOKABLE qulonglong requestFrame();
     QString hoverStatus() const;
     bool showBonds() const;
     QColor backgroundColor() const;
@@ -206,7 +208,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
-    void notifyFramePresented();
+    void notifyFramePresented(qulonglong token);
     void updateCameraForStructure(bool fitScale);
     void updateHoverStatus(const QPointF& position);
     void setHoverStatus(const QString& status);
@@ -253,6 +255,7 @@ private:
     float m_viewportAxesScale = 1.0f;
     float m_fps = 0.0f;
     qulonglong m_frameToken = 0;
+    qulonglong m_requestedFrameToken = 0;
     QString m_hoverStatus;
     qint64 m_lastFrameTime = 0;
     int m_frameCount = 0;

@@ -1,9 +1,15 @@
 # src/io/CMakeLists.txt
-# File I/O library - async loading around ASE parser
+# File I/O library - ASE loading and native geometry export
+
+find_package(Qt6 REQUIRED COMPONENTS Concurrent)
 
 add_library(atom-io STATIC
     AsyncFileLoader.cpp
     AsyncFileLoader.h
+    StructureFileWriter.cpp
+    StructureFileWriter.h
+    AsyncStructureExporter.cpp
+    AsyncStructureExporter.h
 )
 
 target_include_directories(atom-io PUBLIC
@@ -14,4 +20,5 @@ target_link_libraries(atom-io PUBLIC
     atom-data
     atom-python
     Qt6::Core
+    Qt6::Concurrent
 )

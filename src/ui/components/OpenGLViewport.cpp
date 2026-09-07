@@ -52,8 +52,10 @@ public:
         }
 
         m_activeRenderer->render(*m_viewport->m_camera, m_viewport->m_renderSettings);
-        QMetaObject::invokeMethod(m_viewport, &OpenGLViewport::notifyFramePresented,
-                                  Qt::QueuedConnection);
+        const qulonglong completedFrameToken = m_viewport->m_renderSettings.frameRequestToken;
+        QMetaObject::invokeMethod(m_viewport, [viewport = m_viewport, completedFrameToken]() {
+            viewport->notifyFramePresented(completedFrameToken);
+        }, Qt::QueuedConnection);
 
         // For RT mode: update sample count and keep rendering until converged
         if (m_currentMode == 1 && m_rtRenderer) {
@@ -170,6 +172,7 @@ public:
         }
 
         // Build render settings from viewport properties
+        viewport->m_renderSettings.frameRequestToken = viewport->m_requestedFrameToken;
         viewport->m_renderSettings.backgroundColor = viewport->m_backgroundColor;
         viewport->m_renderSettings.showBonds = viewport->m_showBonds;
         viewport->m_renderSettings.showAtoms =
@@ -271,6 +274,12 @@ float OpenGLViewport::fps() const {
 
 qulonglong OpenGLViewport::frameToken() const {
     return m_frameToken;
+}
+
+qulonglong OpenGLViewport::requestFrame() {
+    const qulonglong token = ++m_requestedFrameToken;
+    update();
+    return token;
 }
 
 QString OpenGLViewport::hoverStatus() const {
@@ -898,8 +907,9 @@ void OpenGLViewport::setRotationConstraint(int constraint) {
     }
 }
 
-void OpenGLViewport::notifyFramePresented() {
-    ++m_frameToken;
+void OpenGLViewport::notifyFramePresented(qulonglong token) {
+    if (token <= m_frameToken) return;
+    m_frameToken = token;
     emit frameTokenChanged();
 }
 

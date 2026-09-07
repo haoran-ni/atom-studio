@@ -39,7 +39,8 @@ public:
     void resetAccumulation();
 
     /// Returns the display-ready output texture (id<MTLTexture> as void*).
-    void* outputTexture();
+    /// Also returns the request token attached to that completed texture.
+    void* outputTexture(uint64_t& frameRequestToken);
 
 private:
     void createRenderTargets();

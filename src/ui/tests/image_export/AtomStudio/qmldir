@@ -1,0 +1,5 @@
+module AtomStudio
+singleton FileController 1.0 FileController.qml
+singleton StructureModel 1.0 StructureModel.qml
+MetalViewport 1.0 MockViewport.qml
+OpenGLViewport 1.0 MockViewport.qml

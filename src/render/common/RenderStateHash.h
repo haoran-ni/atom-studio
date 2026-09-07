@@ -19,7 +19,8 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
  *
  * Superset of computeRenderStateHash: also covers overlays (unit cell,
  * viewport axes, rotation-center gizmo), mesh tessellation, and the
- * viewport size. Used to skip raster re-rendering when nothing changed.
+ * viewport size. Explicit frame requests also invalidate this hash.
+ * Used to skip raster re-rendering when nothing changed.
  */
 uint64_t computeRasterFrameHash(const Camera& camera, const RenderSettings& settings,
                                 int width, int height);

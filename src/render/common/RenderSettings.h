@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QVector3D>
 #include <cmath>
+#include <cstdint>
 
 namespace atom::render {
 
@@ -10,6 +11,10 @@ namespace atom::render {
  * @brief Render settings for visualization
  */
 struct RenderSettings {
+    // Identifies an explicit frame request (for export). Carried with the
+    // completed output; does not affect ray-tracing accumulation.
+    uint64_t frameRequestToken = 0;
+
     // Background
     QColor backgroundColor = QColor(255, 255, 255);  // Pure white default
 

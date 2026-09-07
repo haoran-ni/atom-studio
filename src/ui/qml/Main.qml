@@ -33,6 +33,34 @@ ApplicationWindow {
         function onLoadFailed(error) {
             mainWindow.persistentStatusMessage = "Error: " + error
         }
+
+        function onStructureExportStarted(filePath) {
+            mainWindow.persistentStatusMessage = qsTr("Exporting structure...")
+        }
+
+        function onStructureExported(filePath) {
+            mainWindow.persistentStatusMessage = qsTr("Structure exported to %1").arg(filePath)
+        }
+
+        function onStructureExportFailed(error) {
+            mainWindow.persistentStatusMessage = qsTr("Export failed: %1").arg(error)
+            structureExportError.message = error
+            structureExportError.open()
+        }
+    }
+
+    Dialog {
+        id: structureExportError
+        property string message: ""
+        title: qsTr("Structure Export Failed")
+        anchors.centerIn: parent
+        width: Math.min(mainWindow.width - 40, 440)
+        modal: true
+        standardButtons: Dialog.Ok
+        contentItem: Label {
+            text: structureExportError.message
+            wrapMode: Text.Wrap
+        }
     }
 
     // Main layout

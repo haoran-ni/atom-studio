@@ -187,6 +187,13 @@ int MetalViewport::bondCount() const {
 
 float MetalViewport::fps() const { return m_fps; }
 qulonglong MetalViewport::frameToken() const { return m_frameToken; }
+
+qulonglong MetalViewport::requestFrame() {
+    const qulonglong token = ++m_requestedFrameToken;
+    update();
+    return token;
+}
+
 QString MetalViewport::hoverStatus() const { return m_hoverStatus; }
 bool MetalViewport::showBonds() const { return m_showBonds; }
 QColor MetalViewport::backgroundColor() const { return m_backgroundColor; }
@@ -795,6 +802,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     }
 
     // 4. Build render settings from viewport properties
+    m_renderSettings.frameRequestToken = m_requestedFrameToken;
     m_renderSettings.backgroundColor = m_backgroundColor;
     m_renderSettings.showBonds = m_showBonds;
     m_renderSettings.showAtoms = !(m_showBonds && m_atomScale <= 0.1001f);
@@ -880,6 +888,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
 
     // 7. Get the output texture
     void* mtlTexture = nullptr;
+    uint64_t completedFrameToken = 0;
     bool needsMoreFrames = false;
     if (m_impl->currentMode == 1 && m_impl->rtRenderer) {
         const int newSampleCount = m_impl->rtRenderer->sampleCount();
@@ -888,9 +897,9 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
             emit sampleCountChanged();
         }
         needsMoreFrames = m_impl->rtRenderer->needsMoreFrames();
-        mtlTexture = m_impl->rtRenderer->outputTexture();
+        mtlTexture = m_impl->rtRenderer->outputTexture(completedFrameToken);
     } else {
-        mtlTexture = m_impl->rasterRenderer->colorTexture();
+        mtlTexture = m_impl->rasterRenderer->colorTexture(completedFrameToken);
         needsMoreFrames = m_impl->rasterRenderer->needsMoreFrames();
         if (!mtlTexture && !needsMoreFrames) {
             // Safety net: no output and nothing in flight — force a render
@@ -899,6 +908,10 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
             needsMoreFrames = true;
         }
     }
+
+    // An older texture may still be displayed while the requested frame is
+    // in flight. Keep scheduling until that request reaches the scene graph.
+    needsMoreFrames = needsMoreFrames || completedFrameToken < m_requestedFrameToken;
 
     if (!mtlTexture) {
         if (needsMoreFrames) {
@@ -953,8 +966,11 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         update();
     }
 
-    QMetaObject::invokeMethod(this, &MetalViewport::notifyFramePresented,
-                              Qt::QueuedConnection);
+    if (tex) {
+        QMetaObject::invokeMethod(this, [this, completedFrameToken]() {
+            notifyFramePresented(completedFrameToken);
+        }, Qt::QueuedConnection);
+    }
 
     return node;
 }
@@ -1110,8 +1126,9 @@ void MetalViewport::mouseDoubleClickEvent(QMouseEvent* event) {
     event->accept();
 }
 
-void MetalViewport::notifyFramePresented() {
-    ++m_frameToken;
+void MetalViewport::notifyFramePresented(qulonglong token) {
+    if (token <= m_frameToken) return;
+    m_frameToken = token;
     emit frameTokenChanged();
 }
 

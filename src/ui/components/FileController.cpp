@@ -5,9 +5,12 @@
 #include "../../python/ASEReader.h"
 
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QQmlEngine>
 #include <QDebug>
+#include <exception>
+#include <utility>
 
 namespace atom::ui {
 
@@ -16,6 +19,7 @@ FileController* FileController::s_instance = nullptr;
 FileController::FileController(QObject* parent)
     : QObject(parent)
     , m_loader(std::make_unique<io::AsyncFileLoader>(this))
+    , m_exporter(std::make_unique<io::AsyncStructureExporter>(this))
 {
     // Connect loader signals
     connect(m_loader.get(), &io::AsyncFileLoader::loadingStarted,
@@ -28,6 +32,15 @@ FileController::FileController(QObject* parent)
             this, &FileController::onLoadingFailed);
     connect(m_loader.get(), &io::AsyncFileLoader::loadingCancelled,
             this, &FileController::onLoadingCancelled);
+
+    connect(m_exporter.get(), &io::AsyncStructureExporter::isExportingChanged,
+            this, &FileController::isExportingChanged);
+    connect(m_exporter.get(), &io::AsyncStructureExporter::exportStarted,
+            this, &FileController::structureExportStarted);
+    connect(m_exporter.get(), &io::AsyncStructureExporter::exportFinished,
+            this, &FileController::structureExported);
+    connect(m_exporter.get(), &io::AsyncStructureExporter::exportFailed,
+            this, &FileController::structureExportFailed);
 
     s_instance = this;
 }
@@ -69,6 +82,73 @@ QString FileController::fileFilter() const {
     return QString::fromStdString(reader.fileDialogFilter());
 }
 
+bool FileController::isExporting() const {
+    return m_exporter->isExporting();
+}
+
+QStringList FileController::structureExportFormats() const {
+    QStringList formats;
+    for (const auto& type : io::structureFileTypes()) formats.append(type.id);
+    return formats;
+}
+
+void FileController::openSaveStructureDialog(const QString& format) {
+    if (isExporting()) return;
+    const auto* type = io::structureFileType(format);
+    if (!type) {
+        emit structureExportFailed(tr("Unsupported structure export format: %1").arg(format));
+        return;
+    }
+    const auto* model = StructureModel::instance();
+    if (!model || !model->hasStructure()) {
+        emit structureExportFailed(tr("There are no atoms to export."));
+        return;
+    }
+    const auto structure = model->structure();
+    if (type->format == io::StructureFileFormat::Poscar && !structure->hasLattice()) {
+        emit structureExportFailed(tr("POSCAR export requires a valid lattice. This structure has no lattice."));
+        return;
+    }
+    const QFileInfo source(QString::fromStdString(structure->sourcePath()));
+    const QString directory = source.exists() ? source.absolutePath()
+        : QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    const QString stem = source.completeBaseName().isEmpty() ? QStringLiteral("structure")
+                                                            : source.completeBaseName();
+    const QString name = type->format == io::StructureFileFormat::Poscar
+        ? QStringLiteral("POSCAR") : stem + "_export" + type->suffix;
+    QFileDialog dialog(nullptr, tr("Export Current Structure"), directory, type->filter);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setDefaultSuffix(type->suffix.mid(1));
+    dialog.selectFile(name);
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) return;
+    exportStructure(dialog.selectedFiles().first(), format);
+}
+
+void FileController::exportStructure(const QString& filePath, const QString& format) {
+    if (filePath.isEmpty()) return;
+    if (isExporting()) {
+        emit structureExportFailed(tr("A structure export is already in progress."));
+        return;
+    }
+    const auto* type = io::structureFileType(format);
+    if (!type) {
+        emit structureExportFailed(tr("Unsupported structure export format: %1").arg(format));
+        return;
+    }
+    const auto* model = StructureModel::instance();
+    if (!model || !model->hasStructure()) {
+        emit structureExportFailed(tr("There are no atoms to export."));
+        return;
+    }
+    try {
+        auto snapshot = io::StructureExportData::fromStructure(*model->structure());
+        m_exporter->exportStructure(filePath, type->format, std::move(snapshot));
+    } catch (const std::exception& error) {
+        emit structureExportFailed(tr("Could not prepare the structure for export: %1")
+                                       .arg(QString::fromUtf8(error.what())));
+    }
+}
+
 void FileController::openFileDialog() {
     QString startDir = QStandardPaths::writableLocation(
         QStandardPaths::HomeLocation);
@@ -94,7 +174,8 @@ void FileController::loadFile(const QString& filePath) {
     m_loader->loadFile(filePath);
 }
 
-void FileController::openSaveImageDialog(const QString& format, bool includeAxes) {
+void FileController::openSaveImageDialog(const QString& format, bool includeAxes,
+                                       bool transparentBackground) {
     QString filter;
     if (format == ".png")
         filter = tr("PNG Image (*.png)");
@@ -107,7 +188,7 @@ void FileController::openSaveImageDialog(const QString& format, bool includeAxes
                           + "/output_image" + format;
     QString path = QFileDialog::getSaveFileName(nullptr, tr("Export Image"), defaultPath, filter);
     if (!path.isEmpty())
-        emit saveImagePathSelected(path, format, includeAxes);
+        emit saveImagePathSelected(path, format, includeAxes, transparentBackground);
 }
 
 void FileController::loadFileUrl(const QUrl& fileUrl) {

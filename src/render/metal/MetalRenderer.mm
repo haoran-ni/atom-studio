@@ -40,6 +40,7 @@ static simd_float4x4 remapDepthToMetal(const QMatrix4x4& proj) {
 
 struct MetalRenderer::Impl {
     struct OutputSlot {
+        uint64_t frameRequestToken = 0;
         id<MTLTexture> msaaColorTexture = nil;
         id<MTLTexture> colorTexture = nil;
         id<MTLTexture> depthTexture = nil;
@@ -163,6 +164,8 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
         return;
     }
     m_pendingRender = false;
+    m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)].frameRequestToken =
+        settings.frameRequestToken;
 
     // Upload dirty data
     if (m_atomDataDirty) {
@@ -319,13 +322,15 @@ void MetalRenderer::invalidateBondData() {
     m_bondDataDirty = true;
 }
 
-void* MetalRenderer::colorTexture() {
+void* MetalRenderer::colorTexture(uint64_t& frameRequestToken) {
+    frameRequestToken = 0;
     const int readySlot = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
     if (readySlot < 0 || readySlot >= kOutputSlotCount) {
         return nullptr;
     }
 
     m_lastPresentedSlot = readySlot;
+    frameRequestToken = m_impl->outputSlots[static_cast<size_t>(readySlot)].frameRequestToken;
     return (__bridge void*)m_impl->outputSlots[static_cast<size_t>(readySlot)].colorTexture;
 }
 
