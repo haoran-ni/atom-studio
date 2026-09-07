@@ -9,6 +9,7 @@ A high-performance desktop application for visualization of atomic structures.
 - Compact color controls with Grid, Spectrum, and RGB/hex tabs, background opacity, and session swatches
 - Opaque atoms and bonds, with optional ray-traced shadows and ambient occlusion
 - PNG image export with optional transparent background and axes
+- Ray-traced images retain accumulated samples when changing background color or opacity, including transparent PNG export
 - Export the current edited structure as FHI-aims `.in`, CIF, POSCAR, or extended XYZ
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized

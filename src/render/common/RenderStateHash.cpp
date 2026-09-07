@@ -44,10 +44,6 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hf(settings.shininess));
     combine(hf(settings.lightAzimuth));
     combine(hf(settings.lightElevation));
-    combine(hi(settings.backgroundColor.red()));
-    combine(hi(settings.backgroundColor.green()));
-    combine(hi(settings.backgroundColor.blue()));
-    combine(hi(settings.backgroundColor.alpha()));
     combine(hb(settings.outlineEnabled));
     combine(hf(settings.outlineWidth));
     combine(hi(settings.outlineColor.red()));
@@ -70,6 +66,12 @@ uint64_t computeRasterFrameHash(const Camera& camera, const RenderSettings& sett
 
     // Explicit requests must produce a frame even when its pixels are unchanged.
     combine(settings.frameRequestToken);
+
+    // Background is composited after RT accumulation, but changes raster pixels.
+    combine(hi(settings.backgroundColor.red()));
+    combine(hi(settings.backgroundColor.green()));
+    combine(hi(settings.backgroundColor.blue()));
+    combine(hi(settings.backgroundColor.alpha()));
 
     // Viewport size
     combine(hi(width));

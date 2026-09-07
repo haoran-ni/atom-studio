@@ -145,6 +145,7 @@ resources/
 ### Rendering Techniques
 - **Interactive mode**: Instanced billboard/impostor spheres (ray-sphere in fragment shader)
 - **Ray tracing mode**: Procedural primitives or low-poly proxy geometry with normal reconstruction
+- **Ray-traced backgrounds**: Accumulate premultiplied foreground color and coverage independently of the background. Composite background color/opacity in the display pass; background edits and transparent export must preserve accumulated samples. Background changes still invalidate cached raster output.
 - **Projection modes**: Both perspective and orthographic projection are supported across all renderers. Sphere impostors, RT ray generation, and unit cell occlusion all branch on `isPerspective` at the shader level. The Camera class handles both projection matrices, and `RenderStateHash` includes projection state for RT accumulation reset.
 
 ### Acceleration Structure Strategy (for trajectories)

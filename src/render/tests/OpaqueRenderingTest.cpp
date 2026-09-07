@@ -5,6 +5,7 @@
 #include "opengl/RayTracingRenderer.h"
 #include "Structure.h"
 #include "BondList.h"
+#include "BackgroundCompositingCheck.h"
 
 #include <QGuiApplication>
 #include <QImage>
@@ -88,6 +89,16 @@ bool checkRenderer(render::Renderer& renderer, QOpenGLFunctions& gl, bool rayTra
     }
 
     if (rayTracing) {
+        settings.backgroundColor = QColor(80, 160, 240);
+        snapshot(&scene);
+        if (!checkBackgroundCompositing(
+                static_cast<render::RayTracingRenderer&>(renderer), settings, [&]() {
+                    fbo.bind();
+                    renderer.render(camera, settings);
+                    gl.glFinish();
+                    return fbo.toImage();
+                })) return false;
+
         // The second sphere blocks the light at the first sphere's front face.
         scene.bonds().clear();
         scene.setPosition(1, 0.0f, 0.0f, 1.55f);

@@ -71,7 +71,6 @@ struct RTUniforms {
     float    atomScale;
     float3   lightDir;
     float    ambient;
-    float4   backgroundColor;
     float    diffuse;
     float    specular;
     float    shininess;
@@ -100,6 +99,7 @@ struct RTUniforms {
 struct DisplayUniforms {
     float sampleCount;
     float _pad[3];
+    float4 backgroundColor;
 };
 
 constant float3 kSelectionOutlineColor = float3(1.0, 0.0, 0.0);
@@ -1525,7 +1525,8 @@ fragment float4 rt_fragment(
                  hitT, hitIndex, hitOutline, hitSelectionOutline);
 
     if (hitIndex < 0) {
-        return float4(rt.backgroundColor.rgb * rt.backgroundColor.a, rt.backgroundColor.a);
+        // Accumulate foreground coverage independently of the display background.
+        return float4(0.0);
     }
 
     if (hitOutline) {
@@ -1632,7 +1633,7 @@ fragment float4 rt_fragment(
 }
 
 // -------------------------------------------------------
-// Display pass (divide accumulation by sample count)
+// Display pass (average foreground samples and composite the background)
 // -------------------------------------------------------
 
 fragment float4 display_fragment(
@@ -1642,8 +1643,11 @@ fragment float4 display_fragment(
 {
     constexpr sampler nearestSampler(mag_filter::nearest, min_filter::nearest);
     float4 accum = accumTexture.sample(nearestSampler, in.texCoord);
-    float4 out_color = accum / max(disp.sampleCount, 1.0);
-    return out_color;
+    float4 foreground = accum / max(disp.sampleCount, 1.0);
+    float uncovered = 1.0 - clamp(foreground.a, 0.0, 1.0);
+    float4 background = float4(disp.backgroundColor.rgb * disp.backgroundColor.a,
+                               disp.backgroundColor.a);
+    return foreground + uncovered * background;
 }
 )";
 

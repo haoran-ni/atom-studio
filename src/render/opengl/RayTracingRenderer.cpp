@@ -60,10 +60,9 @@ uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
 uniform float uShininess;
-uniform vec4 uBackgroundColor;
 
 // Progressive rendering
-uniform uint uFrameCount;
+uniform int uFrameCount;
 
 // Bond data (texture buffer objects)
 uniform samplerBuffer uBondStartPositions; // vec4(x, y, z, startRadius)
@@ -415,7 +414,7 @@ void main() {
     rng_state = pcg(
         uint(gl_FragCoord.x) +
         uint(gl_FragCoord.y) * uint(uWidth) +
-        uFrameCount * uint(uWidth) * uint(uHeight)
+        uint(uFrameCount) * uint(uWidth) * uint(uHeight)
     );
 
     // Sub-pixel jitter for progressive anti-aliasing
@@ -444,7 +443,8 @@ void main() {
     traceClosest(rayOrigin, rayDir, -1, hitT, hitIndex);
 
     if (hitIndex < 0) {
-        fragColor = vec4(uBackgroundColor.rgb * uBackgroundColor.a, uBackgroundColor.a);
+        // Accumulate foreground coverage independently of the display background.
+        fragColor = vec4(0.0);
         return;
     }
 
@@ -559,10 +559,14 @@ out vec4 fragColor;
 
 uniform sampler2D uAccumTexture;
 uniform float uSampleCount;
+uniform vec4 uBackgroundColor;
 
 void main() {
     vec4 accum = texture(uAccumTexture, vTexCoord);
-    fragColor = accum / max(uSampleCount, 1.0);
+    vec4 foreground = accum / max(uSampleCount, 1.0);
+    float uncovered = 1.0 - clamp(foreground.a, 0.0, 1.0);
+    vec4 background = vec4(uBackgroundColor.rgb * uBackgroundColor.a, uBackgroundColor.a);
+    fragColor = foreground + uncovered * background;
 }
 )";
 
@@ -1174,13 +1178,9 @@ void RayTracingRenderer::renderRTPass(const Camera& camera) {
     m_rtShader->setUniformValue("uSpecular", m_settings.specularStrength);
     m_rtShader->setUniformValue("uShininess", m_settings.shininess);
 
-    // Background color
-    QColor bg = m_settings.backgroundColor;
-    m_rtShader->setUniformValue("uBackgroundColor",
-                                 QVector4D(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF()));
-
     // Progressive rendering
-    m_rtShader->setUniformValue("uFrameCount", static_cast<GLuint>(m_sampleCount));
+    // QOpenGLShaderProgram uploads scalar integers with glUniform1i.
+    m_rtShader->setUniformValue("uFrameCount", m_sampleCount);
 
     // Feature toggles
     m_rtShader->setUniformValue("uEnableShadows", m_settings.enableShadows);
@@ -1208,6 +1208,9 @@ void RayTracingRenderer::renderDisplayPass(const Camera& camera) {
     glBindTexture(GL_TEXTURE_2D, m_accumTexture);
     m_displayShader->setUniformValue("uAccumTexture", 0);
     m_displayShader->setUniformValue("uSampleCount", static_cast<float>(m_sampleCount));
+    const QColor& bg = m_settings.backgroundColor;
+    m_displayShader->setUniformValue("uBackgroundColor",
+                                    QVector4D(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF()));
 
     // Draw full-screen quad
     glBindVertexArray(m_quadVAO);

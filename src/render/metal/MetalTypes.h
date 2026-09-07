@@ -69,7 +69,6 @@ struct RTUniforms {
     float         atomScale;
     simd_float3   lightDir;
     float         ambient;
-    simd_float4   backgroundColor;
     float         diffuse;
     float         specular;
     float         shininess;
@@ -119,6 +118,7 @@ struct RTUnitCellUniforms {
 struct DisplayUniforms {
     float sampleCount;
     float _pad[3];
+    simd_float4 backgroundColor;
 };
 
 } // namespace atom::render::metal

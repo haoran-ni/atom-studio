@@ -725,8 +725,6 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.lightDir = simd_make_float3(worldLightDir.x(), worldLightDir.y(), worldLightDir.z());
     rt.ambient = m_settings.ambientStrength;
 
-    QColor bg = m_settings.backgroundColor;
-    rt.backgroundColor = simd_make_float4(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF());
     rt.diffuse = m_settings.diffuseStrength;
     rt.specular = m_settings.specularStrength;
     rt.shininess = m_settings.shininess;
@@ -839,6 +837,8 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
                                                 int outputSlotIndex) {
     DisplayUniforms disp{};
     disp.sampleCount = static_cast<float>(m_sampleCount);
+    const QColor& bg = m_settings.backgroundColor;
+    disp.backgroundColor = simd_make_float4(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF());
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
     const auto& outputSlot = m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)];

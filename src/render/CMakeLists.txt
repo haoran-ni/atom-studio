@@ -142,4 +142,10 @@ if(BUILD_TESTING)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         SKIP_RETURN_CODE 77
     )
+    if(APPLE)
+        add_executable(atom-render-metal-background-test tests/MetalBackgroundRenderingTest.mm)
+        target_link_libraries(atom-render-metal-background-test PRIVATE atom-render)
+        add_test(NAME atom-render-metal-background COMMAND atom-render-metal-background-test)
+        set_tests_properties(atom-render-metal-background PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+    endif()
 endif()

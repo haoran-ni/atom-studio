@@ -11,13 +11,14 @@ struct RenderSettings;
  * @brief Hash camera + render settings fields that affect RT accumulation.
  *
  * Any change in the hashed state should reset progressive accumulation.
+ * Background color/opacity are applied during display and excluded here.
  */
 uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& settings);
 
 /**
  * @brief Hash everything that affects a raster frame's pixels.
  *
- * Superset of computeRenderStateHash: also covers overlays (unit cell,
+ * Superset of computeRenderStateHash: also covers the background, overlays (unit cell,
  * viewport axes, rotation-center gizmo), mesh tessellation, and the
  * viewport size. Explicit frame requests also invalidate this hash.
  * Used to skip raster re-rendering when nothing changed.

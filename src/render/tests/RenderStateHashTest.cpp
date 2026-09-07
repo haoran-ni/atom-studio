@@ -12,8 +12,26 @@ int main() {
     translucent.backgroundColor.setAlpha(64);
 
     if (atom::render::computeRenderStateHash(camera, opaque)
-        == atom::render::computeRenderStateHash(camera, translucent)) {
-        std::cerr << "Background opacity must restart ray-tracing accumulation\n";
+        != atom::render::computeRenderStateHash(camera, translucent)) {
+        std::cerr << "Background opacity must preserve ray-tracing accumulation\n";
+        return 1;
+    }
+    for (const QColor color : {QColor(41, 80, 120), QColor(40, 81, 120), QColor(40, 80, 121)}) {
+        auto recolored = opaque;
+        recolored.backgroundColor = color;
+        if (atom::render::computeRenderStateHash(camera, opaque)
+            != atom::render::computeRenderStateHash(camera, recolored)
+            || atom::render::computeRasterFrameHash(camera, opaque, 800, 600)
+            == atom::render::computeRasterFrameHash(camera, recolored, 800, 600)) {
+            std::cerr << "Background RGB must only invalidate display/raster output\n";
+            return 1;
+        }
+    }
+    auto relit = opaque;
+    relit.lightAzimuth += 10.0f;
+    if (atom::render::computeRenderStateHash(camera, opaque)
+        == atom::render::computeRenderStateHash(camera, relit)) {
+        std::cerr << "Lighting changes must still restart ray tracing\n";
         return 1;
     }
     if (atom::render::computeRasterFrameHash(camera, opaque, 800, 600)
