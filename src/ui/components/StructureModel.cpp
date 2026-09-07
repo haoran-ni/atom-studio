@@ -173,6 +173,7 @@ QColor StructureModel::selectedAtomColor() const {
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
     m_originalStructure = structure;
     m_structure = structure->clone();
+    setReplicationFactors(1, 1, 1);
     setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
@@ -183,6 +184,7 @@ void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
 void StructureModel::resetToOriginal() {
     if (!m_originalStructure) return;
     m_structure = m_originalStructure->clone();
+    setReplicationFactors(1, 1, 1);
     setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
@@ -198,6 +200,7 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
     if (!replicated) return;
 
     m_structure = std::move(replicated);
+    setReplicationFactors(nx, ny, nz);
     clearSelection();
     updateElementList();
     emit structureChanged();
@@ -212,6 +215,13 @@ void StructureModel::unwrapMolecules() {
     clearSelection();
     emit structureChanged();
     emit structureUpdated(m_structure);
+}
+
+void StructureModel::setReplicationFactors(int nx, int ny, int nz) {
+    const std::array<int, 3> factors{nx, ny, nz};
+    if (m_replicationFactors == factors) return;
+    m_replicationFactors = factors;
+    emit replicationFactorsChanged();
 }
 
 void StructureModel::setSelectionMode(int mode) {
@@ -406,6 +416,7 @@ bool StructureModel::deleteSelectedObjects() {
 void StructureModel::clear() {
     m_originalStructure.reset();
     m_structure.reset();
+    setReplicationFactors(1, 1, 1);
     m_elements.clear();
     setSelectionModeInternal(0, false);
     emit structureChanged();

@@ -100,6 +100,20 @@ if(BUILD_TESTING)
 
     find_package(Qt6 QUIET COMPONENTS QuickTest)
     if(TARGET Qt6::QuickTest)
+        add_executable(atom-ui-replication-test
+            tests/ReplicationTest.cpp
+            ${PROJECT_SOURCE_DIR}/resources/resources.qrc
+        )
+        target_link_libraries(atom-ui-replication-test PRIVATE atom-ui Qt6::QuickTest Qt6::QuickControls2)
+        target_compile_definitions(atom-ui-replication-test PRIVATE
+            QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/replication"
+        )
+        add_test(NAME atom-ui-replication COMMAND atom-ui-replication-test -platform offscreen)
+        set_tests_properties(atom-ui-replication PROPERTIES
+            ENVIRONMENT "QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
+            TIMEOUT 30
+        )
+
         add_executable(atom-ui-color-picker-test
             tests/ColorPickerTest.cpp
             ${PROJECT_SOURCE_DIR}/resources/resources.qrc

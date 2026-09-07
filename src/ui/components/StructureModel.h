@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QQmlEngine>
 #include <QtQml/qqmlregistration.h>
+#include <array>
 #include <cstddef>
 #include <memory>
 
@@ -36,6 +37,9 @@ class StructureModel : public QObject {
     Q_PROPERTY(bool hasUnitCell READ hasUnitCell NOTIFY structureChanged)
     Q_PROPERTY(bool hasBonds READ hasBonds NOTIFY structureChanged)
     Q_PROPERTY(QString cellParameters READ cellParameters NOTIFY structureChanged)
+    Q_PROPERTY(int replicationX READ replicationX NOTIFY replicationFactorsChanged)
+    Q_PROPERTY(int replicationY READ replicationY NOTIFY replicationFactorsChanged)
+    Q_PROPERTY(int replicationZ READ replicationZ NOTIFY replicationFactorsChanged)
     Q_PROPERTY(int selectionMode READ selectionMode WRITE setSelectionMode NOTIFY selectionModeChanged)
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionModeChanged)
     Q_PROPERTY(int selectedAtomCount READ selectedAtomCount NOTIFY selectionChanged)
@@ -65,6 +69,9 @@ public:
     bool hasUnitCell() const;
     bool hasBonds() const;
     QString cellParameters() const;
+    int replicationX() const { return m_replicationFactors[0]; }
+    int replicationY() const { return m_replicationFactors[1]; }
+    int replicationZ() const { return m_replicationFactors[2]; }
     int selectionMode() const;
     bool selectionEnabled() const;
     int selectedAtomCount() const;
@@ -95,6 +102,7 @@ public slots:
 
 signals:
     void structureChanged();
+    void replicationFactorsChanged();
     void selectionModeChanged();
     void selectionChanged();
     /// Appearance-only change (colors, selection styling).
@@ -112,9 +120,11 @@ private:
     bool setComponentSelection(const data::ConnectedSelection& component, bool selected);
     bool componentFullySelected(const data::ConnectedSelection& component) const;
     void emitSelectionResetSignals();
+    void setReplicationFactors(int nx, int ny, int nz);
 
     std::shared_ptr<data::Structure> m_originalStructure;  // immutable — set once on load
     std::shared_ptr<data::Structure> m_structure;          // working copy shown in viewport
+    std::array<int, 3> m_replicationFactors{1, 1, 1};
     QStringList m_elements;
     int m_selectionMode = 0;
 

@@ -147,6 +147,101 @@ Rectangle {
         }
     }
 
+    component ReplicationArrow: Button {
+        id: arrow
+
+        property string iconSource: ""
+        implicitWidth: 18
+        implicitHeight: 18
+        padding: 2
+        focusPolicy: Qt.NoFocus
+
+        contentItem: Image {
+            source: arrow.iconSource
+            sourceSize.width: 14
+            sourceSize.height: 14
+            fillMode: Image.PreserveAspectFit
+            opacity: arrow.enabled ? 1.0 : 0.3
+        }
+        background: Rectangle {
+            radius: 3
+            color: arrow.down ? sidebar.buttonFill
+                              : arrow.hovered ? sidebar.inputFillAlt : "transparent"
+        }
+    }
+
+    component ReplicationControl: RowLayout {
+        id: control
+
+        property int value: 1
+        property string axisName: ""
+        signal valueCommitted(int newValue)
+        spacing: 2
+
+        function commitText() {
+            if (!input.acceptableInput) {
+                sidebar.showSliderInputError(qsTr("Replication factors must be integers from 1 to 99."))
+                input.text = control.value.toString()
+                return
+            }
+            const requested = Number(input.text)
+            if (requested !== control.value)
+                control.valueCommitted(requested)
+            input.text = control.value.toString()
+        }
+
+        function step(delta) {
+            const requested = Math.max(1, Math.min(99, control.value + delta))
+            if (requested !== control.value)
+                control.valueCommitted(requested)
+            input.text = control.value.toString()
+        }
+
+        SidebarTextField {
+            id: input
+            objectName: "replication" + control.axisName + "Input"
+            Layout.fillWidth: true
+            Layout.minimumWidth: 26
+            leftPadding: 2
+            rightPadding: 2
+            text: control.value.toString()
+            horizontalAlignment: TextInput.AlignHCenter
+            inputMethodHints: Qt.ImhDigitsOnly
+            validator: IntValidator { bottom: 1; top: 99 }
+            selectByMouse: true
+            Accessible.name: qsTr("Replication along %1").arg(control.axisName)
+            // Enter commits; leaving the field discards an uncommitted draft.
+            Keys.onReturnPressed: control.commitText()
+            Keys.onEnterPressed: control.commitText()
+            onActiveFocusChanged: {
+                if (!activeFocus)
+                    text = control.value.toString()
+            }
+        }
+
+        // Explicitly refresh after a model update even if text was assigned
+        // while editing. The applied value remains owned by StructureModel.
+        onValueChanged: input.text = control.value.toString()
+
+        ColumnLayout {
+            spacing: 0
+            ReplicationArrow {
+                objectName: "replication" + control.axisName + "Up"
+                iconSource: "qrc:/icons/chevron-up.svg"
+                enabled: control.value < 99
+                Accessible.name: qsTr("Increase %1 replication").arg(control.axisName)
+                onClicked: control.step(1)
+            }
+            ReplicationArrow {
+                objectName: "replication" + control.axisName + "Down"
+                iconSource: "qrc:/icons/chevron-down.svg"
+                enabled: control.value > 1
+                Accessible.name: qsTr("Decrease %1 replication").arg(control.axisName)
+                onClicked: control.step(-1)
+            }
+        }
+    }
+
     component SidebarCheckBox: CheckBox {
         id: control
 
@@ -578,6 +673,7 @@ Rectangle {
 
                 SidebarSection {
                     id: structureManipulationSection
+                    objectName: "structureManipulationSection"
                     title: qsTr("Structure")
                     iconSource: "qrc:/icons/structure.svg"
                     Layout.fillWidth: true
@@ -620,14 +716,13 @@ Rectangle {
                                                         font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
-                                                    SidebarTextField {
-                                                        id: replicateX
+                                                    ReplicationControl {
                                                         Layout.fillWidth: true
-                                                        text: "1"
-                                                        horizontalAlignment: TextInput.AlignHCenter
-                                                        inputMethodHints: Qt.ImhDigitsOnly
-                                                        validator: IntValidator { bottom: 1; top: 99 }
-                                                        selectByMouse: true
+                                                        axisName: "X"
+                                                        value: StructureModel.replicationX
+                                                        onValueCommitted: function(newValue) {
+                                                            StructureModel.replicateCell(newValue, StructureModel.replicationY, StructureModel.replicationZ)
+                                                        }
                                                     }
 
                                                     Label {
@@ -636,14 +731,13 @@ Rectangle {
                                                         font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
-                                                    SidebarTextField {
-                                                        id: replicateY
+                                                    ReplicationControl {
                                                         Layout.fillWidth: true
-                                                        text: "1"
-                                                        horizontalAlignment: TextInput.AlignHCenter
-                                                        inputMethodHints: Qt.ImhDigitsOnly
-                                                        validator: IntValidator { bottom: 1; top: 99 }
-                                                        selectByMouse: true
+                                                        axisName: "Y"
+                                                        value: StructureModel.replicationY
+                                                        onValueCommitted: function(newValue) {
+                                                            StructureModel.replicateCell(StructureModel.replicationX, newValue, StructureModel.replicationZ)
+                                                        }
                                                     }
 
                                                     Label {
@@ -652,32 +746,13 @@ Rectangle {
                                                         font.pixelSize: 12
                                                         Layout.preferredWidth: 16
                                                     }
-                                                    SidebarTextField {
-                                                        id: replicateZ
+                                                    ReplicationControl {
                                                         Layout.fillWidth: true
-                                                        text: "1"
-                                                        horizontalAlignment: TextInput.AlignHCenter
-                                                        inputMethodHints: Qt.ImhDigitsOnly
-                                                        validator: IntValidator { bottom: 1; top: 99 }
-                                                        selectByMouse: true
-                                                    }
-                                                }
-
-                                                SidebarButton {
-                                                    text: qsTr("Apply Replication")
-                                                    Layout.fillWidth: true
-                                                    onClicked: {
-                                                        const nx = parseInt(replicateX.text)
-                                                        const ny = parseInt(replicateY.text)
-                                                        const nz = parseInt(replicateZ.text)
-                                                        if (!Number.isInteger(nx) || nx < 1 ||
-                                                            !Number.isInteger(ny) || ny < 1 ||
-                                                            !Number.isInteger(nz) || nz < 1) {
-                                                            sidebar.showSliderInputError(
-                                                                qsTr("Replication factors must be integers \u2265 1."))
-                                                            return
+                                                        axisName: "Z"
+                                                        value: StructureModel.replicationZ
+                                                        onValueCommitted: function(newValue) {
+                                                            StructureModel.replicateCell(StructureModel.replicationX, StructureModel.replicationY, newValue)
                                                         }
-                                                        StructureModel.replicateCell(nx, ny, nz)
                                                     }
                                                 }
                                             }

@@ -15,6 +15,18 @@ A high-performance desktop application for visualization of atomic structures.
 - Supports various atomic structure file formats
 - Cross-platform: Windows, macOS, and Linux
 
+## Unit Cell Replication
+
+In **Structure → Replicate Unit Cell**, use the up/down arrows beside X, Y, and Z
+to change a replication count by one and apply it immediately. You can also type
+a count from 1 to 99 and press **Enter**; leaving a field without pressing Enter
+discards that uncommitted value. X, Y, and Z correspond to lattice vectors a, b,
+and c, including for non-orthogonal cells.
+
+Replication always rebuilds from the original input cell, replacing working
+edits. Counts persist when the sidebar section is closed and return to 1 when
+loading a structure or choosing **Reset to Original**. Replication requires a lattice.
+
 ## Structure Export
 
 Choose a format from **Files → Export Structures** in the sidebar. Export uses
