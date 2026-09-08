@@ -91,6 +91,13 @@ endif()
 
 # Exercise structure export and QML controls without an embedded Python runtime.
 if(BUILD_TESTING)
+    if(APPLE)
+        add_executable(atom-ui-metal-viewport-test tests/MetalViewportTest.mm)
+        target_link_libraries(atom-ui-metal-viewport-test PRIVATE atom-ui)
+        add_test(NAME atom-ui-metal-viewport COMMAND atom-ui-metal-viewport-test)
+        set_tests_properties(atom-ui-metal-viewport PROPERTIES
+            SKIP_RETURN_CODE 77 TIMEOUT 90 ENVIRONMENT "MTL_DEBUG_LAYER=1")
+    endif()
     add_executable(atom-ui-structure-export-test tests/StructureExportTest.cpp)
     target_link_libraries(atom-ui-structure-export-test PRIVATE atom-ui)
     add_test(NAME atom-structure-export

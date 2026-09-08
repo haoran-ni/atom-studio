@@ -33,6 +33,13 @@ namespace atom::ui {
 
 namespace {
 
+// QSGMetalTexture wraps a native texture without taking ownership. Keep a
+// strong Metal reference beside each wrapper, including deferred cleanup jobs.
+struct TextureCleanupEntry {
+    id<MTLTexture> nativeTexture = nil;
+    QSGTexture* wrapper = nullptr;
+};
+
 data::ElementColorScheme colorSchemeFromIndex(int index) {
     return index == 1 ? data::ElementColorScheme::Cpk
                       : data::ElementColorScheme::Jmol;
@@ -46,7 +53,7 @@ data::ElementColorScheme colorSchemeFromIndex(int index) {
 
 struct MetalViewport::Impl {
     struct TextureCacheEntry {
-        void* nativeTexture = nullptr;
+        id<MTLTexture> nativeTexture = nil;
         QSize size;
         QQuickWindow* window = nullptr;
         QSGTexture* wrapper = nullptr;
@@ -59,13 +66,18 @@ struct MetalViewport::Impl {
     std::unique_ptr<render::metal::MetalRayTracingRenderer> rtRenderer;
     render::Renderer* activeRenderer = nullptr;
     int currentMode = 0;
+    render::GeometryPreparation geometryPreparation;
+    std::shared_ptr<const render::PreparedGeometry> preparedGeometry;
+    std::shared_ptr<data::Structure> renderedStructure;
+    bool geometryPending = false;
+    bool geometryFailed = false;
 
     std::vector<TextureCacheEntry> textureCache; // Owned by viewport cache
     uint64_t textureCacheTick = 0;
 
     QSGTexture* findCachedTexture(void* nativeTexture, const QSize& size, QQuickWindow* window) {
         for (auto& entry : textureCache) {
-            if (entry.nativeTexture == nativeTexture &&
+            if ((__bridge void*)entry.nativeTexture == nativeTexture &&
                 entry.size == size &&
                 entry.window == window) {
                 entry.lastUsedTick = ++textureCacheTick;
@@ -80,7 +92,7 @@ struct MetalViewport::Impl {
                              QQuickWindow* window,
                              QSGTexture* wrapper) {
         textureCache.push_back(TextureCacheEntry{
-            nativeTexture,
+            (__bridge id<MTLTexture>)nativeTexture,
             size,
             window,
             wrapper,
@@ -113,12 +125,12 @@ struct MetalViewport::Impl {
         }
     }
 
-    std::vector<QSGTexture*> takeAllCachedTextures() {
-        std::vector<QSGTexture*> textures;
+    std::vector<TextureCleanupEntry> takeAllCachedTextures() {
+        std::vector<TextureCleanupEntry> textures;
         textures.reserve(textureCache.size());
         for (const auto& entry : textureCache) {
             if (entry.wrapper) {
-                textures.push_back(entry.wrapper);
+                textures.push_back({entry.nativeTexture, entry.wrapper});
             }
         }
         textureCache.clear();
@@ -128,17 +140,17 @@ struct MetalViewport::Impl {
 
 class TextureCacheCleanupJob final : public QRunnable {
 public:
-    explicit TextureCacheCleanupJob(std::vector<QSGTexture*> textures)
+    explicit TextureCacheCleanupJob(std::vector<TextureCleanupEntry> textures)
         : m_textures(std::move(textures)) {}
 
     void run() override {
-        for (QSGTexture* texture : m_textures) {
-            delete texture;
+        for (const auto& texture : m_textures) {
+            delete texture.wrapper;
         }
     }
 
 private:
-    std::vector<QSGTexture*> m_textures;
+    std::vector<TextureCleanupEntry> m_textures;
 };
 
 // ---------------------------------------------------------------------------
@@ -780,16 +792,18 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
                 m_impl->rtRenderer->setDevice(devicePtr);
                 if (!m_impl->rtRenderer->initialize()) {
                     qCritical() << "MetalViewport: failed to init RT renderer";
+                    m_impl->rtRenderer.reset();
+                    m_impl->activeRenderer = m_impl->rasterRenderer.get();
                     m_impl->currentMode = 0;
                     m_rendererMode = 0;
                     emit rendererModeChanged();
+                } else if (m_impl->preparedGeometry) {
+                    m_impl->rtRenderer->setPreparedStructure(m_impl->renderedStructure.get(),
+                                                             m_impl->preparedGeometry);
                 }
             }
             if (m_impl->rtRenderer) {
                 m_impl->activeRenderer = m_impl->rtRenderer.get();
-                if (m_structure) {
-                    m_impl->rtRenderer->setStructure(m_structure.get());
-                }
             }
         } else {
             m_impl->activeRenderer = m_impl->rasterRenderer.get();
@@ -829,23 +843,38 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
 
     bool sceneChangedThisFrame = false;
     if (m_needsStructureUpdate) {
-        m_impl->activeRenderer->setStructure(m_structure.get());
-        // Also update the other renderer for instant switching
-        if (m_impl->currentMode == 0 && m_impl->rtRenderer) {
-            m_impl->rtRenderer->setStructure(m_structure.get());
-        } else if (m_impl->currentMode == 1 && m_impl->rasterRenderer) {
-            m_impl->rasterRenderer->setStructure(m_structure.get());
-        }
+        m_impl->geometryPreparation.request(render::captureGeometry(m_structure.get()));
+        m_impl->geometryPending = true;
+        m_impl->geometryFailed = false;
         m_needsStructureUpdate = false;
-        m_needsAppearanceUpdate = false;  // full update covers appearance
-        sceneChangedThisFrame = true;
-    } else if (m_needsAppearanceUpdate) {
-        m_impl->activeRenderer->invalidateAppearance();
-        if (m_impl->currentMode == 0 && m_impl->rtRenderer) {
-            m_impl->rtRenderer->invalidateAppearance();
-        } else if (m_impl->currentMode == 1 && m_impl->rasterRenderer) {
-            m_impl->rasterRenderer->invalidateAppearance();
+    }
+    if (m_impl->geometryPending) {
+        render::GeometryPreparation::Result result;
+        if (m_impl->geometryPreparation.takeLatest(result)) {
+            m_impl->geometryPending = false;
+            m_impl->geometryFailed = !result.geometry;
+            if (result.geometry) {
+                m_impl->preparedGeometry = std::move(result.geometry);
+                m_impl->renderedStructure = m_structure;
+                m_impl->rasterRenderer->setPreparedStructure(m_structure.get(), m_impl->preparedGeometry);
+                if (m_impl->rtRenderer)
+                    m_impl->rtRenderer->setPreparedStructure(m_structure.get(), m_impl->preparedGeometry);
+                m_needsAppearanceUpdate = false;
+                sceneChangedThisFrame = true;
+            } else {
+                qWarning() << "MetalViewport: geometry preparation failed:" << result.error.c_str();
+            }
         }
+    }
+    // Keep the previous valid image while the worker prepares the newest edit.
+    // No renderer may read the mutable structure or upload stale geometry here.
+    if (m_impl->geometryPending || m_impl->geometryFailed) {
+        if (m_impl->geometryPending) update();
+        return oldNode;
+    }
+    if (m_needsAppearanceUpdate) {
+        m_impl->rasterRenderer->invalidateAppearance();
+        if (m_impl->rtRenderer) m_impl->rtRenderer->invalidateAppearance();
         m_needsAppearanceUpdate = false;
         sceneChangedThisFrame = true;
     }
@@ -934,7 +963,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         tex = QNativeInterface::QSGMetalTexture::fromNative(
             (__bridge id<MTLTexture>)mtlTexture,
             renderWindow,
-            textureSize);
+            textureSize, QQuickWindow::TextureHasAlphaChannel);
         if (tex) {
             m_impl->insertCachedTexture(mtlTexture, textureSize, renderWindow, tex);
         }
@@ -980,7 +1009,7 @@ void MetalViewport::releaseResources() {
         return;
     }
 
-    std::vector<QSGTexture*> textures = m_impl->takeAllCachedTextures();
+    std::vector<TextureCleanupEntry> textures = m_impl->takeAllCachedTextures();
     if (textures.empty()) {
         return;
     }
@@ -991,8 +1020,8 @@ void MetalViewport::releaseResources() {
             new TextureCacheCleanupJob(std::move(textures)),
             QQuickWindow::BeforeSynchronizingStage);
     } else {
-        for (QSGTexture* texture : textures) {
-            delete texture;
+        for (const auto& texture : textures) {
+            delete texture.wrapper;
         }
     }
 }
@@ -1038,7 +1067,9 @@ void MetalViewport::updateHoverStatus(const QPointF& position) {
     setHoverStatus(viewportHoverStatus(m_structure.get(), *m_camera, pickSettings,
                                        position,
                                        static_cast<int>(width()),
-                                       static_cast<int>(height())));
+                                       static_cast<int>(height()),
+                                       (!m_needsStructureUpdate && !m_impl->geometryPending && !m_impl->geometryFailed)
+                                           ? m_impl->preparedGeometry.get() : nullptr));
 }
 
 void MetalViewport::hoverMoveEvent(QHoverEvent* event) {
@@ -1102,7 +1133,9 @@ void MetalViewport::mouseReleaseEvent(QMouseEvent* event) {
                     handleViewportSelectionClick(*model, m_structure.get(), *m_camera,
                                                  pickSettings, releasePos,
                                                  static_cast<int>(width()),
-                                                 static_cast<int>(height()));
+                                                 static_cast<int>(height()),
+                                                 (!m_needsStructureUpdate && !m_impl->geometryPending && !m_impl->geometryFailed)
+                                                     ? m_impl->preparedGeometry.get() : nullptr);
                 }
             }
         }

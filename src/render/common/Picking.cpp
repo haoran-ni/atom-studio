@@ -2,6 +2,7 @@
 
 #include "BondRenderData.h"
 #include "Camera.h"
+#include "PreparedGeometry.h"
 #include "RenderSettings.h"
 #include "../../data/Structure.h"
 
@@ -50,8 +51,9 @@ float intersectSphere(const QVector3D& origin,
                       float radius) {
     const QVector3D oc = origin - center;
     const float b = QVector3D::dotProduct(oc, direction);
-    const float c = QVector3D::dotProduct(oc, oc) - radius * radius;
-    const float disc = b * b - c;
+    // Avoid cancellation for small atoms viewed from a large distance.
+    const QVector3D perpendicular = oc - b * direction;
+    const float disc = radius * radius - perpendicular.lengthSquared();
     if (disc < 0.0f) return -1.0f;
 
     const float root = std::sqrt(disc);
@@ -114,7 +116,8 @@ PickResult pickStructureObject(const data::Structure* structure,
                                float screenX,
                                float screenY,
                                int viewportWidth,
-                               int viewportHeight) {
+                               int viewportHeight,
+                               const PreparedGeometry* geometry) {
     PickResult best;
     float bestT = std::numeric_limits<float>::max();
 
@@ -127,42 +130,92 @@ PickResult pickStructureObject(const data::Structure* structure,
         return best;
     }
 
-    if (settings.showAtoms) {
-        const float* px = structure->positionsX();
-        const float* py = structure->positionsY();
-        const float* pz = structure->positionsZ();
-        const float* radii = structure->radii();
-        for (size_t i = 0; i < structure->atomCount(); ++i) {
-            const QVector3D center(px[i], py[i], pz[i]);
-            const float radius = radii[i] * settings.atomScale;
-            const float t = intersectSphere(rayOrigin, rayDirection, center, radius);
-            if (t > 0.0f && t < bestT) {
-                bestT = t;
-                best.type = PickObjectType::Atom;
-                best.index = i;
-                best.rayDistance = t;
-            }
+    const size_t atomCount = structure->atomCount();
+    size_t bestPrimitive = std::numeric_limits<size_t>::max();
+    const auto consider = [&](size_t primitive, float t, PickObjectType type, size_t index) {
+        // Match the original atom-first, ascending-index tie break regardless
+        // of the order in which BVH leaves are visited.
+        if (t < bestT || (t == bestT && primitive < bestPrimitive)) {
+            bestT = t;
+            bestPrimitive = primitive;
+            best = {type, index, t};
         }
-    }
-
-    if (settings.showBonds && structure->bonds().bondCount() > 0) {
-        const std::vector<BondRenderSegment> bonds = collectBondRenderSegments(structure);
-        for (size_t i = 0; i < bonds.size(); ++i) {
-            const BondRenderSegment& bond = bonds[i];
-            const QVector3D start(bond.startX, bond.startY, bond.startZ);
-            const QVector3D end(bond.endX, bond.endY, bond.endZ);
-            float rayT = 0.0f;
-            float distanceSquared = 0.0f;
-            if (!raySegmentDistance(rayOrigin, rayDirection, start, end, rayT, distanceSquared)) {
-                continue;
+    };
+    const auto testPrimitive = [&](size_t primitive) {
+        if (primitive < atomCount) {
+            if (!settings.showAtoms) return;
+            const size_t i = primitive;
+            const QVector3D center(structure->positionsX()[i], structure->positionsY()[i], structure->positionsZ()[i]);
+            const float t = intersectSphere(rayOrigin, rayDirection, center, structure->radii()[i] * settings.atomScale);
+            if (t > 0) consider(primitive, t, PickObjectType::Atom, i);
+        } else {
+            if (!settings.showBonds) return;
+            const size_t i = primitive - atomCount;
+            QVector3D start, end;
+            float radius;
+            if (geometry) {
+                const auto& a = geometry->bondStarts[i];
+                const auto& b = geometry->bondEnds[i];
+                start = QVector3D(a[0], a[1], a[2]);
+                end = QVector3D(b[0], b[1], b[2]);
+                radius = geometry->bondRadii[i];
+            } else {
+                const auto bond = makeBondRenderSegment(*structure, structure->bonds().bond(i), i);
+                start = QVector3D(bond.startX, bond.startY, bond.startZ);
+                end = QVector3D(bond.endX, bond.endY, bond.endZ);
+                radius = bond.bondRadius;
             }
-
-            const float radius = std::max(bond.bondRadius, 0.03f);
-            if (distanceSquared <= radius * radius && rayT < bestT) {
-                bestT = rayT;
-                best.type = PickObjectType::Bond;
-                best.index = i;
-                best.rayDistance = rayT;
+            float rayT, distanceSquared;
+            radius = std::max(radius, 0.03f);
+            if (raySegmentDistance(rayOrigin, rayDirection, start, end, rayT, distanceSquared) &&
+                distanceSquared <= radius * radius)
+                consider(primitive, rayT, PickObjectType::Bond, i);
+        }
+    };
+    // The caller must invalidate the cache on geometry/topology changes. Count
+    // checks also protect fallback callers accidentally passing an old snapshot.
+    if (geometry && (geometry->atoms.size() != atomCount ||
+                     geometry->bondStarts.size() != structure->bonds().bondCount())) geometry = nullptr;
+    if (!geometry || geometry->bvh.nodes.empty()) {
+        for (size_t i = 0; i < atomCount + structure->bonds().bondCount(); ++i) testPrimitive(i);
+    } else {
+        const auto& bvh = geometry->bvh;
+        const auto boxEntry = [&](uint32_t nodeIndex) {
+            const auto& node = bvh.nodes[nodeIndex];
+            const float padding = std::max(settings.atomScale - 1.0f, 0.0f) * node.minAndMaxRadius[3] + 0.03f;
+            double near = 0, far = bestT;
+            for (int axis = 0; axis < 3; ++axis) {
+                const double lo = node.minAndMaxRadius[axis] - padding;
+                const double hi = node.maxAndPad[axis] + padding;
+                const double origin = rayOrigin[axis], direction = rayDirection[axis];
+                if (direction == 0) {
+                    if (origin < lo || origin > hi) return std::numeric_limits<float>::infinity();
+                } else {
+                    const double a = (lo - origin) / direction, b = (hi - origin) / direction;
+                    near = std::max(near, std::min(a, b));
+                    far = std::min(far, std::max(a, b));
+                    if (near > far) return std::numeric_limits<float>::infinity();
+                }
+            }
+            return static_cast<float>(near);
+        };
+        // Median splits bound depth to 32 for the builder's uint32 primitive IDs.
+        struct Entry { uint32_t node; float near; };
+        std::array<Entry, 64> stack;
+        size_t pending = 0;
+        const float rootNear = boxEntry(0);
+        if (rootNear <= bestT) stack[pending++] = {0, rootNear};
+        while (pending) {
+            const auto entry = stack[--pending];
+            if (entry.near > bestT) continue;
+            const auto& meta = bvh.nodes[entry.node].meta;
+            if (meta[3]) {
+                for (uint32_t i = 0; i < meta[3]; ++i) testPrimitive(bvh.primitiveIndices[meta[2] + i]);
+            } else {
+                Entry a{meta[0], boxEntry(meta[0])}, b{meta[1], boxEntry(meta[1])};
+                if (a.near < b.near) std::swap(a, b);
+                if (a.near <= bestT) stack[pending++] = a;
+                if (b.near <= bestT) stack[pending++] = b;
             }
         }
     }

@@ -47,6 +47,7 @@ void MetalSphereRenderer::cleanup() {
     m_impl->quadVertexBuffer = nil;
     m_impl->instanceBuffer = nil;
     m_atomCount = 0;
+    m_hasSelection = false;
     m_hasBounds = false;
     m_maxBaseRadius = 0.0f;
     m_initialized = false;
@@ -68,11 +69,12 @@ void MetalSphereRenderer::createQuadGeometry() {
                                                           options:MTLResourceStorageModeShared];
 }
 
-void MetalSphereRenderer::setAtomData(const data::Structure* structure) {
+void MetalSphereRenderer::setAtomData(const data::Structure* structure, const PreparedGeometry* geometry) {
     if (!m_initialized) return;
 
     if (!structure || structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_hasSelection = false;
         m_hasBounds = false;
         m_maxBaseRadius = 0.0f;
         m_impl->instanceBuffer = nil;
@@ -82,12 +84,17 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure) {
     m_atomCount = structure->atomCount();
 
     // Pack SphereInstance array (positionAndRadius + color)
-    std::vector<SphereInstance> instances(m_atomCount);
+    m_impl->instanceBuffer = ensureSharedBuffer(m_impl->device, m_impl->instanceBuffer,
+                                                m_atomCount * sizeof(SphereInstance));
+    auto* instances = static_cast<SphereInstance*>(m_impl->instanceBuffer.contents);
     const float* px = structure->positionsX();
     const float* py = structure->positionsY();
     const float* pz = structure->positionsZ();
     const float* radii = structure->radii();
-    std::vector<float> colorData = packAtomRenderColors(structure);
+    const float* cr = structure->colorsR();
+    const float* cg = structure->colorsG();
+    const float* cb = structure->colorsB();
+    m_hasSelection = false;
 
     float boundsMin[3] = {px[0], py[0], pz[0]};
     float boundsMax[3] = {px[0], py[0], pz[0]};
@@ -95,33 +102,51 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure) {
 
     for (size_t i = 0; i < m_atomCount; ++i) {
         instances[i].positionAndRadius = simd_make_float4(px[i], py[i], pz[i], radii[i]);
-        instances[i].color = simd_make_float4(colorData[i * 4 + 0],
-                                              colorData[i * 4 + 1],
-                                              colorData[i * 4 + 2],
-                                              colorData[i * 4 + 3]);
+        instances[i].color = simd_make_float4(cr[i], cg[i], cb[i], 1.0f);
         instances[i].selected = structure->atomSelected(i) ? 1.0f : 0.0f;
+        m_hasSelection |= instances[i].selected != 0.0f;
 
-        boundsMin[0] = std::min(boundsMin[0], px[i]);
-        boundsMin[1] = std::min(boundsMin[1], py[i]);
-        boundsMin[2] = std::min(boundsMin[2], pz[i]);
-        boundsMax[0] = std::max(boundsMax[0], px[i]);
-        boundsMax[1] = std::max(boundsMax[1], py[i]);
-        boundsMax[2] = std::max(boundsMax[2], pz[i]);
-        maxRadius = std::max(maxRadius, radii[i]);
+        if (!geometry) {
+            boundsMin[0] = std::min(boundsMin[0], px[i]);
+            boundsMin[1] = std::min(boundsMin[1], py[i]);
+            boundsMin[2] = std::min(boundsMin[2], pz[i]);
+            boundsMax[0] = std::max(boundsMax[0], px[i]);
+            boundsMax[1] = std::max(boundsMax[1], py[i]);
+            boundsMax[2] = std::max(boundsMax[2], pz[i]);
+            maxRadius = std::max(maxRadius, radii[i]);
+        }
     }
 
+    if (geometry) {
+        std::copy(geometry->centerMin.begin(), geometry->centerMin.end(), boundsMin);
+        std::copy(geometry->centerMax.begin(), geometry->centerMax.end(), boundsMax);
+        maxRadius = geometry->maxAtomRadius;
+    }
     for (int axis = 0; axis < 3; ++axis) {
         m_boundsMin[axis] = boundsMin[axis];
         m_boundsMax[axis] = boundsMax[axis];
     }
     m_maxBaseRadius = maxRadius;
     m_hasBounds = true;
+}
 
-    // Reuse safe: setAtomData only runs from render() after a free output
-    // slot was acquired, i.e. no command buffer is in flight.
-    m_impl->instanceBuffer = fillSharedBuffer(m_impl->device, m_impl->instanceBuffer,
-                                              instances.data(),
-                                              m_atomCount * sizeof(SphereInstance));
+void MetalSphereRenderer::updateAppearance(const data::Structure* structure) {
+    if (!structure || structure->atomCount() != m_atomCount || !m_impl->instanceBuffer) {
+        setAtomData(structure);
+        return;
+    }
+    // Called only after the previous GPU submission has completed. Compare
+    // attributes in place so a single selection edit does not rewrite geometry.
+    auto* instances = static_cast<SphereInstance*>(m_impl->instanceBuffer.contents);
+    m_hasSelection = false;
+    for (size_t i = 0; i < m_atomCount; ++i) {
+        auto& instance = instances[i];
+        const auto color = simd_make_float4(structure->colorsR()[i], structure->colorsG()[i], structure->colorsB()[i], 1.0f);
+        if (simd_any(instance.color != color)) instance.color = color;
+        const float selected = structure->atomSelected(i) ? 1.0f : 0.0f;
+        if (instance.selected != selected) instance.selected = selected;
+        m_hasSelection |= selected != 0.0f;
+    }
 }
 
 bool MetalSphereRenderer::canUseEarlyZ(const Camera& camera, float atomScale,

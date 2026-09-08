@@ -2,6 +2,7 @@
 #include "MetalRayTracingRenderer.h"
 #include "MetalAsyncOutput.h"
 #include "MetalBufferUtil.h"
+#include "MetalRenderTargetUtil.h"
 #include "MetalTypes.h"
 #include "MetalUnitCellShared.h"
 #include "../common/BondRenderData.h"
@@ -47,20 +48,20 @@ static simd_float4x4 qMatToSimd(const QMatrix4x4& m) {
 struct MetalRayTracingRenderer::Impl {
     struct OutputSlot {
         uint64_t frameRequestToken = 0;
-        id<MTLTexture> msaaOutputTexture = nil;
         id<MTLTexture> outputTexture = nil;
-        id<MTLTexture> msaaOverlayDepthTexture = nil;
-        id<MTLTexture> overlayDepthTexture = nil;
     };
 
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
     NSUInteger overlaySampleCount = 1;
+    id<MTLTexture> msaaOutputTexture = nil;
+    id<MTLTexture> overlayDepthTexture = nil;
     std::array<OutputSlot, kOutputSlotCount> outputSlots{};
     std::shared_ptr<AsyncFrameState> asyncState = std::make_shared<AsyncFrameState>();
 
     // Full-screen quad (6 × float2)
     id<MTLBuffer> quadVertexBuffer = nil;
+    id<MTLBuffer> emptyBuffer = nil; // Valid binding for zero-count scene arrays.
 
     // Accumulation texture (RGBA32Float)
     id<MTLTexture> accumTexture = nil;
@@ -114,6 +115,11 @@ bool MetalRayTracingRenderer::initialize() {
     }
 
     m_impl->commandQueue = [m_impl->device newCommandQueue];
+    if (!m_impl->commandQueue) return false;
+    const uint32_t zeros[4] = {};
+    m_impl->emptyBuffer = [m_impl->device newBufferWithBytes:zeros length:sizeof(zeros)
+                                                  options:MTLResourceStorageModeShared];
+    if (!m_impl->emptyBuffer) return false;
 
     m_impl->overlaySampleCount =
         [m_impl->device supportsTextureSampleCount:kPreferredOverlaySampleCount]
@@ -182,17 +188,17 @@ void MetalRayTracingRenderer::cleanup() {
     m_viewportAxesRenderer.cleanup();
     m_shaderLibrary.cleanup();
 
-    m_impl->asyncState->generation.fetch_add(1, std::memory_order_relaxed);
-    m_impl->asyncState->inFlightSlot.store(-1, std::memory_order_relaxed);
-    resetOutputSlots(*m_impl->asyncState);
+    // Old callbacks retain their own state; they cannot affect a reinitialized renderer.
+    m_impl->asyncState = std::make_shared<AsyncFrameState>();
+    m_width = m_height = 0;
 
     m_impl->quadVertexBuffer = nil;
+    m_impl->emptyBuffer = nil;
     m_impl->accumTexture = nil;
+    m_impl->msaaOutputTexture = nil;
+    m_impl->overlayDepthTexture = nil;
     for (auto& slot : m_impl->outputSlots) {
-        slot.msaaOutputTexture = nil;
         slot.outputTexture = nil;
-        slot.msaaOverlayDepthTexture = nil;
-        slot.overlayDepthTexture = nil;
     }
     m_impl->atomPositionBuffer = nil;
     m_impl->atomColorBuffer = nil;
@@ -217,6 +223,7 @@ void MetalRayTracingRenderer::cleanup() {
     m_impl->overlaySampleCount = 1;
 
     m_structure = nullptr;
+    m_preparedGeometry.reset();
     m_atomCount = 0;
     m_bondCount = 0;
     m_bvhNodeCount = 0;
@@ -241,11 +248,18 @@ void MetalRayTracingRenderer::resize(int width, int height) {
 }
 
 void MetalRayTracingRenderer::setStructure(const data::Structure* structure) {
+    m_preparedGeometry.reset();
     m_structure = structure;
     m_atomDataDirty = true;
     m_bondDataDirty = true;
     m_unitCellDataDirty = true;
     resetAccumulation();
+}
+
+void MetalRayTracingRenderer::setPreparedStructure(const data::Structure* structure,
+                                        std::shared_ptr<const PreparedGeometry> geometry) {
+    setStructure(structure);
+    m_preparedGeometry = std::move(geometry);
 }
 
 void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings& settings) {
@@ -254,12 +268,29 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     // Store settings for isConverged() and state hashing.
     m_settings = settings;
 
-    // Submit at most one GPU frame at a time. Skip all CPU-side work
-    // (scene packing, BVH build, buffer allocation) while a frame is
-    // in-flight — dirty flags stay set and are processed once it drains.
+    // A newer camera request must not invalidate a frame already on the GPU.
+    // Publish that completed image first, then reset accumulation when the next
+    // request can actually be submitted. Otherwise continuous input can discard
+    // every completion and leave the viewport frozen until the user stops moving.
     if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
+        m_pendingRender = true;
         return;
     }
+
+    // State change detection
+    uint64_t currentHash = computeRenderStateHash(camera, m_settings);
+    if (currentHash != m_lastStateHash) {
+        m_lastStateHash = currentHash;
+        resetAccumulation();
+    }
+
+    if (m_impl->asyncState->failed.exchange(false, std::memory_order_acq_rel))
+        resetAccumulation();
+    const uint64_t displayHash = computeRasterFrameHash(camera, settings, m_width, m_height);
+    m_pendingRender = m_displayDirty || displayHash != m_lastDisplayHash ||
+                      m_atomDataDirty || m_bondDataDirty || m_appearanceDirty || m_unitCellDataDirty ||
+                      (m_atomCount > 0 && !isConverged());
+    if (!m_pendingRender) return;
 
     if (m_atomDataDirty || m_bondDataDirty) {
         uploadSceneData();
@@ -271,11 +302,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     }
 
     // Ensure render targets exist
-    if (!m_impl->accumTexture || !m_impl->outputSlots[0].outputTexture ||
-        !m_impl->outputSlots[0].overlayDepthTexture ||
-        (m_impl->overlaySampleCount > 1 &&
-         (!m_impl->outputSlots[0].msaaOutputTexture ||
-          !m_impl->outputSlots[0].msaaOverlayDepthTexture))) {
+    if (!m_impl->accumTexture || !m_impl->outputSlots[0].outputTexture) {
         createRenderTargets();
         resetAccumulation();
     }
@@ -286,6 +313,10 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
     }
     m_impl->outputSlots[static_cast<size_t>(outputSlotIndex)].frameRequestToken =
         settings.frameRequestToken;
+
+    m_lastDisplayHash = displayHash;
+    m_displayDirty = false;
+    m_pendingRender = false;
 
     // Single command buffer for the entire frame — sub-passes encode into it
     // as separate render command encoders, committed once at the end.
@@ -316,15 +347,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
         return;
     }
 
-    // State change detection
-    uint64_t currentHash = computeRenderStateHash(camera, m_settings);
-    if (currentHash != m_lastStateHash) {
-        m_lastStateHash = currentHash;
-        resetAccumulation();
-    }
-
-    // Keep rendering the display/output passes even after convergence so
-    // overlays (unit cell) and RT output refresh remain responsive.
+    // Display-only changes preserve converged foreground samples.
     int batchSampleCount = 0;
     if (!isConverged()) {
         // Adaptive batching: encode several accumulation passes per command
@@ -346,10 +369,7 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
             batch = std::min(batch, remaining);
         }
 
-        for (int i = 0; i < batch; ++i) {
-            m_sampleCount++;
-            renderRTPass(camera, (__bridge void*)cmdBuffer);
-        }
+        renderRTPass(camera, (__bridge void*)cmdBuffer, batch);
         batchSampleCount = batch;
     }
 
@@ -361,11 +381,13 @@ void MetalRayTracingRenderer::render(const Camera& camera, const RenderSettings&
 }
 
 void MetalRayTracingRenderer::invalidateAtomData() {
+    m_preparedGeometry.reset();
     m_atomDataDirty = true;
     resetAccumulation();
 }
 
 void MetalRayTracingRenderer::invalidateBondData() {
+    m_preparedGeometry.reset();
     m_bondDataDirty = true;
     resetAccumulation();
 }
@@ -379,13 +401,18 @@ bool MetalRayTracingRenderer::needsMoreFrames() const {
     if (m_impl->asyncState->inFlightSlot.load(std::memory_order_acquire) >= 0) {
         return true;
     }
-    return m_atomCount > 0 && !isConverged();
+    const int ready = m_impl->asyncState->latestReadySlot.load(std::memory_order_acquire);
+    return m_pendingRender || m_displayDirty ||
+           m_impl->asyncState->failed.load(std::memory_order_acquire) ||
+           (ready >= 0 && ready != m_lastPresentedSlot) ||
+           (m_atomCount > 0 && !isConverged());
 }
 
 void MetalRayTracingRenderer::resetAccumulation() {
     m_sampleCount = 0;
     m_accumNeedsClear = true;
-    m_outputGeneration = m_impl->asyncState->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+    m_outputGeneration = invalidateOutput(*m_impl->asyncState, false);
+    m_displayDirty = true;
 }
 
 void* MetalRayTracingRenderer::outputTexture(uint64_t& frameRequestToken) {
@@ -405,75 +432,32 @@ void* MetalRayTracingRenderer::outputTexture(uint64_t& frameRequestToken) {
 // ---------------------------------------------------------------------------
 
 void MetalRayTracingRenderer::createRenderTargets() {
-    // Accumulation: RGBA32Float
-    MTLTextureDescriptor* accumDesc = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
-                                    width:m_width
-                                   height:m_height
-                                mipmapped:NO];
-    accumDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    accumDesc.storageMode = MTLStorageModePrivate;
-    m_impl->accumTexture = [m_impl->device newTextureWithDescriptor:accumDesc];
-
-    for (auto& slot : m_impl->outputSlots) {
-        // Display output: BGRA8Unorm
-        MTLTextureDescriptor* outputDesc = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                        width:m_width
-                                       height:m_height
-                                    mipmapped:NO];
-        outputDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-        outputDesc.storageMode = MTLStorageModePrivate;
-        slot.outputTexture = [m_impl->device newTextureWithDescriptor:outputDesc];
-
-        if (m_impl->overlaySampleCount > 1) {
-            MTLTextureDescriptor* msaaOutputDesc = [MTLTextureDescriptor
-                texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                            width:m_width
-                                           height:m_height
-                                        mipmapped:NO];
-            msaaOutputDesc.textureType = MTLTextureType2DMultisample;
-            msaaOutputDesc.sampleCount = m_impl->overlaySampleCount;
-            msaaOutputDesc.usage = MTLTextureUsageRenderTarget;
-            msaaOutputDesc.storageMode = MTLStorageModePrivate;
-            slot.msaaOutputTexture = [m_impl->device newTextureWithDescriptor:msaaOutputDesc];
-
-            MTLTextureDescriptor* msaaDepthDesc = [MTLTextureDescriptor
-                texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
-                                            width:m_width
-                                           height:m_height
-                                        mipmapped:NO];
-            msaaDepthDesc.textureType = MTLTextureType2DMultisample;
-            msaaDepthDesc.sampleCount = m_impl->overlaySampleCount;
-            msaaDepthDesc.usage = MTLTextureUsageRenderTarget;
-            msaaDepthDesc.storageMode = MTLStorageModePrivate;
-            slot.msaaOverlayDepthTexture = [m_impl->device newTextureWithDescriptor:msaaDepthDesc];
-        } else {
-            slot.msaaOutputTexture = nil;
-            slot.msaaOverlayDepthTexture = nil;
-        }
-
-        MTLTextureDescriptor* overlayDepthDesc = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float
-                                        width:m_width
-                                       height:m_height
-                                    mipmapped:NO];
-        overlayDepthDesc.usage = MTLTextureUsageRenderTarget;
-        overlayDepthDesc.storageMode = MTLStorageModePrivate;
-        slot.overlayDepthTexture = [m_impl->device newTextureWithDescriptor:overlayDepthDesc];
-    }
-
-    // Do NOT reset inFlightSlot here — let the old completion handler drain
-    // it naturally.  Forcing it to -1 would allow render() to submit a new
-    // frame before the old handler fires, and the old handler's CAS would
-    // then incorrectly clear the *new* submission's inFlightSlot.
-    resetOutputSlots(*m_impl->asyncState);
+    m_outputGeneration = invalidateOutput(*m_impl->asyncState, true);
+    m_displayDirty = true;
+    m_impl->accumTexture = makeRenderTarget(m_impl->device, m_width, m_height,
+                                           MTLPixelFormatRGBA32Float, 1, true);
+    for (auto& slot : m_impl->outputSlots)
+        slot.outputTexture = makeRenderTarget(m_impl->device, m_width, m_height,
+                                              MTLPixelFormatBGRA8Unorm, 1, true);
+    m_impl->msaaOutputTexture = nil;
+    m_impl->overlayDepthTexture = nil;
     m_lastPresentedSlot = -1;
+}
+
+void MetalRayTracingRenderer::ensureOverlayRenderTargets() {
+    // Only one submission is in flight, so all slots share transient attachments.
+    if (!m_impl->overlayDepthTexture)
+        m_impl->overlayDepthTexture = makeRenderTarget(m_impl->device, m_width, m_height,
+            MTLPixelFormatDepth32Float, m_impl->overlaySampleCount, false, true);
+    if (m_impl->overlaySampleCount > 1 && !m_impl->msaaOutputTexture)
+        m_impl->msaaOutputTexture = makeRenderTarget(m_impl->device, m_width, m_height,
+            MTLPixelFormatBGRA8Unorm, m_impl->overlaySampleCount, false, true);
 }
 
 void MetalRayTracingRenderer::uploadSceneData() {
     if (!m_structure || m_structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_hasSelection = false;
         m_bondCount = 0;
         m_bvhNodeCount = 0;
         m_impl->atomPositionBuffer = nil;
@@ -501,48 +485,31 @@ void MetalRayTracingRenderer::uploadSceneData() {
     // Buffer reuse is safe here: uploads only run while no command buffer is
     // in flight (render() gates on inFlightSlot before any upload work).
 
-    auto posData = m_structure->packPositionsAndRadii();
+    if (!m_preparedGeometry || m_preparedGeometry->atoms.size() != m_structure->atomCount() ||
+        m_preparedGeometry->bondStarts.size() != m_structure->bonds().bondCount())
+        m_preparedGeometry = prepareGeometry(captureGeometry(m_structure));
+    const auto& geometry = *m_preparedGeometry;
     m_impl->atomPositionBuffer = fillSharedBuffer(
         m_impl->device, m_impl->atomPositionBuffer,
-        posData.data(), posData.size() * sizeof(float));
-
-    auto colorData = packAtomRenderColors(m_structure);
-    m_impl->atomColorBuffer = fillSharedBuffer(
-        m_impl->device, m_impl->atomColorBuffer,
-        colorData.data(), colorData.size() * sizeof(float));
-
-    auto atomSelectionData = packAtomSelectionMask(m_structure);
-    m_impl->atomSelectionBuffer = fillSharedBuffer(
-        m_impl->device, m_impl->atomSelectionBuffer,
-        atomSelectionData.data(), atomSelectionData.size() * sizeof(uint32_t));
-
-    // ── Bond buffers ──────────────────────────────────────────
-
-    m_bondCount = static_cast<int>(bondRenderSegmentCount(m_structure));
-    PackedBondRenderData packedBonds;
-
+        geometry.atoms.data(), geometry.atoms.size() * sizeof(geometry.atoms[0]));
+    m_impl->atomColorBuffer = ensureSharedBuffer(m_impl->device, m_impl->atomColorBuffer,
+                                                m_atomCount * sizeof(simd_float4));
+    m_impl->atomSelectionBuffer = ensureSharedBuffer(m_impl->device, m_impl->atomSelectionBuffer,
+                                                    m_atomCount * sizeof(uint32_t));
+    m_bondCount = static_cast<int>(geometry.bondStarts.size());
     if (m_bondCount > 0) {
-        packedBonds = packBondRenderData(m_structure, BondPositionPacking::XYZW4);
-
-        m_impl->bondStartBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondStartBuffer,
-            packedBonds.startPositions.data(), packedBonds.startPositions.size() * sizeof(float));
-        m_impl->bondEndBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondEndBuffer,
-            packedBonds.endPositions.data(), packedBonds.endPositions.size() * sizeof(float));
-        m_impl->bondStartColorBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondStartColorBuffer,
-            packedBonds.startColors.data(), packedBonds.startColors.size() * sizeof(float));
-        m_impl->bondEndColorBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondEndColorBuffer,
-            packedBonds.endColors.data(), packedBonds.endColors.size() * sizeof(float));
-        m_impl->bondRadiusBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondRadiusBuffer,
-            packedBonds.bondRadii.data(), packedBonds.bondRadii.size() * sizeof(float));
-        auto bondSelectionData = packBondSelectionMask(m_structure);
-        m_impl->bondSelectionBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondSelectionBuffer,
-            bondSelectionData.data(), bondSelectionData.size() * sizeof(uint32_t));
+        m_impl->bondStartBuffer = fillSharedBuffer(m_impl->device, m_impl->bondStartBuffer,
+            geometry.bondStarts.data(), m_bondCount * sizeof(simd_float4));
+        m_impl->bondEndBuffer = fillSharedBuffer(m_impl->device, m_impl->bondEndBuffer,
+            geometry.bondEnds.data(), m_bondCount * sizeof(simd_float4));
+        m_impl->bondRadiusBuffer = fillSharedBuffer(m_impl->device, m_impl->bondRadiusBuffer,
+            geometry.bondRadii.data(), m_bondCount * sizeof(float));
+        m_impl->bondStartColorBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondStartColorBuffer,
+                                                         m_bondCount * sizeof(simd_float4));
+        m_impl->bondEndColorBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondEndColorBuffer,
+                                                       m_bondCount * sizeof(simd_float4));
+        m_impl->bondSelectionBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondSelectionBuffer,
+                                                        m_bondCount * sizeof(uint32_t));
     } else {
         m_impl->bondStartBuffer = nil;
         m_impl->bondEndBuffer = nil;
@@ -551,60 +518,10 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondRadiusBuffer = nil;
         m_impl->bondSelectionBuffer = nil;
     }
-
-    // ── Unified BVH (atoms + bonds) ──────────────────────────
-
-    size_t totalPrims = static_cast<size_t>(m_atomCount) + static_cast<size_t>(m_bondCount);
-    std::vector<PrimitiveBounds> primBounds(totalPrims);
-
-    const float* ax = m_structure->positionsX();
-    const float* ay = m_structure->positionsY();
-    const float* az = m_structure->positionsZ();
-    const float* ar = m_structure->radii();
-    for (size_t i = 0; i < static_cast<size_t>(m_atomCount); ++i) {
-        float r = ar[i];
-        primBounds[i] = {
-            ax[i] - r, ay[i] - r, az[i] - r,
-            ax[i] + r, ay[i] + r, az[i] + r,
-            ax[i], ay[i], az[i],
-            r
-        };
-    }
-
-    for (size_t i = 0; i < static_cast<size_t>(m_bondCount); ++i) {
-        float sx = packedBonds.startPositions[i * 4 + 0];
-        float sy = packedBonds.startPositions[i * 4 + 1];
-        float sz = packedBonds.startPositions[i * 4 + 2];
-        float ex = packedBonds.endPositions[i * 4 + 0];
-        float ey = packedBonds.endPositions[i * 4 + 1];
-        float ez = packedBonds.endPositions[i * 4 + 2];
-        float bondR = packedBonds.bondRadii[i];
-        size_t pi = static_cast<size_t>(m_atomCount) + i;
-        primBounds[pi] = {
-            std::min(sx, ex) - bondR, std::min(sy, ey) - bondR, std::min(sz, ez) - bondR,
-            std::max(sx, ex) + bondR, std::max(sy, ey) + bondR, std::max(sz, ez) + bondR,
-            (sx + ex) * 0.5f, (sy + ey) * 0.5f, (sz + ez) * 0.5f,
-            0.0f
-        };
-    }
-
-    // Scene AABB over all primitives (for conservative outline-width bounds)
-    for (int axis = 0; axis < 3; ++axis) {
-        m_sceneBoundsMin[axis] = 1e30f;
-        m_sceneBoundsMax[axis] = -1e30f;
-    }
-    for (const PrimitiveBounds& pb : primBounds) {
-        m_sceneBoundsMin[0] = std::min(m_sceneBoundsMin[0], pb.minX);
-        m_sceneBoundsMin[1] = std::min(m_sceneBoundsMin[1], pb.minY);
-        m_sceneBoundsMin[2] = std::min(m_sceneBoundsMin[2], pb.minZ);
-        m_sceneBoundsMax[0] = std::max(m_sceneBoundsMax[0], pb.maxX);
-        m_sceneBoundsMax[1] = std::max(m_sceneBoundsMax[1], pb.maxY);
-        m_sceneBoundsMax[2] = std::max(m_sceneBoundsMax[2], pb.maxZ);
-    }
-
-    BVHData bvh = buildBVH(primBounds.data(), totalPrims);
-    assert(!bvh.nodes.empty() && "Expected non-empty BVH for non-empty structure");
-    assert(!bvh.primitiveIndices.empty() && "Expected non-empty BVH primitive index list");
+    uploadAppearanceData(true);
+    std::copy(geometry.sceneMin.begin(), geometry.sceneMin.end(), m_sceneBoundsMin);
+    std::copy(geometry.sceneMax.begin(), geometry.sceneMax.end(), m_sceneBoundsMax);
+    const auto& bvh = geometry.bvh;
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
     // Write node data straight into the (reused) shared-storage buffers —
@@ -645,7 +562,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
     m_appearanceDirty = false;
 }
 
-void MetalRayTracingRenderer::uploadAppearanceData() {
+void MetalRayTracingRenderer::uploadAppearanceData(bool force) {
     m_appearanceDirty = false;
     if (!m_structure || m_atomCount == 0) {
         return;
@@ -660,30 +577,28 @@ void MetalRayTracingRenderer::uploadAppearanceData() {
         return;
     }
 
-    auto colorData = packAtomRenderColors(m_structure);
-    m_impl->atomColorBuffer = fillSharedBuffer(
-        m_impl->device, m_impl->atomColorBuffer,
-        colorData.data(), colorData.size() * sizeof(float));
-    auto atomSelectionData = packAtomSelectionMask(m_structure);
-    m_impl->atomSelectionBuffer = fillSharedBuffer(
-        m_impl->device, m_impl->atomSelectionBuffer,
-        atomSelectionData.data(), atomSelectionData.size() * sizeof(uint32_t));
-
-    if (m_bondCount > 0) {
-        std::vector<float> startColors;
-        std::vector<float> endColors;
-        packBondRenderColors(m_structure, startColors, endColors);
-
-        m_impl->bondStartColorBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondStartColorBuffer,
-            startColors.data(), startColors.size() * sizeof(float));
-        m_impl->bondEndColorBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondEndColorBuffer,
-            endColors.data(), endColors.size() * sizeof(float));
-        auto bondSelectionData = packBondSelectionMask(m_structure);
-        m_impl->bondSelectionBuffer = fillSharedBuffer(
-            m_impl->device, m_impl->bondSelectionBuffer,
-            bondSelectionData.data(), bondSelectionData.size() * sizeof(uint32_t));
+    m_hasSelection = false;
+    auto* colors = static_cast<simd_float4*>(m_impl->atomColorBuffer.contents);
+    auto* selection = static_cast<uint32_t*>(m_impl->atomSelectionBuffer.contents);
+    for (int i = 0; i < m_atomCount; ++i) {
+        const auto color = simd_make_float4(m_structure->colorsR()[i], m_structure->colorsG()[i], m_structure->colorsB()[i], 1.0f);
+        if (force || simd_any(colors[i] != color)) colors[i] = color;
+        const uint32_t selected = m_structure->atomSelected(i) ? 1u : 0u;
+        if (force || selection[i] != selected) selection[i] = selected;
+        m_hasSelection |= selected != 0;
+    }
+    auto* starts = static_cast<simd_float4*>(m_impl->bondStartColorBuffer.contents);
+    auto* ends = static_cast<simd_float4*>(m_impl->bondEndColorBuffer.contents);
+    auto* bondSelection = static_cast<uint32_t*>(m_impl->bondSelectionBuffer.contents);
+    const auto& bonds = m_structure->bonds();
+    for (int i = 0; i < m_bondCount; ++i) {
+        const auto a = bonds.startColor(i), b = bonds.endColor(i);
+        const auto start = simd_make_float4(a.r, a.g, a.b, 1.0f), end = simd_make_float4(b.r, b.g, b.b, 1.0f);
+        if (force || simd_any(starts[i] != start)) starts[i] = start;
+        if (force || simd_any(ends[i] != end)) ends[i] = end;
+        const uint32_t selected = bonds.selected(i) ? 1u : 0u;
+        if (force || bondSelection[i] != selected) bondSelection[i] = selected;
+        m_hasSelection |= selected != 0;
     }
 }
 
@@ -710,7 +625,7 @@ void MetalRayTracingRenderer::uploadUnitCellData() {
     m_unitCellDataDirty = false;
 }
 
-void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
+void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf, int samples) {
     // Build RT uniforms
     RTUniforms rt{};
     rt.invView = qMatToSimd(camera.viewMatrix().inverted());
@@ -731,7 +646,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     rt.atomCount = m_atomCount;
     rt.width = m_width;
     rt.height = m_height;
-    rt.frameCount = static_cast<uint32_t>(m_sampleCount);
+
     rt.enableShadows = m_settings.enableShadows ? 1 : 0;
     rt.enableAO = m_settings.enableAmbientOcclusion ? 1 : 0;
     rt.aoSamples = m_settings.aoSamples;
@@ -748,7 +663,7 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).
     const bool outlineOn = m_settings.outlineEnabled && m_settings.outlineWidth > 0.0f;
     const float selectionOutlineWidthPx =
-        4.0f * std::max(m_settings.viewportAxesPixelRatio, 1.0f);
+        m_hasSelection ? 4.0f * std::max(m_settings.viewportAxesPixelRatio, 1.0f) : 0.0f;
     const float p11 = camera.projectionMatrix()(1, 1);
     const float pixelScale =
         (p11 > 1e-6f) ? 2.0f / (p11 * static_cast<float>(m_height)) : 0.0f;
@@ -774,6 +689,15 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     } else {
         rt.outlineWorldMax = rt.outlineScale;
         rt.selectionOutlineWorldMax = rt.selectionOutlineScale;
+    }
+    if (m_settings.showBonds && m_bondCount > 0) {
+        // A capped-cylinder outline grows both axially and radially. On any
+        // world axis the added extent is w*(|axis| + sqrt(1-axis^2)), at most
+        // sqrt(2)*w. Padding by only w can clip diagonal bond caps, especially
+        // now that unselected scenes no longer get selection-outline padding.
+        constexpr float cappedCylinderExpansion = 1.41421356237f;
+        rt.outlineWorldMax *= cappedCylinderExpansion;
+        rt.selectionOutlineWorldMax *= cappedCylinderExpansion;
     }
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
@@ -807,7 +731,6 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     [encoder setVertexBuffer:m_impl->quadVertexBuffer offset:0 atIndex:0];
 
     // buffer(0): RT uniforms (fragment stage)
-    [encoder setFragmentBytes:&rt length:sizeof(RTUniforms) atIndex:0];
 
     // buffer(1)-(6): atom + BVH data (fragment stage)
     [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
@@ -818,17 +741,21 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf) {
     [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
     [encoder setFragmentBuffer:m_impl->atomSelectionBuffer offset:0 atIndex:12];
 
-    // buffer(7)-(11), (13): bond data (fragment stage)
-    if (m_impl->bondStartBuffer) {
-        [encoder setFragmentBuffer:m_impl->bondStartBuffer offset:0 atIndex:7];
-        [encoder setFragmentBuffer:m_impl->bondEndBuffer offset:0 atIndex:8];
-        [encoder setFragmentBuffer:m_impl->bondStartColorBuffer offset:0 atIndex:9];
-        [encoder setFragmentBuffer:m_impl->bondEndColorBuffer offset:0 atIndex:10];
-        [encoder setFragmentBuffer:m_impl->bondRadiusBuffer offset:0 atIndex:11];
-        [encoder setFragmentBuffer:m_impl->bondSelectionBuffer offset:0 atIndex:13];
-    }
+    // All declared resources must be bound, even when a runtime count is zero.
+    [encoder setFragmentBuffer:(m_impl->bondStartBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:7];
+    [encoder setFragmentBuffer:(m_impl->bondEndBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:8];
+    [encoder setFragmentBuffer:(m_impl->bondStartColorBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:9];
+    [encoder setFragmentBuffer:(m_impl->bondEndColorBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:10];
+    [encoder setFragmentBuffer:(m_impl->bondRadiusBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:11];
+    [encoder setFragmentBuffer:(m_impl->bondSelectionBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:13];
 
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+    // Preserve additive sample order/RNG seeds, without attachment load/store
+    // boundaries or invariant resource/uniform setup between sample draws.
+    for (int i = 0; i < samples; ++i) {
+        rt.frameCount = static_cast<uint32_t>(++m_sampleCount);
+        [encoder setFragmentBytes:&rt length:sizeof(RTUniforms) atIndex:0];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+    }
     [encoder endEncoding];
 }
 
@@ -872,18 +799,18 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
         return;
     }
 
+    ensureOverlayRenderTargets();
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-    if (outputSlot.msaaOutputTexture) {
-        pass.colorAttachments[0].texture = outputSlot.msaaOutputTexture;
+    if (m_impl->msaaOutputTexture) {
+        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
         pass.colorAttachments[0].resolveTexture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
     } else {
         pass.colorAttachments[0].texture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
-    pass.depthAttachment.texture = outputSlot.msaaOutputTexture ? outputSlot.msaaOverlayDepthTexture
-                                                                : outputSlot.overlayDepthTexture;
+    pass.depthAttachment.texture = m_impl->overlayDepthTexture;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1.0;
@@ -963,24 +890,24 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
 
+    ensureOverlayRenderTargets();
     MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    if (outputSlot.msaaOutputTexture) {
-        pass.colorAttachments[0].texture = outputSlot.msaaOutputTexture;
+    if (m_impl->msaaOutputTexture) {
+        pass.colorAttachments[0].texture = m_impl->msaaOutputTexture;
         pass.colorAttachments[0].resolveTexture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
     } else {
         pass.colorAttachments[0].texture = outputSlot.outputTexture;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
     }
-    pass.depthAttachment.texture = outputSlot.msaaOutputTexture ? outputSlot.msaaOverlayDepthTexture
-                                                                : outputSlot.overlayDepthTexture;
+    pass.depthAttachment.texture = m_impl->overlayDepthTexture;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1.0;
     if (m_atomCount == 0) {
         const auto& bg = m_settings.backgroundColor;
         pass.colorAttachments[0].clearColor = MTLClearColorMake(
-            bg.redF(), bg.greenF(), bg.blueF(), 1.0);
+            bg.redF() * bg.alphaF(), bg.greenF() * bg.alphaF(), bg.blueF() * bg.alphaF(), bg.alphaF());
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
     } else {
         pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
@@ -1034,13 +961,15 @@ void MetalRayTracingRenderer::encodeUnitCellOverlayDraws(
 
     [encoder setDepthStencilState:depthState];
     [encoder setCullMode:MTLCullModeNone];
-    [encoder setFragmentBuffer:m_impl->atomPositionBuffer offset:0 atIndex:1];
-    [encoder setFragmentBuffer:m_impl->bvhNodeMinBuffer offset:0 atIndex:3];
-    [encoder setFragmentBuffer:m_impl->bvhNodeMaxBuffer offset:0 atIndex:4];
-    [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
-    [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
-    [encoder setFragmentBuffer:m_impl->bondStartBuffer offset:0 atIndex:7];
-    [encoder setFragmentBuffer:m_impl->bondEndBuffer offset:0 atIndex:8];
+    [encoder setFragmentBuffer:(m_impl->atomPositionBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:1];
+    [encoder setFragmentBuffer:(m_impl->bvhNodeMinBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:3];
+    [encoder setFragmentBuffer:(m_impl->bvhNodeMaxBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:4];
+    [encoder setFragmentBuffer:(m_impl->bvhNodeMetaBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:5];
+    [encoder setFragmentBuffer:(m_impl->bvhPrimIndexBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:6];
+    [encoder setFragmentBuffer:(m_impl->bondStartBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:7];
+    [encoder setFragmentBuffer:(m_impl->bondEndBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:8];
+
+    [encoder setFragmentBuffer:(m_impl->bondRadiusBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:11];
 
     // Edge cylinders.
     {
@@ -1091,36 +1020,13 @@ void MetalRayTracingRenderer::trackSubmittedFrame(void* cmdBuf,
 
     id<MTLCommandBuffer> cmdBuffer = (__bridge id<MTLCommandBuffer>)cmdBuf;
     [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
-        const auto freeState = static_cast<uint8_t>(OutputSlotState::Free);
-        const auto readyState = static_cast<uint8_t>(OutputSlotState::Ready);
-
-        int expectedSlot = outputSlotIndex;
-        asyncState->inFlightSlot.compare_exchange_strong(expectedSlot, -1, std::memory_order_acq_rel);
-
-        if (completedBuffer.status != MTLCommandBufferStatusCompleted ||
-            asyncState->generation.load(std::memory_order_acquire) != generation) {
-            asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
-                freeState, std::memory_order_release);
-            return;
-        }
-
-        // Feed the adaptive batch size: measured GPU nanoseconds per RT sample
-        // (display/overlay overhead is amortized into the estimate, which only
-        // makes the next batch slightly conservative).
-        if (batchSampleCount > 0) {
-            const double gpuSeconds = completedBuffer.GPUEndTime - completedBuffer.GPUStartTime;
-            if (gpuSeconds > 0.0) {
-                const uint64_t perSample = static_cast<uint64_t>(
-                    gpuSeconds * 1e9 / static_cast<double>(batchSampleCount));
-                asyncState->gpuNanosPerSample.store(std::max<uint64_t>(perSample, 1),
-                                                    std::memory_order_relaxed);
-            }
-        }
-
-        asyncState->slotStates[static_cast<size_t>(outputSlotIndex)].store(
-            readyState, std::memory_order_release);
-        asyncState->latestReadySampleCount.store(submittedSampleCount, std::memory_order_release);
-        asyncState->latestReadySlot.store(outputSlotIndex, std::memory_order_release);
+        const bool success = completedBuffer.status == MTLCommandBufferStatusCompleted;
+        uint64_t nanosPerSample = 0;
+        const double seconds = completedBuffer.GPUEndTime - completedBuffer.GPUStartTime;
+        if (success && batchSampleCount > 0 && seconds > 0.0)
+            nanosPerSample = std::max<uint64_t>(static_cast<uint64_t>(seconds * 1e9 / batchSampleCount), 1);
+        if (!success) qWarning() << "Metal RT frame failed:" << completedBuffer.error.localizedDescription.UTF8String;
+        completeOutput(*asyncState, outputSlotIndex, generation, success, submittedSampleCount, nanosPerSample);
     }];
 }
 

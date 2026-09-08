@@ -13,6 +13,8 @@ set(RENDER_COMMON_SOURCES
     common/Camera.h
     common/Picking.cpp
     common/Picking.h
+    common/PreparedGeometry.cpp
+    common/PreparedGeometry.h
     common/RenderStateHash.cpp
     common/RenderStateHash.h
     common/Renderer.h
@@ -51,10 +53,11 @@ set(RENDER_VULKAN_SOURCES
 )
 
 # ---------------------------------------------------------------------------
-# Metal backend (future — macOS primary)
+# Metal backend (macOS primary)
 # ---------------------------------------------------------------------------
 set(RENDER_METAL_SOURCES
     metal/MetalAsyncOutput.h
+    metal/MetalRenderTargetUtil.h
     metal/MetalBufferUtil.h
     metal/MetalTypes.h
     metal/MetalShaderLibrary.h
@@ -125,6 +128,10 @@ target_link_libraries(atom-render PUBLIC
 )
 
 if(BUILD_TESTING)
+    add_executable(atom-render-prepared-geometry-test tests/PreparedGeometryTest.cpp)
+    target_link_libraries(atom-render-prepared-geometry-test PRIVATE atom-render)
+    add_test(NAME atom-render-prepared-geometry COMMAND atom-render-prepared-geometry-test)
+    set_tests_properties(atom-render-prepared-geometry PROPERTIES TIMEOUT 60)
     add_executable(atom-render-camera-test
         tests/CameraTest.cpp
     )
@@ -142,7 +149,15 @@ if(BUILD_TESTING)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         SKIP_RETURN_CODE 77
     )
+    add_executable(atom-render-async-output-test tests/MetalAsyncOutputTest.cpp)
+    target_link_libraries(atom-render-async-output-test PRIVATE atom-render)
+    add_test(NAME atom-render-async-output COMMAND atom-render-async-output-test)
     if(APPLE)
+        add_executable(atom-render-metal-regression-test tests/MetalRendererRegressionTest.mm)
+        target_link_libraries(atom-render-metal-regression-test PRIVATE atom-render)
+        add_test(NAME atom-render-metal-regression COMMAND atom-render-metal-regression-test)
+        set_tests_properties(atom-render-metal-regression PROPERTIES
+            SKIP_RETURN_CODE 77 TIMEOUT 120 ENVIRONMENT "MTL_DEBUG_LAYER=1")
         add_executable(atom-render-metal-background-test tests/MetalBackgroundRenderingTest.mm)
         target_link_libraries(atom-render-metal-background-test PRIVATE atom-render)
         add_test(NAME atom-render-metal-background COMMAND atom-render-metal-background-test)

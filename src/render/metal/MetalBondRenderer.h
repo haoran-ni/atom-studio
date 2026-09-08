@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include "../common/PreparedGeometry.h"
 
 namespace atom::data { class Structure; }
 
@@ -18,7 +19,9 @@ public:
     bool initialize(void* device, MetalShaderLibrary* shaderLibrary);
     void cleanup();
 
-    void setBondData(const data::Structure* structure);
+    void setBondData(const data::Structure* structure, const PreparedGeometry* geometry = nullptr);
+    void updateAppearance(const data::Structure* structure);
+    bool hasSelection() const { return m_hasSelection; }
 
     /// Encodes the per-bond frame precompute pass (own compute encoder) into
     /// the command buffer. Must run before the render pass that draws bonds.
@@ -41,6 +44,7 @@ private:
     int m_meshSegments = 0;
     size_t m_bondCount = 0;
     bool m_initialized = false;
+    bool m_hasSelection = false;
     bool m_usePrecomputedFrames = false;
 };
 

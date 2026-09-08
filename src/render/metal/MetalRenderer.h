@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/Renderer.h"
+#include "../common/PreparedGeometry.h"
 #include "MetalAsyncOutput.h"
 #include "MetalShaderLibrary.h"
 #include "MetalSphereRenderer.h"
@@ -27,9 +28,12 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
+    void setPreparedStructure(const data::Structure* structure,
+                              std::shared_ptr<const PreparedGeometry> geometry);
     void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
+    void invalidateAppearance() override;
 
     /// Returns the most recently completed color texture (id<MTLTexture> as
     /// void*), or nullptr while no frame has finished yet. Marks the returned
@@ -40,7 +44,7 @@ public:
     /// True when render() was called while a frame was still in flight, so
     /// the latest scene state has not been submitted yet. The viewport should
     /// schedule another frame.
-    bool hasPendingRender() const { return m_pendingRender; }
+    bool hasPendingRender() const;
 
     /// True while the viewport must keep scheduling frames: a frame is in
     /// flight, a render request was dropped, or a completed frame has not
@@ -62,12 +66,14 @@ private:
     MetalViewportAxesRenderer m_viewportAxesRenderer;
 
     const data::Structure* m_structure = nullptr;
+    std::shared_ptr<const PreparedGeometry> m_preparedGeometry;
     int m_width = 0;
     int m_height = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_unitCellDataDirty = true;
+    bool m_appearanceDirty = false;
     bool m_pendingRender = false;
     uint64_t m_outputGeneration = 1;
     int m_lastPresentedSlot = -1;

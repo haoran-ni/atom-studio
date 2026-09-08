@@ -10,6 +10,7 @@ namespace atom::render {
 
 class Camera;
 struct RenderSettings;
+struct PreparedGeometry;
 
 enum class PickObjectType {
     None,
@@ -31,6 +32,7 @@ PickResult pickStructureObject(const data::Structure* structure,
                                float screenX,
                                float screenY,
                                int viewportWidth,
-                               int viewportHeight);
+                               int viewportHeight,
+                               const PreparedGeometry* geometry = nullptr);
 
 } // namespace atom::render

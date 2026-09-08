@@ -29,11 +29,15 @@ uint64_t computeRenderStateHash(const Camera& camera, const RenderSettings& sett
     combine(hf(camera.aspectRatio()));
     combine(hb(camera.isPerspective()));
     combine(hf(camera.orthoScale()));
+    combine(hf(camera.nearPlane()));
+    combine(hf(camera.farPlane()));
 
     // Settings that affect the image
     combine(hf(settings.atomScale));
     combine(hf(settings.bondRadius));
+    combine(hb(settings.showAtoms));
     combine(hb(settings.showBonds));
+    combine(hf(settings.viewportAxesPixelRatio));
     combine(hb(settings.enableShadows));
     combine(hb(settings.enableAmbientOcclusion));
     combine(hi(settings.aoSamples));

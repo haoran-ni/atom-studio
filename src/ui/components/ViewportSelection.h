@@ -10,6 +10,7 @@ class Structure;
 namespace atom::render {
 class Camera;
 struct RenderSettings;
+struct PreparedGeometry;
 }
 
 namespace atom::ui {
@@ -22,13 +23,15 @@ bool handleViewportSelectionClick(StructureModel& model,
                                   const render::RenderSettings& settings,
                                   const QPointF& position,
                                   int viewportWidth,
-                                  int viewportHeight);
+                                  int viewportHeight,
+                                  const render::PreparedGeometry* geometry = nullptr);
 
 QString viewportHoverStatus(const data::Structure* structure,
                             const render::Camera& camera,
                             const render::RenderSettings& settings,
                             const QPointF& position,
                             int viewportWidth,
-                            int viewportHeight);
+                            int viewportHeight,
+                                  const render::PreparedGeometry* geometry = nullptr);
 
 } // namespace atom::ui

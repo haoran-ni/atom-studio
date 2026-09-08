@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../common/Renderer.h"
+#include "../common/PreparedGeometry.h"
 #include "MetalShaderLibrary.h"
 #include "MetalGizmoRenderer.h"
 #include "MetalViewportAxesRenderer.h"
@@ -12,8 +13,7 @@ namespace atom::render::metal {
 struct RTUnitCellUniforms;
 
 /// Fragment-shader ray tracing renderer with progressive accumulation.
-/// Parallel to the OpenGL RayTracingRenderer — brute-force ray-sphere
-/// traversal in a fullscreen fragment shader, additive accumulation into
+/// Unified atom/bond BVH traversal in a fullscreen fragment shader, additive accumulation into
 /// an RGBA32Float texture, tone-mapped display pass.
 class MetalRayTracingRenderer : public Renderer {
 public:
@@ -27,6 +27,8 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
+    void setPreparedStructure(const data::Structure* structure,
+                              std::shared_ptr<const PreparedGeometry> geometry);
     void render(const Camera& camera, const RenderSettings& settings) override;
     void invalidateAtomData() override;
     void invalidateBondData() override;
@@ -44,10 +46,11 @@ public:
 
 private:
     void createRenderTargets();
+    void ensureOverlayRenderTargets();
     void uploadSceneData();
-    void uploadAppearanceData();
+    void uploadAppearanceData(bool force = false);
     void uploadUnitCellData();
-    void renderRTPass(const Camera& camera, void* cmdBuffer);
+    void renderRTPass(const Camera& camera, void* cmdBuffer, int samples);
     void renderDisplayPass(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
     void renderUnitCellOverlay(const Camera& camera, void* cmdBuffer, int outputSlotIndex);
     bool hasUnitCellOverlayData() const;
@@ -67,6 +70,7 @@ private:
 
     RenderSettings m_settings;  // Local copy for isConverged() / state hashing
     const data::Structure* m_structure = nullptr;
+    std::shared_ptr<const PreparedGeometry> m_preparedGeometry;
     int m_width = 0;
     int m_height = 0;
     int m_atomCount = 0;
@@ -80,12 +84,16 @@ private:
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_appearanceDirty = false;
+    bool m_hasSelection = false;
     bool m_accumNeedsClear = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;
     int m_unitCellJointCount = 0;
     int m_unitCellCylinderIndexCount = 0;
     int m_unitCellSphereIndexCount = 0;
+    bool m_pendingRender = false;
+    bool m_displayDirty = true;
+    uint64_t m_lastDisplayHash = 0;
     uint64_t m_lastStateHash = 0;
     uint64_t m_outputGeneration = 1;
     int m_lastPresentedSlot = -1;

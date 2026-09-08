@@ -17,6 +17,13 @@ constexpr uint32_t kInvalidIndex = 0xFFFFFFFFu;
 // below this primitive count the serial path is already sub-millisecond.
 constexpr size_t kMinPrimsForParallelBuild = 32768;
 
+size_t nodeCapacity(size_t count, uint32_t leafSize) {
+    size_t leaves = 1;
+    const size_t minimumLeaves = (count + std::max(1u, leafSize) - 1) / std::max(1u, leafSize);
+    while (leaves < minimumLeaves) leaves *= 2;
+    return leaves * 2 - 1;
+}
+
 struct NodeBuildStats {
     float minX = FLT_MAX;
     float minY = FLT_MAX;
@@ -230,7 +237,7 @@ void buildParallel(BuildContext& ctx, size_t count, int maxDepth) {
             subCtx.options = ctx.options;
             subCtx.indices = ctx.indices;  // disjoint range — safe to share
             const size_t taskCount = task.end - task.begin;
-            subCtx.result.nodes.reserve(taskCount * 2);
+            subCtx.result.nodes.reserve(nodeCapacity(taskCount, ctx.options.leafSize));
             subCtx.result.primitiveIndices.reserve(taskCount);
             buildNode(subCtx, task.begin, task.end);
             subtreeResults[t] = std::move(subCtx.result);
@@ -279,7 +286,7 @@ BVHData buildBVH(const PrimitiveBounds* primitives, size_t count,
     ctx.primitives = primitives;
     ctx.options = options;
     ctx.indices = indices.data();
-    ctx.result.nodes.reserve(count * 2);
+    ctx.result.nodes.reserve(nodeCapacity(count, options.leafSize));
     ctx.result.primitiveIndices.reserve(count);
 
     const int maxDepth = parallelSplitDepth(count, options);

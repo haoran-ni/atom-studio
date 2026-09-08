@@ -60,6 +60,7 @@ void MetalBondRenderer::cleanup() {
     m_cylinderIndexCount = 0;
     m_meshSegments = 0;
     m_bondCount = 0;
+    m_hasSelection = false;
     m_usePrecomputedFrames = false;
     m_initialized = false;
 }
@@ -93,36 +94,68 @@ void MetalBondRenderer::ensureCylinderGeometry(int segments) {
     createCylinderGeometry(clampedSegments);
 }
 
-void MetalBondRenderer::setBondData(const data::Structure* structure) {
+void MetalBondRenderer::setBondData(const data::Structure* structure, const PreparedGeometry* geometry) {
     if (!m_initialized) return;
 
     if (!structure || structure->bonds().bondCount() == 0) {
         m_bondCount = 0;
+        m_hasSelection = false;
         m_impl->instanceBuffer = nil;
         return;
     }
 
-    std::vector<BondRenderSegment> segments = collectBondRenderSegments(structure);
-    m_bondCount = segments.size();
+    const auto& bonds = structure->bonds();
+    m_bondCount = bonds.bondCount();
 
-    std::vector<BondInstance> instances(m_bondCount);
+    m_impl->instanceBuffer = ensureSharedBuffer(m_impl->device, m_impl->instanceBuffer,
+                                                m_bondCount * sizeof(BondInstance));
+    auto* instances = static_cast<BondInstance*>(m_impl->instanceBuffer.contents);
+    m_hasSelection = false;
     for (size_t i = 0; i < m_bondCount; ++i) {
-        const BondRenderSegment& segment = segments[i];
-        instances[i].start = simd_make_float3(segment.startX, segment.startY, segment.startZ);
-        instances[i].end   = simd_make_float3(segment.endX, segment.endY, segment.endZ);
-        instances[i].startColor = simd_make_float4(segment.startColorR, segment.startColorG, segment.startColorB, 1.0f);
-        instances[i].endColor = simd_make_float4(segment.endColorR, segment.endColorG, segment.endColorB, 1.0f);
-        instances[i].startRadius = segment.startRadius;
-        instances[i].endRadius = segment.endRadius;
-        instances[i].bondRadius = segment.bondRadius;
-        instances[i].selected = segment.selected;
+        auto& instance = instances[i];
+        if (geometry) {
+            const auto& a = geometry->bondStarts[i];
+            const auto& b = geometry->bondEnds[i];
+            instance.start = simd_make_float3(a[0], a[1], a[2]);
+            instance.end = simd_make_float3(b[0], b[1], b[2]);
+            instance.startRadius = a[3];
+            instance.endRadius = b[3];
+            instance.bondRadius = geometry->bondRadii[i];
+        } else {
+            const auto segment = makeBondRenderSegment(*structure, bonds.bond(i), i);
+            instance.start = simd_make_float3(segment.startX, segment.startY, segment.startZ);
+            instance.end = simd_make_float3(segment.endX, segment.endY, segment.endZ);
+            instance.startRadius = segment.startRadius;
+            instance.endRadius = segment.endRadius;
+            instance.bondRadius = segment.bondRadius;
+        }
+        const auto a = bonds.startColor(i), b = bonds.endColor(i);
+        instance.startColor = simd_make_float4(a.r, a.g, a.b, 1.0f);
+        instance.endColor = simd_make_float4(b.r, b.g, b.b, 1.0f);
+        instance.selected = bonds.selected(i) ? 1.0f : 0.0f;
+        m_hasSelection |= instance.selected != 0.0f;
     }
+}
 
-    // Reuse safe: setBondData only runs from render() after a free output
-    // slot was acquired, i.e. no command buffer is in flight.
-    m_impl->instanceBuffer = fillSharedBuffer(m_impl->device, m_impl->instanceBuffer,
-                                              instances.data(),
-                                              m_bondCount * sizeof(BondInstance));
+void MetalBondRenderer::updateAppearance(const data::Structure* structure) {
+    if (!structure || structure->bonds().bondCount() != m_bondCount || !m_impl->instanceBuffer) {
+        setBondData(structure);
+        return;
+    }
+    auto* instances = static_cast<BondInstance*>(m_impl->instanceBuffer.contents);
+    const auto& bonds = structure->bonds();
+    m_hasSelection = false;
+    for (size_t i = 0; i < m_bondCount; ++i) {
+        auto& instance = instances[i];
+        auto a = bonds.startColor(i), b = bonds.endColor(i);
+        const auto start = simd_make_float4(a.r, a.g, a.b, 1.0f);
+        const auto end = simd_make_float4(b.r, b.g, b.b, 1.0f);
+        if (simd_any(instance.startColor != start)) instance.startColor = start;
+        if (simd_any(instance.endColor != end)) instance.endColor = end;
+        const float selected = bonds.selected(i) ? 1.0f : 0.0f;
+        if (instance.selected != selected) instance.selected = selected;
+        m_hasSelection |= selected != 0.0f;
+    }
 }
 
 void MetalBondRenderer::encodeFramePrecompute(void* cmdBuf, const SceneUniforms& uniforms) {
@@ -200,7 +233,7 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms, 
     // Stroke outline pass: re-draw the same instanced mesh inflated by the
     // outline width with front faces culled (inverted hull). Buffers 0-3 are
     // already bound; only pipeline and cull mode change.
-    if (uniforms.outlineWidthPx > 0.0f || uniforms.selectionOutlineWidthPx > 0.0f) {
+    if (uniforms.outlineWidthPx > 0.0f || (m_hasSelection && uniforms.selectionOutlineWidthPx > 0.0f)) {
         id<MTLRenderPipelineState> outlinePipeline = (__bridge id<MTLRenderPipelineState>)(
             usePrecomputed ? m_shaderLibrary->bondOutlinePipelinePrecomputed()
                            : m_shaderLibrary->bondOutlinePipeline());

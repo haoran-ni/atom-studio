@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include "../common/PreparedGeometry.h"
 
 namespace atom::data { class Structure; }
 
@@ -22,7 +23,9 @@ public:
     bool initialize(void* device, MetalShaderLibrary* shaderLibrary);
     void cleanup();
 
-    void setAtomData(const data::Structure* structure);
+    void setAtomData(const data::Structure* structure, const PreparedGeometry* geometry = nullptr);
+    void updateAppearance(const data::Structure* structure);
+    bool hasSelection() const { return m_hasSelection; }
     /// Encode draw commands into an existing render command encoder.
     /// Uses the early-Z pipeline when uniforms.sphereEarlyZ is set.
     void render(void* encoder, const SceneUniforms& uniforms);
@@ -44,6 +47,7 @@ private:
     MetalShaderLibrary* m_shaderLibrary = nullptr;
     size_t m_atomCount = 0;
     bool m_initialized = false;
+    bool m_hasSelection = false;
 
     // Atom-center bounds + max base radius for the early-Z gate.
     bool m_hasBounds = false;

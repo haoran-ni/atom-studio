@@ -73,7 +73,8 @@ bool handleViewportSelectionClick(StructureModel& model,
                                   const render::RenderSettings& settings,
                                   const QPointF& position,
                                   int viewportWidth,
-                                  int viewportHeight) {
+                                  int viewportHeight,
+                                  const render::PreparedGeometry* geometry) {
     if (!model.selectionEnabled() || !structure) return false;
 
     const auto pick = render::pickStructureObject(
@@ -81,7 +82,7 @@ bool handleViewportSelectionClick(StructureModel& model,
         static_cast<float>(position.x()),
         static_cast<float>(position.y()),
         viewportWidth,
-        viewportHeight);
+        viewportHeight, geometry);
 
     if (!pick.hit()) return false;
 
@@ -109,7 +110,8 @@ QString viewportHoverStatus(const data::Structure* structure,
                             const render::RenderSettings& settings,
                             const QPointF& position,
                             int viewportWidth,
-                            int viewportHeight) {
+                            int viewportHeight,
+                                  const render::PreparedGeometry* geometry) {
     if (!structure) return QString();
 
     const auto pick = render::pickStructureObject(
@@ -117,7 +119,7 @@ QString viewportHoverStatus(const data::Structure* structure,
         static_cast<float>(position.x()),
         static_cast<float>(position.y()),
         viewportWidth,
-        viewportHeight);
+        viewportHeight, geometry);
 
     if (!pick.hit()) return QString();
 

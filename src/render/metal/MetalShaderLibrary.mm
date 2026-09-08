@@ -1,6 +1,8 @@
 #import <Metal/Metal.h>
 #include "MetalShaderLibrary.h"
 #include <QDebug>
+#include <map>
+#include <mutex>
 
 namespace atom::render::metal {
 
@@ -163,48 +165,41 @@ vertex SphereVertexOut sphere_vertex(
                    (scene.isPerspective ? max(dist, 0.0) : 1.0);
     out.outerRadius = out.radius + shellW;
 
-    // Billboard size (must cover the outer shell silhouette)
+    float3 qv = quadVertices[vid];
+    float4 viewPos = viewCenter;
     float R = out.outerRadius;
-    float billboardR;
     if (scene.isPerspective) {
-        // Perspective-correct: projected silhouette grows as sphere nears camera
-        if (dist > R * 1.01) {
-            billboardR = R * dist / sqrt(dist * dist - R * R);
+        if (dist + R <= 0.0) {
+            // The entire sphere is behind the camera. It cannot intersect a
+            // forward ray; do not expand it into a fullscreen proxy.
+            out.viewPosOnQuad = viewCenter.xyz;
+            out.position = float4(0.0, 0.0, 2.0, 1.0);
+            return out;
+        }
+        if (dist > R * 1.0001) {
+            // Tangents to the sphere in each view-axis/depth plane. Off-axis
+            // spheres have both an asymmetric projected center and larger
+            // extents than a sphere on the optical axis.
+            float denominator = dist * dist - R * R;
+            float2 centerSlope = viewCenter.xy * dist / denominator;
+            float2 halfSlope = R * sqrt(viewCenter.xy * viewCenter.xy + denominator) / denominator;
+            float planeDepth = scene.sphereEarlyZ != 0 ? dist - R : dist;
+            viewPos = float4((centerSlope + qv.xy * halfSlope * 1.05) * planeDepth,
+                             -planeDepth, 1.0);
         } else {
-            billboardR = dist * 100.0;
+            // A sphere crossing the camera plane can cover the whole viewport.
+            // Rasterize a fullscreen proxy just beyond the near plane; the
+            // analytic intersection below determines actual coverage/depth.
+            float nearPlane = scene.projectionMatrix[3][2] / scene.projectionMatrix[2][2];
+            float planeDepth = max(nearPlane * 1.01, 1e-4);
+            viewPos = float4(qv.x * planeDepth / scene.projectionMatrix[0][0],
+                             qv.y * planeDepth / scene.projectionMatrix[1][1],
+                             -planeDepth, 1.0);
         }
     } else {
-        // Orthographic: constant billboard size (no foreshortening)
-        billboardR = R;
+        viewPos.xy += qv.xy * R * 1.05;
+        if (scene.sphereEarlyZ != 0) viewPos.z += R;
     }
-    billboardR *= 1.05;
-
-    float4 viewPos = viewCenter;
-
-    // Early-Z placement: put the quad at the sphere's near-tangent plane
-    // (z = C.z + R). Every point of the sphere then lies at or behind the
-    // quad's depth, so the fragment shader's [[depth(greater)]] promise
-    // holds for every rasterized fragment. The CPU gate guarantees
-    // dist - R stays beyond the near plane, so no extra clipping occurs.
-    if (scene.sphereEarlyZ != 0) {
-        if (scene.isPerspective) {
-            // Perspective divides screen xy by depth, so moving the plane
-            // closer must scale the quad's view-space center AND footprint
-            // by k = (dist - R)/dist. The projected rectangle is then
-            // exactly the center-plane quad's: center (C.xy·k)/(dist·k) =
-            // C.xy/dist, halfwidth (billboardR·k)/(dist·k) = billboardR/dist.
-            // (Scaling only the footprint mis-centers the quad for off-axis
-            // spheres and visibly clips atoms when zoomed in or panned.)
-            float k = max(dist - R, 1e-4) / max(dist, 1e-4);
-            billboardR *= k;
-            viewPos.xy = viewCenter.xy * k;
-        }
-        viewPos.z = viewCenter.z + R;
-    }
-
-    float3 qv = quadVertices[vid];
-    float2 offset = qv.xy * billboardR;
-    viewPos.xy += offset;
 
     out.viewPosOnQuad = viewPos.xyz;
     out.position = scene.projectionMatrix * viewPos;
@@ -797,7 +792,7 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                  int atomCount, float atomScale, bool showAtoms,
                  device const float4* bondStartPositions,
                  device const float4* bondEndPositions,
-                 int bondCount, float bondRadius, bool showBonds,
+                 device const float* bondRadii, int bondCount, bool showBonds,
                  device const float4* bvhNodeMinData,
                  device const float4* bvhNodeMaxData,
                  device const uint4* bvhNodeMeta,
@@ -860,7 +855,8 @@ fragment float4 rt_unit_cell_fragment(
     device const uint4* bvhNodeMeta [[buffer(5)]],
     device const uint* bvhPrimIndices [[buffer(6)]],
     device const float4* bondStartPositions [[buffer(7)]],
-    device const float4* bondEndPositions [[buffer(8)]])
+    device const float4* bondEndPositions [[buffer(8)]],
+    device const float* bondRadii [[buffer(11)]])
 {
     // Cast a ray from camera toward the unit-cell fragment and hide it if any
     // RT scene primitive is intersected first. The unit cell remains outside
@@ -894,7 +890,7 @@ fragment float4 rt_unit_cell_fragment(
             traceAnyHit(ro, rd, maxT,
                         atomPositions, unitCell.atomCount, unitCell.atomScale, unitCell.showAtoms != 0,
                         bondStartPositions, bondEndPositions,
-                        unitCell.bondCount, unitCell.bondRadius, unitCell.showBonds != 0,
+                        bondRadii, unitCell.bondCount, unitCell.showBonds != 0,
                         bvhNodeMinData, bvhNodeMaxData, bvhNodeMeta, bvhPrimIndices,
                         unitCell.bvhNodeCount)) {
             discard_fragment();
@@ -1320,8 +1316,8 @@ bool traceOccluded(float3 ro, float3 rd, float maxDist,
                     float r = atom.w * atomScale;
                     float3 oc = ro - atom.xyz;
                     float b = dot(oc, rd);
-                    float c = dot(oc, oc) - r * r;
-                    float disc = b * b - c;
+                    float3 perpendicular = oc - b * rd;
+                    float disc = r * r - dot(perpendicular, perpendicular);
                     if (disc >= 0.0) {
                         float sqrtDisc = sqrt(disc);
                         float t = -b - sqrtDisc;
@@ -1370,7 +1366,7 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                  int atomCount, float atomScale, bool showAtoms,
                  device const float4* bondStartPositions,
                  device const float4* bondEndPositions,
-                 int bondCount, float bondRadius, bool showBonds,
+                 device const float* bondRadii, int bondCount, bool showBonds,
                  device const float4* bvhNodeMinData,
                  device const float4* bvhNodeMaxData,
                  device const uint4* bvhNodeMeta,
@@ -1401,8 +1397,8 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                     float r = atom.w * atomScale;
                     float3 oc = ro - atom.xyz;
                     float b = dot(oc, rd);
-                    float c = dot(oc, oc) - r * r;
-                    float disc = b * b - c;
+                    float3 perpendicular = oc - b * rd;
+                    float disc = r * r - dot(perpendicular, perpendicular);
                     if (disc >= 0.0) {
                         float sqrtDisc = sqrt(disc);
                         float t = -b - sqrtDisc;
@@ -1414,7 +1410,7 @@ bool traceAnyHit(float3 ro, float3 rd, float maxDist,
                     int bondIdx = int(primIndex) - atomCount;
                     float3 pa = bondStartPositions[bondIdx].xyz;
                     float3 pb = bondEndPositions[bondIdx].xyz;
-                    float t = intersectCylinder(ro, rd, pa, pb, bondRadius);
+                    float t = intersectCylinder(ro, rd, pa, pb, bondRadii[bondIdx]);
                     if (t > 0.001 && t < maxDist) return true;
                 }
             }
@@ -1678,7 +1674,7 @@ struct MetalShaderLibrary::Impl {
 };
 
 MetalShaderLibrary::MetalShaderLibrary()
-    : m_impl(std::make_unique<Impl>())
+    : m_impl(std::make_shared<Impl>())
 {
 }
 
@@ -1689,6 +1685,24 @@ MetalShaderLibrary::~MetalShaderLibrary() {
 bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
     if (m_initialized) return true;
 
+    // Only immutable completed libraries enter the cache. A weak entry does
+    // not retain a device after the last viewport using it has been destroyed.
+    static std::mutex cacheMutex;
+    static std::map<std::pair<void*, int>, std::weak_ptr<Impl>> cache;
+    std::lock_guard lock(cacheMutex);
+    const auto key = std::make_pair(device, std::max(rasterSampleCount, 1));
+    for (auto it = cache.begin(); it != cache.end();) {
+        if (it->second.expired()) it = cache.erase(it);
+        else ++it;
+    }
+    if (auto found = cache.find(key); found != cache.end()) {
+        if (auto shared = found->second.lock()) {
+            m_impl = std::move(shared);
+            m_initialized = true;
+            return true;
+        }
+    }
+    m_impl = std::make_shared<Impl>();
     m_impl->device = (__bridge id<MTLDevice>)device;
     if (!m_impl->device) {
         qCritical() << "MetalShaderLibrary: null device";
@@ -1962,12 +1976,13 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         }
     }
 
-    // --- Display pipeline (no blending, BGRA8, no depth) ---
+    // --- Display pipeline (no blending, BGRA8, overlay depth attachment) ---
     {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"fullscreen_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"display_fragment"];
         desc.rasterSampleCount = rasterSamples;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = NO;
 
@@ -1984,8 +1999,9 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         }
 
         // Single-sample variant for overlay-free frames (no MSAA target/resolve).
-        if (rasterSamples > 1) {
+        {
             desc.rasterSampleCount = 1;
+            desc.depthAttachmentPixelFormat = MTLPixelFormatInvalid;
             m_impl->displayPipelineSingleSample =
                 [m_impl->device newRenderPipelineStateWithDescriptor:desc error:&error];
             if (!m_impl->displayPipelineSingleSample) {
@@ -1993,17 +2009,16 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
                              << error.localizedDescription.UTF8String;
                 return false;
             }
-        } else {
-            m_impl->displayPipelineSingleSample = m_impl->displayPipeline;
         }
     }
 
-    // --- RT unit-cell cylinder overlay pipeline (alpha blend, BGRA8, no depth) ---
+    // --- RT unit-cell cylinder overlay pipeline (alpha blend, BGRA8, overlay depth attachment) ---
     {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_cylinder_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
         desc.rasterSampleCount = rasterSamples;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -2024,12 +2039,13 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         }
     }
 
-    // --- RT unit-cell sphere overlay pipeline (alpha blend, BGRA8, no depth) ---
+    // --- RT unit-cell sphere overlay pipeline (alpha blend, BGRA8, overlay depth attachment) ---
     {
         MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
         desc.vertexFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_sphere_vertex"];
         desc.fragmentFunction = [m_impl->library newFunctionWithName:@"rt_unit_cell_fragment"];
         desc.rasterSampleCount = rasterSamples;
+        desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
         desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
         desc.colorAttachments[0].blendingEnabled = YES;
         desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -2050,33 +2066,14 @@ bool MetalShaderLibrary::initialize(void* device, int rasterSampleCount) {
         }
     }
 
+    cache[key] = m_impl;
     m_initialized = true;
     qInfo() << "MetalShaderLibrary: All pipelines created successfully";
     return true;
 }
 
 void MetalShaderLibrary::cleanup() {
-    if (m_impl) {
-        m_impl->spherePipeline = nil;
-        m_impl->spherePipelineEarlyZ = nil;
-        m_impl->bondPipeline = nil;
-        m_impl->bondPipelinePrecomputed = nil;
-        m_impl->bondOutlinePipeline = nil;
-        m_impl->bondOutlinePipelinePrecomputed = nil;
-        m_impl->bondFramePipeline = nil;
-        m_impl->solidCylinderPipeline = nil;
-        m_impl->viewportAxesPipeline = nil;
-        m_impl->linePipeline = nil;
-        m_impl->rtPipeline = nil;
-        m_impl->displayPipeline = nil;
-        m_impl->displayPipelineSingleSample = nil;
-        m_impl->rtUnitCellCylinderPipeline = nil;
-        m_impl->rtUnitCellSpherePipeline = nil;
-        m_impl->depthLessWriteState = nil;
-        m_impl->depthDisabledState = nil;
-        m_impl->library = nil;
-        m_impl->device = nil;
-    }
+    m_impl = std::make_shared<Impl>();
     m_initialized = false;
 }
 

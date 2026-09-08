@@ -27,7 +27,23 @@ int main() {
             return 1;
         }
     }
+    auto hidden = opaque;
+    hidden.showAtoms = false;
+    auto retina = opaque;
+    retina.viewportAxesPixelRatio = 2.0f;
+    if (atom::render::computeRenderStateHash(camera, opaque) == atom::render::computeRenderStateHash(camera, hidden)
+        || atom::render::computeRenderStateHash(camera, opaque) == atom::render::computeRenderStateHash(camera, retina)) {
+        std::cerr << "Atom visibility and selection outline scale must restart ray tracing\n";
+        return 1;
+    }
     auto relit = opaque;
+    auto changedClipping = camera;
+    changedClipping.setSceneExtent(100.0f);
+    if (atom::render::computeRenderStateHash(camera, opaque)
+        == atom::render::computeRenderStateHash(changedClipping, opaque)) {
+        std::cerr << "Clipping plane changes must invalidate accumulation\n";
+        return 1;
+    }
     relit.lightAzimuth += 10.0f;
     if (atom::render::computeRenderStateHash(camera, opaque)
         == atom::render::computeRenderStateHash(camera, relit)) {

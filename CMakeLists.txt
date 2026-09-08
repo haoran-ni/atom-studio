@@ -67,6 +67,9 @@ if(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
     enable_language(OBJCXX)
+    # Metal resources use strong Objective-C members in C++ RAII owners. Without
+    # ARC, assigning nil or destroying those owners leaks every retained resource.
+    add_compile_options($<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
 endif()
 
 # Add subdirectories
