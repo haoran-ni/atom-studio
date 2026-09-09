@@ -41,6 +41,6 @@
         <file alias="visualization.svg">icons/visualization.svg</file>
     </qresource>
     <qresource prefix="/branding">
-        <file alias="app-logo.png">temp_logo.png</file>
+        <file alias="app-logo.png">logo_1024x1024.png</file>
     </qresource>
 </RCC>

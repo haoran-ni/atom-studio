@@ -42,7 +42,7 @@ The application consists of a header bar for app options, a side bar showing inf
 
 ## Application Branding
 - The runtime application/window icon should be loaded from the Qt resource system, currently `qrc:/branding/app-logo.png`, configured in `resources/resources.qrc` and applied in `src/main.cpp`.
-- The macOS bundle icon shown by Finder/Dock should come from `resources/temp_logo.icns`, packaged via `CMakeLists.txt` and referenced through `resources/Info.plist.in`.
+- The macOS bundle icon shown by Finder/Dock should come from `resources/logo_1024x1024.icns`, packaged via `CMakeLists.txt` and referenced through `resources/Info.plist.in`.
 - When updating app branding, keep the runtime Qt icon path and the macOS bundle icon configuration in sync.
 
 ## Technology Stack

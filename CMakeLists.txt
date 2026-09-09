@@ -76,7 +76,7 @@ endif()
 add_subdirectory(src)
 
 set(APP_BUNDLE_SOURCES)
-set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/resources/temp_logo.icns")
+set(APP_ICON_MACOS "${CMAKE_SOURCE_DIR}/resources/logo_1024x1024.icns")
 if(APPLE)
     set_source_files_properties(${APP_ICON_MACOS} PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources"
@@ -114,7 +114,7 @@ set(PYTHON_RUNTIME_BUNDLE_ROOT "${CMAKE_BINARY_DIR}/bin")
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_ICON_FILE "temp_logo.icns"
+        MACOSX_BUNDLE_ICON_FILE "logo_1024x1024.icns"
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist.in
     )
 
