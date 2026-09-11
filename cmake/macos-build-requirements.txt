@@ -1,0 +1,4 @@
+# Build tools live only in out/macos/venv. The app bundles the runtime requirements.
+-r python-requirements.txt
+pybind11>=2.13,<4
+packaging>=24

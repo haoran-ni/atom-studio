@@ -129,8 +129,8 @@ class NativeBundle:
         stdlib = Path(sysconfig.get_path("stdlib"))
         for destination in sorted(self.libdir.rglob("*")):
             if destination.is_symlink():
-                if not within(destination.resolve(), self.app):
-                    raise RuntimeError(f"Python bundle contains an external symlink: {destination}")
+                if not destination.exists() or not within(destination.resolve(), self.app):
+                    raise RuntimeError(f"Python bundle contains a broken or external symlink: {destination}")
                 continue
             if not macho(destination):
                 continue

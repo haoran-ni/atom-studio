@@ -132,6 +132,10 @@ if(APPLE)
     )
     set(PYTHON_NATIVE_BUNDLE_DEPENDS atom-python-runtime-check ${PYTHON_NATIVE_BUNDLE_SCRIPT})
     if(BUILD_TESTING)
+        add_test(NAME atom-macos-packaging
+            COMMAND "${Python3_EXECUTABLE}" -I
+                "${CMAKE_SOURCE_DIR}/scripts/tests/test_macos_packaging.py"
+        )
         add_test(NAME atom-python-bundle
             COMMAND "${Python3_EXECUTABLE}" -I
                 "${CMAKE_SOURCE_DIR}/scripts/tests/check_macos_python_bundle.py"

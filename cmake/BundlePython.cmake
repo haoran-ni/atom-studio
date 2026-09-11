@@ -8,6 +8,7 @@
 # - PYTHON_PACKAGE_SYNC_SCRIPT
 
 cmake_minimum_required(VERSION 3.25)
+set(PYTHON_STDLIB_FORMAT_VERSION 2)
 
 foreach(required_var
         PYTHON_EXECUTABLE
@@ -46,6 +47,7 @@ set(ATOM_STUDIO_BUNDLED_PYTHON_ARCHITECTURE "@PYTHON_ARCHITECTURE@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_STDLIB_SRC "@PYTHON_STDLIB_SRC@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_EXT_SUFFIX "@PYTHON_EXT_SUFFIX@")
 set(ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM "@CMAKE_SYSTEM_NAME@")
+set(ATOM_STUDIO_BUNDLED_STDLIB_FORMAT "@PYTHON_STDLIB_FORMAT_VERSION@")
 ]=])
 
     file(READ "${manifest_file}" manifest_contents)
@@ -57,6 +59,7 @@ set(ATOM_STUDIO_BUNDLED_PYTHON_PLATFORM "@CMAKE_SYSTEM_NAME@")
     string(REPLACE "@PYTHON_STDLIB_SRC@" "${PYTHON_STDLIB_SRC}" manifest_contents "${manifest_contents}")
     string(REPLACE "@PYTHON_EXT_SUFFIX@" "${PYTHON_EXT_SUFFIX}" manifest_contents "${manifest_contents}")
     string(REPLACE "@CMAKE_SYSTEM_NAME@" "${CMAKE_SYSTEM_NAME}" manifest_contents "${manifest_contents}")
+    string(REPLACE "@PYTHON_STDLIB_FORMAT_VERSION@" "${PYTHON_STDLIB_FORMAT_VERSION}" manifest_contents "${manifest_contents}")
     file(WRITE "${manifest_file}" "${manifest_contents}")
 endfunction()
 
@@ -109,6 +112,9 @@ function(rebuild_standard_library)
             PATTERN "distutils" EXCLUDE
             PATTERN "lib2to3" EXCLUDE
             PATTERN "pydoc_data" EXCLUDE
+            # Homebrew's development Makefiles and libpython symlinks point
+            # outside the stdlib. They are not part of the embedded runtime.
+            PATTERN "config-*-darwin" EXCLUDE
             PATTERN "site-packages" EXCLUDE
         )
     endif()
@@ -229,7 +235,10 @@ elseif(NOT EXISTS "${PYTHON_LIB_DST}")
 else()
     include("${STDLIB_MANIFEST_FILE}")
 
-    if(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_EXECUTABLE}" STREQUAL "${PYTHON_EXECUTABLE}")
+    if(NOT "${ATOM_STUDIO_BUNDLED_STDLIB_FORMAT}" STREQUAL "${PYTHON_STDLIB_FORMAT_VERSION}")
+        set(rebuild_stdlib TRUE)
+        set(rebuild_reason "standard library bundle format changed")
+    elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_EXECUTABLE}" STREQUAL "${PYTHON_EXECUTABLE}")
         set(rebuild_stdlib TRUE)
         set(rebuild_reason "Python executable changed")
     elseif(NOT "${ATOM_STUDIO_BUNDLED_PYTHON_PREFIX}" STREQUAL "${PYTHON_PREFIX}")

@@ -53,6 +53,77 @@ The destination is replaced only after the complete file has been written succes
 - C++20 compatible compiler
 - Vulkan SDK (optional, for future rendering features)
 
+## Build and Install on Your Mac (One Command)
+
+Download this repository using **Code → Download ZIP** on GitHub and extract it,
+or clone it. Open Terminal in the extracted `atom-studio` folder and run:
+
+```bash
+bash scripts/build-macos-dmg.sh
+```
+
+When the build finishes, the script opens a disk image. **Drag ATOM-STUDIO into
+Applications**, eject the disk image, and launch the app from Applications.
+No paid Apple Developer account or notarization is needed to build your own copy.
+
+The automatic setup requires **macOS 14 or newer** and internet access for missing
+dependencies. Apple Silicon is the primary supported build platform. The script
+also attempts native Intel builds, but Homebrew now gives Intel Macs limited
+support and dependencies may need to compile from source. It produces a native
+app for the Mac running the script, not a universal Intel/Apple Silicon app.
+See [Homebrew's platform requirements](https://docs.brew.sh/Installation).
+
+The script handles the following steps:
+
+- Checks Apple Command Line Tools and opens their installer if needed.
+- Installs Homebrew using its official installer if it is missing, then installs
+  missing CMake, Python 3.12, and the required Qt modules.
+- Creates a private Python environment under `out/macos/venv` and installs ASE,
+  NumPy, their dependencies, and the build tools there.
+- Builds a Release app in `out/macos/build` and runs the project's tests.
+- Bundles Qt, Python, ASE and their native dependencies; checks for missing
+  libraries, architecture mismatches and dependencies outside the app.
+- Applies free local signatures, briefly launches the packaged app to check
+  startup, then creates and verifies the compressed `.dmg`.
+
+**First-run prompts:** approve Apple's installer and finish installing Command
+Line Tools, then press Return in Terminal when asked. Homebrew may ask for your
+Mac administrator password and confirmation. Run the script as your normal user,
+**without `sudo`**. It cannot bypass these installer prompts, an unaccepted Xcode
+license, or restrictions on a managed Mac. Full Xcode is not normally required.
+
+Existing prerequisites are reused. Installing a missing Homebrew package can
+also install or upgrade its dependencies. The script does not modify your shell
+startup files or install Python packages into your system Python or Conda
+environment. Homebrew and its installed packages remain available after building.
+Allow several GB of free disk space; initial downloads and compilation can take
+some time.
+
+The disk image is saved as
+`out/macos/ATOM-STUDIO-<version>-macOS-<architecture>.dmg`, with a `.sha256` checksum
+beside it. Build output is saved in `out/macos/build.log`, Qt deployment details
+in `out/macos/qt-deploy.log`, and selected Python package versions in
+`out/macos/python-packages.txt`. The image records the build
+Mac's macOS version as its minimum; it does not claim compatibility with older
+macOS versions. These files and the build environment are ignored by Git.
+
+To leave the disk image closed or reduce compiler memory use:
+
+```bash
+bash scripts/build-macos-dmg.sh --no-open --jobs 4
+```
+
+If a step fails, fix the reported problem and rerun the same command. The script
+reuses its build environment, refreshes CMake's dependency discovery, and retains
+a previous successful disk image until its replacement passes validation. Run
+`bash scripts/build-macos-dmg.sh --help` for the available options.
+
+The installed app contains its runtime dependencies: you can remove this source
+checkout after copying the app to Applications. If you share the disk image with
+others, it is **locally signed, not Apple-notarized**. macOS may block a downloaded
+copy until the recipient allows it through **System Settings → Privacy & Security
+→ Open Anyway**. See [Apple's instructions](https://support.apple.com/guide/mac-help/mh40616/mac).
+
 ## Building from Source
 
 ### macOS (Homebrew)
@@ -119,7 +190,9 @@ cmake --build build-vcpkg
 
 ### macOS
 
-To build a Release app and package its Qt dependencies:
+For a complete locally signed disk image, use the one-command script above.
+For manual development or release preparation, build a Release app and package
+its Qt dependencies with:
 
 ```bash
 cmake --preset=release -DPython3_EXECUTABLE="$PWD/.venv-build/bin/python"
@@ -140,10 +213,11 @@ test checks relocation, conflicting environment settings, native dependencies,
 ASE file I/O, and rejection of missing or incompatible runtime files. Python GUI
 modules such as Tk are not a supported app interface.
 
-Developer ID signing, notarization, and DMG/PKG creation are not yet automated.
-Release architecture and minimum macOS version must also be selected and verified
-before public distribution. Python package versions currently follow the selected
-build environment; use a controlled environment for release builds.
+The one-command script automates local signing and DMG creation. Developer ID
+signing, Apple notarization, and PKG creation are not automated. A release intended
+for other Macs still needs testing on its advertised architectures and minimum
+macOS versions. Python package versions follow the selected build environment;
+use a controlled environment for reproducible public releases.
 
 ## Project Structure
 
