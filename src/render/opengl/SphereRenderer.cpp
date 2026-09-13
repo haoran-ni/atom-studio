@@ -93,6 +93,8 @@ void SphereRenderer::setAtomData(const data::Structure* structure) {
 
     if (!structure || structure->atomCount() == 0) {
         m_atomCount = 0;
+        m_instancePosBuffer.bind(); m_instancePosBuffer.allocate(0); m_instancePosBuffer.release();
+        m_instanceColorBuffer.bind(); m_instanceColorBuffer.allocate(0); m_instanceColorBuffer.release();
         return;
     }
 

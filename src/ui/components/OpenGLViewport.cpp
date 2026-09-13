@@ -6,7 +6,6 @@
 #include "../../render/opengl/RayTracingRenderer.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
-#include "../../data/NeighborList.h"
 
 #include <QQuickWindow>
 #include <QMouseEvent>
@@ -15,8 +14,6 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QOpenGLFramebufferObjectFormat>
-#include <QFutureWatcher>
-#include <QtConcurrent>
 #include <QMetaObject>
 #include <QDebug>
 #include <algorithm>
@@ -150,6 +147,12 @@ public:
                 static_cast<float>(logicalSize.width()) / logicalSize.height());
         }
 
+        if (viewport->m_sceneSwitchPending) {
+            m_rasterRenderer->releaseStructure();
+            if (m_rtRenderer) m_rtRenderer->releaseStructure();
+            viewport->m_sceneSwitchPending = false;
+        }
+
         // Update structure if needed
         if (viewport->m_needsStructureUpdate) {
             m_activeRenderer->setStructure(viewport->m_structure.get());
@@ -242,6 +245,8 @@ OpenGLViewport::OpenGLViewport(QQuickItem* parent)
     // Connect to StructureModel to receive structure updates
     QTimer::singleShot(0, this, [this]() {
         if (auto* model = StructureModel::instance()) {
+            connect(model, &StructureModel::structureActivated,
+                    this, &OpenGLViewport::activateStructure);
             connect(model, &StructureModel::structureUpdated,
                     this, &OpenGLViewport::setStructure);
             connect(model, &StructureModel::structureEdited,
@@ -250,6 +255,7 @@ OpenGLViewport::OpenGLViewport(QQuickItem* parent)
                     this, &OpenGLViewport::onStructureStyleChanged);
             connect(model, &StructureModel::structureGeometryChanged,
                     this, &OpenGLViewport::onStructureGeometryChanged);
+            if (model->structure()) activateStructure(model->structure(), true);
         }
     });
 }
@@ -417,35 +423,33 @@ QVariantList OpenGLViewport::getAxisDirections() const {
 }
 
 void OpenGLViewport::setStructure(std::shared_ptr<data::Structure> structure) {
-    m_structure = structure;
-    setHoverStatus(QString());
-    if (m_structure) {
-        const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
-        m_structure->updateColorsFromElements(scheme);
-        m_structure->updateBondColorsFromElements(scheme);
-    }
-    m_needsStructureUpdate = true;
+    activateStructure(std::move(structure), true);
+}
 
+void OpenGLViewport::activateStructure(std::shared_ptr<data::Structure> structure, bool firstStructure) {
+    m_structure = std::move(structure);
+    setHoverStatus(QString());
+    m_pressedButtons = Qt::NoButton;
+    m_sceneSwitchPending = true;
+    m_needsStructureUpdate = true;
+    m_sampleCount = 0;
+    emit sampleCountChanged();
+    ++m_requestedFrameToken;
     emit atomCountChanged();
     emit bondCountChanged();
-
     if (m_structure) {
-        if (m_autoFitOnLoad) {
-            fitToView();
-        } else {
-            updateCameraForStructure(false);
-            emit cameraChanged();
-        }
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+        // Share orientation, zoom and relative pan, but orbit this structure's center.
+        updateCameraForStructure(firstStructure && m_autoFitOnLoad);
+        emit cameraChanged();
         startBondDetection();
     }
-
     update();
 }
 
 void OpenGLViewport::setEditedStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
-    m_bondTaskPending = false;
-    m_pendingStructure.reset();
     setHoverStatus(QString());
     m_needsStructureUpdate = true;
 
@@ -481,7 +485,9 @@ void OpenGLViewport::setBondRadius(float radius) {
     if (!qFuzzyCompare(m_bondRadius, clamped)) {
         m_bondRadius = clamped;
         if (m_structure) {
-            m_structure->bonds().setAllRadii(m_bondRadius);
+            if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+                model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+            else m_structure->bonds().setAllRadii(m_bondRadius, true);
             m_needsStructureUpdate = true;
         }
         emit bondRadiusChanged();
@@ -493,63 +499,8 @@ void OpenGLViewport::setBondRadius(float radius) {
 }
 
 void OpenGLViewport::startBondDetection() {
-    if (!m_structure) return;
-
-    if (m_bondTaskRunning) {
-        // Coalesce: remember the latest request; launchBondTask will pick it up.
-        m_bondTaskPending  = true;
-        m_pendingStructure = m_structure;
-        m_pendingScale     = m_bondScale;
-        return;
-    }
-    launchBondTask(m_structure, m_bondScale);
-}
-
-void OpenGLViewport::launchBondTask(
-    std::shared_ptr<data::Structure> structure, float scale)
-{
-    if (!m_bondWatcher) {
-        m_bondWatcher = new QFutureWatcher<BondResult>(this);
-        connect(m_bondWatcher, &QFutureWatcher<BondResult>::finished,
-                this, &OpenGLViewport::onBondsReady);
-    }
-    m_bondTaskRunning = true;
-    m_bondTaskPending = false;
-
-    m_bondWatcher->setFuture(
-        QtConcurrent::run([structure, scale]() -> BondResult {
-            data::NeighborList nl;
-            nl.build(*structure, scale);
-            return {nl.buildBondList(*structure, scale), structure};
-        }));
-}
-
-void OpenGLViewport::onBondsReady() {
-    m_bondTaskRunning = false;
-
-    if (m_bondWatcher && m_structure) {
-        BondResult result = m_bondWatcher->result();
-        // Discard if the structure has changed since the task was launched.
-        if (result.structure == m_structure && result.bonds) {
-            result.bonds->setAllRadii(m_bondRadius);
-            m_structure->setBondList(std::move(result.bonds));
-            m_structure->updateBondColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
-            m_needsStructureUpdate = true;
-            emit bondCountChanged();
-            if (auto* model = StructureModel::instance())
-                model->notifyBondsUpdated();
-            if (!m_hoverStatus.isEmpty()) {
-                updateHoverStatus(m_lastMousePos);
-            }
-            update();
-        }
-    }
-
-    if (m_bondTaskPending && m_pendingStructure) {
-        auto s   = std::move(m_pendingStructure);
-        float sc = m_pendingScale;
-        launchBondTask(std::move(s), sc);
-    }
+    if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+        model->ensureBonds(m_bondScale);
 }
 
 void OpenGLViewport::updateCameraForStructure(bool fitScale) {
@@ -564,9 +515,12 @@ void OpenGLViewport::updateCameraForStructure(bool fitScale) {
 
     extent = extent > 0 ? extent : 10.0f;
     if (fitScale) {
+        // One scale must accommodate every centered structure after a global edit.
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            extent = std::max(extent, model->maximumViewExtent());
         m_camera->fitToView(center, extent);
     } else {
-        m_camera->setTarget(center);
+        m_camera->setSceneCenter(center);
         m_camera->setSceneExtent(extent);
     }
 }
@@ -674,8 +628,12 @@ void OpenGLViewport::setAtomColorScheme(int scheme) {
 
     if (m_structure) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
-        m_structure->updateColorsFromElements(scheme);
-        m_structure->updateBondColorsFromElements(scheme);
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+        else {
+            m_structure->updateColorsFromElements(scheme, true);
+            m_structure->updateBondColorsFromElements(scheme, true);
+        }
         m_needsAppearanceUpdate = true;  // colors only — geometry unchanged
     }
     update();
@@ -921,6 +879,7 @@ void OpenGLViewport::onStructureStyleChanged() {
 }
 
 void OpenGLViewport::onStructureGeometryChanged() {
+    emit bondCountChanged();
     m_needsStructureUpdate = true;
     update();
 }

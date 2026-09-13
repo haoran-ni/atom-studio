@@ -29,7 +29,8 @@ struct PreparedGeometry {
     std::array<float, 3> centerMin{}, centerMax{}, sceneMin{}, sceneMax{};
     float maxAtomRadius = 0;
 };
-std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& snapshot);
+std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& snapshot,
+                                                        const std::atomic_bool* cancelled = nullptr);
 
 // One worker and one pending snapshot: rapid edits replace queued work. Results
 // from an obsolete revision are discarded. Destruction never waits for a BVH build;

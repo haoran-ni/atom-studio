@@ -11,6 +11,9 @@ Rectangle {
     property var pendingExportState: null
     property bool imageExportInProgress: false
 
+    onImageExportInProgressChanged: StructureModel.switchingLocked = imageExportInProgress
+    Component.onDestruction: { if (imageExportInProgress) StructureModel.switchingLocked = false }
+
     color: "#e6e6e6"
 
     // Placeholder gradient background (shown when no structure is loaded)
@@ -403,12 +406,28 @@ Rectangle {
         }
     }
 
+    StructureSwitcher {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 16
+        width: Math.min(400, parent.width - 32)
+        height: implicitHeight
+        z: 50
+        visible: StructureModel.structureCount > 1 && !viewportPanel.imageExportInProgress
+        enabled: !StructureModel.switchingLocked
+        structureCount: StructureModel.structureCount
+        activeIndex: StructureModel.activeIndex
+        structureLabel: "#" + StructureModel.activeId + " · " + StructureModel.fileName
+        onActivated: function(index) { StructureModel.setActiveIndex(index) }
+    }
+
     // Drop area for files
     DropArea {
         anchors.fill: parent
         onDropped: (drop) => {
             if (drop.hasUrls) {
-                FileController.loadFileUrl(drop.urls[0])
+                FileController.loadFileUrls(drop.urls)
+                drop.acceptProposedAction()
             }
         }
     }

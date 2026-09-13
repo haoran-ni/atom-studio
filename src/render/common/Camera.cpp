@@ -9,6 +9,7 @@ Camera::Camera() {
 
 void Camera::reset() {
     m_target = QVector3D(0, 0, 0);
+    m_sceneCenter = m_target;
     m_distance = 50.0f;
     m_perspectiveDistance = 50.0f;
     m_fov = 45.0f;
@@ -151,6 +152,7 @@ void Camera::setDistance(float distance) {
 }
 
 void Camera::setSceneExtent(float extent) {
+    if (m_sceneExtent == qMax(0.0f, extent)) return;
     m_sceneExtent = qMax(0.0f, extent);
     if (m_perspective) {
         m_near = qMax(0.01f, m_distance * 0.001f);
@@ -167,6 +169,7 @@ void Camera::setSceneExtent(float extent) {
 
 void Camera::fitToView(const QVector3D& center, float extent) {
     m_target = center;
+    m_sceneCenter = center;
 
     if (extent > 0) {
         // Calculate distance to fit the extent in view
@@ -197,6 +200,12 @@ void Camera::fitToView(const QVector3D& center, float extent) {
 
 void Camera::setTarget(const QVector3D& target) {
     m_target = target;
+    m_viewDirty = true;
+}
+
+void Camera::setSceneCenter(const QVector3D& center) {
+    m_target = center + (m_target - m_sceneCenter);
+    m_sceneCenter = center;
     m_viewDirty = true;
 }
 

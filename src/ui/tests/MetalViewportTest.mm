@@ -1,5 +1,6 @@
 #import <Metal/Metal.h>
 #include "components/MetalViewport.h"
+#include "components/StructureModel.h"
 #include "common/Camera.h"
 #include "Structure.h"
 #include <QGuiApplication>
@@ -26,12 +27,32 @@ bool frame(atom::ui::MetalViewport& viewport) {
     const auto token = viewport.requestFrame();
     return waitFor([&] { return viewport.frameToken() >= token; });
 }
+bool visibleTransition(atom::ui::MetalViewport& viewport, QQuickWindow& window) {
+    const auto token = viewport.requestFrame();
+    QElapsedTimer timer;
+    timer.start();
+    do {
+        // Capture throughout preparation and GPU submission, before waiting
+        // for the replacement frame. Both scenes cover the center pixel.
+        const auto image = window.grabWindow();
+        if (image.isNull() || image.pixelColor(image.width()/2, image.height()/2) == QColor(50,100,150)) {
+            std::cerr << "Structure switch displayed a blank viewport\n";
+            return false;
+        }
+        QCoreApplication::processEvents();
+        if (viewport.frameToken() >= token) return true;
+        QThread::msleep(1);
+    } while (timer.elapsed() < 10000);
+    std::cerr << "Visible structure transition stalled\n";
+    return false;
+}
 }
 int main(int argc, char** argv) {
     @autoreleasepool {
         if (!MTLCreateSystemDefaultDevice()) return 77;
         QGuiApplication app(argc, argv);
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
+        atom::ui::StructureModel model;
         QQuickWindow window;
         window.resize(320,320); window.setColor(QColor(200,40,20));
         auto* viewport = new atom::ui::MetalViewport(window.contentItem());
@@ -105,7 +126,41 @@ int main(int argc, char** argv) {
         if (swaps > 1) { std::cerr << "Converged viewport continued rendering\n"; return 1; }
         window.resize(400,280); viewport->setWidth(400); viewport->setHeight(280);
         if (!frame(*viewport)) return 1;
-        std::cout << "Qt Metal viewport alpha, requests, rapid edits, mode switches, and resize passed\n";
+        // Separate imports with identical geometry must still restart RT.
+        // The active viewport is reused, including its exact camera matrices.
+        for (int mode : {0, 1}) {
+            viewport->setRendererMode(mode);
+            auto carbon = std::make_shared<atom::data::Structure>();
+            carbon->addAtom(0, 0, 0, 6);
+            model.addStructure(carbon);
+            if (!frame(*viewport)) return 1;
+            if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
+            const auto camera = viewport->camera();
+            model.addStructure(carbon);
+            if (viewport->sampleCount() != 0) {
+                std::cerr << "New import retained ray tracing samples\n"; return 1;
+            }
+            if (!visibleTransition(*viewport, window)) return 1;
+            if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
+            model.setActiveIndex(model.activeIndex() - 1);
+            if (viewport->sampleCount() != 0 || viewport->camera().viewMatrix() != camera.viewMatrix()
+                    || viewport->camera().projectionMatrix() != camera.projectionMatrix()) {
+                std::cerr << "Structure switch changed camera or retained samples\n"; return 1;
+            }
+            if (!visibleTransition(*viewport, window)) return 1;
+            if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
+        }
+        // Switch faster than preparation/GPU completion; final empty document wins.
+        auto empty = std::make_shared<atom::data::Structure>();
+        model.addStructure(empty);
+        for (int i = 0; i < 12; ++i) model.setActiveIndex(i % 2);
+        model.setActiveIndex(model.structureCount() - 1);
+        if (!frame(*viewport)) return 1;
+        image = window.grabWindow();
+        if (image.pixelColor(image.width()/2, image.height()/2) != QColor(50,100,150)) {
+            std::cerr << "Old structure output survived an empty structure switch\n"; return 1;
+        }
+        std::cout << "Qt Metal viewport alpha, requests, rapid edits, mode/structure switches, and resize passed\n";
         return 0;
     }
 }

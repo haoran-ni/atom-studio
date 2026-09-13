@@ -115,6 +115,15 @@ bool checkRenderer(render::Renderer& renderer, QOpenGLFunctions& gl, bool rayTra
             return false;
         }
     }
+    if (rayTracing) {
+        auto& rt = static_cast<render::RayTracingRenderer&>(renderer);
+        rt.releaseStructure();
+        if (rt.sampleCount() != 0) return false;
+    } else {
+        static_cast<render::OpenGLRenderer&>(renderer).releaseStructure();
+    }
+    // GPU scene buffers can be released and reused for another structure.
+    if (snapshot(&scene).pixelColor(atomPixel).alpha() != 255) return false;
     renderer.cleanup();
     return gl.glGetError() == GL_NO_ERROR;
 }

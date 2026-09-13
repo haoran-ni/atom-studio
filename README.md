@@ -4,7 +4,7 @@ A high-performance desktop application for visualization of atomic structures.
 
 ## Features
 
-- Interactive visualization panel
+- Interactive visualization panel with multiple independent structures and a floating structure switcher
 - Bright neutral right-hand sidebar with section icons and tunable-parameter hierarchy lines
 - Compact color controls with Grid, Spectrum, and RGB/hex tabs, background opacity, and session swatches
 - Opaque atoms and bonds, with optional ray-traced shadows and ambient occlusion
@@ -16,17 +16,59 @@ A high-performance desktop application for visualization of atomic structures.
 - Supports various atomic structure file formats
 - Cross-platform: Windows, macOS, and Linux
 
+## Multiple Structures
+
+Import one or more files using **Files → Import Structures**, or drop files onto
+the viewport at any time. Imports are queued in order, and each successful import
+becomes a new entry, even when importing the same file again. The newest entry is
+selected automatically. A failed import leaves existing structures intact and the
+remaining queued files continue loading.
+
+When two or more structures are loaded, a floating slider appears at the bottom
+of the viewport. Drag it, use its arrow buttons, or focus it and use the keyboard
+arrow keys to switch structures. The label shows the structure ID, source filename,
+and position in the collection. This control is excluded from exported images.
+
+Each import receives a session ID starting at **0**. Its immutable original and
+editable working copy are named `STRUCT_<ID>_RAW` and `STRUCT_<ID>_CURRENT`.
+IDs are retained through edits and resets. Positions, atom/bond deletions,
+selections, and selected-object colors/sizes belong to that structure.
+**Reset to Original** restores only the active structure's working edits, keeping
+the shared replication counts and view settings.
+
+All structures share camera orientation, zoom, projection, and pan relative to
+their own center, along with renderer mode, lighting, atom scale, default color
+scheme, and bond settings. Each structure uses its unit-cell center when a lattice
+exists, or its geometric atom center otherwise. Switching or importing recenters
+the camera without fitting the zoom. Auto-fit applies to the first structure and
+explicit geometry resets, using the largest structure's extent so the shared scale
+accommodates the collection. Custom selected-object appearance overrides remain
+with their structure.
+
+Only the active structure is prepared and rendered. Inactive structures retain
+CPU data for their originals and edits, without a separate viewport or GPU scene.
+The previous completed image stays visible until the next structure's first frame
+is ready, avoiding a blank viewport during preparation. Ray tracing starts again
+from zero on each switch. Structure export saves the active working copy;
+image capture briefly defers structure switching
+until the requested image has been saved.
+
 ## Unit Cell Replication
 
-In **Structure → Replicate Unit Cell**, use the up/down arrows beside X, Y, and Z
+In **Structure → Replicate All Unit Cells**, use the up/down arrows beside X, Y, and Z
 to change a replication count by one and apply it immediately. You can also type
 a count from 1 to 99 and press **Enter**; leaving a field without pressing Enter
 discards that uncommitted value. X, Y, and Z correspond to lattice vectors a, b,
 and c, including for non-orthogonal cells.
 
-Replication always rebuilds from the original input cell, replacing working
-edits. Counts persist when the sidebar section is closed and return to 1 when
-loading a structure or choosing **Reset to Original**. Replication requires a lattice.
+Replication counts are global: a change rebuilds every imported structure that
+has a lattice from its original input cell, replacing working edits for those
+structures. New imports inherit the current counts. Structures without a lattice
+retain their working edits and are not replicated. With auto-fit enabled, the
+camera is adjusted once after all structures have been updated.
+
+Counts persist when switching views, resetting the active structure, or closing
+the sidebar section. Set X, Y, and Z back to 1 to restore single cells globally.
 
 ## Structure Export
 

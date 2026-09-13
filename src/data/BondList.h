@@ -87,15 +87,19 @@ public:
 
     // Per-bond rendering state
     float radius(size_t bondIndex) const { return m_radii[bondIndex]; }
-    void setRadius(size_t bondIndex, float radius);
-    void setAllRadii(float radius);
+    void setRadius(size_t bondIndex, float radius, bool custom = false);
+    void setAllRadii(float radius, bool preserveOverrides = false);
     const std::vector<float>& radii() const { return m_radii; }
 
     Color startColor(size_t bondIndex) const { return m_startColors[bondIndex]; }
     Color endColor(size_t bondIndex) const { return m_endColors[bondIndex]; }
-    void setStartColor(size_t bondIndex, Color color);
-    void setEndColor(size_t bondIndex, Color color);
+    void setStartColor(size_t bondIndex, Color color, bool custom = false);
+    void setEndColor(size_t bondIndex, Color color, bool custom = false);
     void setEndpointColors(size_t bondIndex, Color startColor, Color endColor);
+
+    bool radiusOverridden(size_t i) const { return m_radiusOverrides[i] != 0; }
+    bool startColorOverridden(size_t i) const { return m_startOverrides[i] != 0; }
+    bool endColorOverridden(size_t i) const { return m_endOverrides[i] != 0; }
 
     // Selection state
     bool selected(size_t bondIndex) const { return m_selected[bondIndex] != 0; }
@@ -111,6 +115,7 @@ private:
     std::vector<Color> m_startColors;
     std::vector<Color> m_endColors;
     std::vector<uint8_t> m_selected;
+    std::vector<uint8_t> m_radiusOverrides, m_startOverrides, m_endOverrides;
 };
 
 } // namespace atom::data

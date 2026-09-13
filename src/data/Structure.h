@@ -194,7 +194,7 @@ public:
      * @brief Update colors from element types using the selected ASE color scheme
      */
     void updateColorsFromElements(
-        ElementColorScheme scheme = ElementColorScheme::Jmol);
+        ElementColorScheme scheme = ElementColorScheme::Jmol, bool preserveOverrides = false);
 
     /**
      * @brief Update stored bond endpoint colors from their connected atom colors.
@@ -205,7 +205,7 @@ public:
      * @brief Update stored bond endpoint colors from connected atom element defaults.
      */
     void updateBondColorsFromElements(
-        ElementColorScheme scheme = ElementColorScheme::Jmol);
+        ElementColorScheme scheme = ElementColorScheme::Jmol, bool preserveOverrides = false);
 
     /**
      * @brief Update radii from element types
@@ -213,6 +213,9 @@ public:
      * @param useVdW Use Van der Waals radii instead of covalent
      */
     void updateRadiiFromElements(float scale = 1.0f, bool useVdW = false);
+
+    void setColorOverride(size_t index, bool enabled) { m_colorOverrides[index] = enabled; }
+    bool colorOverridden(size_t index) const { return m_colorOverrides[index] != 0; }
 
     // ========== Selection state ==========
 
@@ -333,6 +336,7 @@ private:
     std::vector<float> m_colorG;
     std::vector<float> m_colorB;
     std::vector<uint8_t> m_selectedAtoms;
+    std::vector<uint8_t> m_colorOverrides;
 
     // Lattice
     Lattice m_lattice;

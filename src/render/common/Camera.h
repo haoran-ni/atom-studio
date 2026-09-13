@@ -51,6 +51,8 @@ public:
     // Target point
     void setTarget(const QVector3D& target);
     QVector3D target() const { return m_target; }
+    // Move the scene's orbit center, retaining pan relative to that center.
+    void setSceneCenter(const QVector3D& center);
 
     // View parameters
     QQuaternion orientation() const { return m_orientation; }
@@ -102,6 +104,7 @@ private:
 
     // Orbit parameters
     QVector3D m_target = {0, 0, 0};
+    QVector3D m_sceneCenter = {0, 0, 0};
     QQuaternion m_orientation;   // Camera orientation (replaces azimuth + elevation)
     RotationConstraint m_rotationConstraint = RotationConstraint::None;
     float m_distance = 50.0f;

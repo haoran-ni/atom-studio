@@ -4,6 +4,11 @@
 #include <QFile>
 #include <QImage>
 #include <QTemporaryDir>
+#include <QQuickItem>
+#include <QQuickWindow>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 
 class ExportFiles : public QObject {
     Q_OBJECT
@@ -13,6 +18,16 @@ public:
     QString outputPath() const { return m_directory.filePath("export.png"); }
     Q_INVOKABLE void clear() { QFile::remove(outputPath()); }
     Q_INVOKABLE bool exists() const { return QFile::exists(outputPath()); }
+    Q_INVOKABLE bool dropFiles(QQuickItem* panel) {
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile("/tmp/first.xyz"), QUrl::fromLocalFile("/tmp/second.xyz")});
+        const QPoint point = panel->mapToScene(QPointF(120, 80)).toPoint();
+        QDragEnterEvent enter(point, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(panel->window(), &enter);
+        QDropEvent drop(point, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(panel->window(), &drop);
+        return drop.isAccepted();
+    }
     Q_INVOKABLE QColor pixel(int x, int y) const {
         return QImage(outputPath()).pixelColor(x, y);
     }

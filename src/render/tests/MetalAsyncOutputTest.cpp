@@ -19,6 +19,12 @@ int main() {
     if (state.latestReadySlot.load()!=1 || state.latestReadySampleCount.load()!=20 || acquireOutputSlot(state,1)==1) return 1;
     invalidateOutput(state,false);
     if (state.latestReadySlot.load()!=1) return 1; // Preserve last valid image during scene preparation.
+    invalidateOutput(state,true);
+    // A structure switch rejects stale ready frames, but Qt retains its last
+    // displayed texture. New geometry must render into another output slot.
+    if (state.latestReadySlot.load()!=-1 || acquireOutputSlot(state,1)==1) {
+        std::cerr << "Structure switch reused the displayed output slot\n"; return 1;
+    }
     state.inFlightSlot.store(2);
     completeOutput(state,2,state.generation.load(),false);
     return state.failed.load() && state.inFlightSlot.load()==-1 ? 0 : 1;

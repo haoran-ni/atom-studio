@@ -247,6 +247,17 @@ void MetalRayTracingRenderer::resize(int width, int height) {
     resetAccumulation();
 }
 
+void MetalRayTracingRenderer::releaseStructure() {
+    setStructure(nullptr);
+    uploadSceneData();
+    m_impl->unitCellEdgeInstanceBuffer = nil;
+    m_impl->unitCellJointInstanceBuffer = nil;
+    m_unitCellEdgeCount = m_unitCellJointCount = 0;
+    m_outputGeneration = invalidateOutput(*m_impl->asyncState, true);
+    // Qt still displays this slot while the next scene is prepared.
+    // Keep it reserved until a replacement frame is actually presented.
+}
+
 void MetalRayTracingRenderer::setStructure(const data::Structure* structure) {
     m_preparedGeometry.reset();
     m_structure = structure;

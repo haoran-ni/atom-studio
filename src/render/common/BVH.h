@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -26,6 +27,8 @@ struct BVHNodeGPU {
 
 struct BVHBuildOptions {
     uint32_t leafSize = 8;
+    // Optional cooperative cancellation; a cancelled build returns empty data.
+    const std::atomic_bool* cancelled = nullptr;
 
     // Upper bound on parallel subtree-build tasks.
     // 0 = auto (derived from hardware concurrency), 1 = force serial build.

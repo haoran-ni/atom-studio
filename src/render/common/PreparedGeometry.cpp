@@ -23,7 +23,7 @@ GeometrySnapshot captureGeometry(const data::Structure* structure) {
     return result;
 }
 
-std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& s) {
+std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& s, const std::atomic_bool* cancelled) {
     auto result = std::make_shared<PreparedGeometry>();
     const size_t count = s.x.size(), bondCount = s.bonds.size();
     result->atoms.resize(count);
@@ -35,6 +35,7 @@ std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& 
         result->centerMin = result->centerMax = {s.x[0], s.y[0], s.z[0]};
     }
     for (size_t i = 0; i < count; ++i) {
+        if ((i & 4095) == 0 && cancelled && cancelled->load()) return {};
         const float x = s.x[i], y = s.y[i], z = s.z[i], r = s.radii[i];
         result->atoms[i] = {x, y, z, r};
         bounds[i] = {x-r, y-r, z-r, x+r, y+r, z+r, x, y, z, r};
@@ -45,6 +46,7 @@ std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& 
         result->maxAtomRadius = std::max(result->maxAtomRadius, r);
     }
     for (size_t i = 0; i < bondCount; ++i) {
+        if ((i & 4095) == 0 && cancelled && cancelled->load()) return {};
         const auto& bond = s.bonds[i];
         auto& start = result->bondStarts[i];
         auto& end = result->bondEnds[i];
@@ -63,7 +65,10 @@ std::shared_ptr<const PreparedGeometry> prepareGeometry(const GeometrySnapshot& 
             (start[0]+end[0])*.5f, (start[1]+end[1])*.5f, (start[2]+end[2])*.5f, 0
         };
     }
-    result->bvh = buildBVH(bounds.data(), bounds.size());
+    BVHBuildOptions options;
+    options.cancelled = cancelled;
+    result->bvh = buildBVH(bounds.data(), bounds.size(), options);
+    if (cancelled && cancelled->load()) return {};
     if (!result->bvh.nodes.empty()) {
         const auto& root = result->bvh.nodes.front();
         std::copy_n(root.minAndMaxRadius.begin(), 3, result->sceneMin.begin());
@@ -78,6 +83,7 @@ struct GeometryPreparation::State {
     bool stopped = false;
     bool started = false;
     uint64_t revision = 0;
+    std::shared_ptr<std::atomic_bool> cancellation;
     std::optional<GeometrySnapshot> pending;
     std::optional<Result> ready;
 };
@@ -85,6 +91,7 @@ GeometryPreparation::GeometryPreparation() : m_state(std::make_shared<State>()) 
 GeometryPreparation::~GeometryPreparation() {
     std::lock_guard lock(m_state->mutex);
     m_state->stopped = true;
+    if (m_state->cancellation) m_state->cancellation->store(true);
     m_state->pending.reset();
     m_state->wake.notify_one();
 }
@@ -100,9 +107,10 @@ void GeometryPreparation::request(GeometrySnapshot snapshot) {
                 auto snapshot = std::move(*state->pending);
                 state->pending.reset();
                 const auto revision = state->revision;
+                const auto cancellation = state->cancellation;
                 lock.unlock();
                 Result result;
-                try { result.geometry = prepareGeometry(snapshot); }
+                try { result.geometry = prepareGeometry(snapshot, cancellation.get()); }
                 catch (const std::exception& e) { result.error = e.what(); }
                 lock.lock();
                 if (state->stopped) return;
@@ -111,6 +119,8 @@ void GeometryPreparation::request(GeometrySnapshot snapshot) {
         }).detach();
         state->started = true;
     }
+    if (state->cancellation) state->cancellation->store(true);
+    state->cancellation = std::make_shared<std::atomic_bool>(false);
     ++state->revision;
     state->ready.reset();
     state->pending = std::move(snapshot);

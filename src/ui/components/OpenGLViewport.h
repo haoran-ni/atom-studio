@@ -83,6 +83,7 @@ public:
     Renderer* createRenderer() const override;
 
     // Properties
+    const render::Camera& camera() const { return *m_camera; }
     int atomCount() const;
     int bondCount() const;
     float fps() const;
@@ -131,6 +132,7 @@ public:
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
+    void activateStructure(std::shared_ptr<atom::data::Structure> structure, bool firstStructure);
     void setEditedStructure(std::shared_ptr<atom::data::Structure> structure);
     void fitToView();
     void resetCamera();
@@ -281,22 +283,10 @@ private:
     bool m_showRotationCenter = false;
     bool m_autoFitOnLoad = true;
 
-    // Async bond detection
-    struct BondResult {
-        std::shared_ptr<data::BondList>  bonds;
-        std::shared_ptr<data::Structure> structure; // originating structure
-    };
-    QFutureWatcher<BondResult>* m_bondWatcher = nullptr;
-    bool m_bondTaskRunning = false;
-    bool m_bondTaskPending = false;
-    std::shared_ptr<data::Structure> m_pendingStructure;
-    float m_pendingScale = 1.0f;
-
+    bool m_sceneSwitchPending = false;
     void startBondDetection();
-    void launchBondTask(std::shared_ptr<data::Structure> structure, float scale);
 
 private slots:
-    void onBondsReady();
     void onStructureStyleChanged();
     void onStructureGeometryChanged();
 };

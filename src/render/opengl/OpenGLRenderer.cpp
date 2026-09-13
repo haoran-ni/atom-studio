@@ -77,6 +77,13 @@ void OpenGLRenderer::resize(int width, int height) {
     glViewport(0, 0, width, height);
 }
 
+void OpenGLRenderer::releaseStructure() {
+    setStructure(nullptr);
+    m_sphereRenderer.setAtomData(nullptr);
+    m_bondRenderer.setBondData(nullptr);
+    m_unitCellRenderer.setUnitCellData(nullptr);
+}
+
 void OpenGLRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;

@@ -28,6 +28,7 @@ public:
     void cleanup() override;
     void resize(int width, int height) override;
     void setStructure(const data::Structure* structure) override;
+    void releaseStructure();
     void setPreparedStructure(const data::Structure* structure,
                               std::shared_ptr<const PreparedGeometry> geometry);
     void render(const Camera& camera, const RenderSettings& settings) override;

@@ -9,6 +9,7 @@
 #include <QStandardPaths>
 #include <QQmlEngine>
 #include <QDebug>
+#include <QTimer>
 #include <exception>
 #include <utility>
 
@@ -16,9 +17,9 @@ namespace atom::ui {
 
 FileController* FileController::s_instance = nullptr;
 
-FileController::FileController(QObject* parent)
+FileController::FileController(QObject* parent, std::unique_ptr<io::AsyncFileLoader> loader)
     : QObject(parent)
-    , m_loader(std::make_unique<io::AsyncFileLoader>(this))
+    , m_loader(loader ? std::move(loader) : std::make_unique<io::AsyncFileLoader>(this))
     , m_exporter(std::make_unique<io::AsyncStructureExporter>(this))
 {
     // Connect loader signals
@@ -153,25 +154,48 @@ void FileController::openFileDialog() {
     QString startDir = QStandardPaths::writableLocation(
         QStandardPaths::HomeLocation);
 
-    QString filePath = QFileDialog::getOpenFileName(
+    QStringList filePaths = QFileDialog::getOpenFileNames(
         nullptr,
-        tr("Open Atomic Structure"),
+        tr("Import Atomic Structures"),
         startDir,
         fileFilter()
     );
 
-    if (!filePath.isEmpty()) {
-        loadFile(filePath);
-    }
+    loadFiles(filePaths);
 }
 
 void FileController::loadFile(const QString& filePath) {
-    if (m_isLoading) {
-        qWarning() << "FileController: Already loading a file";
+    loadFiles({filePath});
+}
+
+void FileController::loadFiles(const QStringList& filePaths) {
+    for (const auto& path : filePaths) {
+        if (!path.isEmpty()) m_pendingFiles.enqueue(path);
+    }
+    if (!m_isLoading && !m_pendingFiles.isEmpty()) startNextLoad();
+}
+
+void FileController::loadFileUrls(const QList<QUrl>& fileUrls) {
+    QStringList paths;
+    for (const auto& url : fileUrls) {
+        if (url.isLocalFile()) paths.append(url.toLocalFile());
+    }
+    loadFiles(paths);
+}
+
+void FileController::startNextLoad() {
+    if (m_pendingFiles.isEmpty()) {
+        m_isLoading = false;
+        emit isLoadingChanged();
         return;
     }
+    m_loader->loadFile(m_pendingFiles.dequeue());
+}
 
-    m_loader->loadFile(filePath);
+void FileController::continueLoading() {
+    m_isLoading = !m_pendingFiles.isEmpty();
+    emit isLoadingChanged();
+    if (m_isLoading) QTimer::singleShot(0, this, &FileController::startNextLoad);
 }
 
 void FileController::openSaveImageDialog(const QString& format, bool includeAxes,
@@ -192,10 +216,11 @@ void FileController::openSaveImageDialog(const QString& format, bool includeAxes
 }
 
 void FileController::loadFileUrl(const QUrl& fileUrl) {
-    loadFile(fileUrl.toLocalFile());
+    loadFileUrls({fileUrl});
 }
 
 void FileController::cancelLoad() {
+    m_pendingFiles.clear();
     if (m_isLoading) {
         m_loader->cancel();
     }
@@ -207,10 +232,10 @@ void FileController::onLoadingStarted(const QString& filePath) {
     m_loadStatus = tr("Loading...");
     m_currentFilePath = filePath;
 
-    emit isLoadingChanged();
     emit loadProgressChanged();
     emit loadStatusChanged();
     emit currentFilePathChanged();
+    emit isLoadingChanged();
     emit loadingStarted(filePath);
 }
 
@@ -223,44 +248,41 @@ void FileController::onProgressChanged(float progress, const QString& message) {
 }
 
 void FileController::onLoadingFinished(std::shared_ptr<data::Structure> structure) {
-    m_isLoading = false;
     m_loadProgress = 1.0f;
     m_loadStatus = tr("Loaded");
 
-    emit isLoadingChanged();
     emit loadProgressChanged();
     emit loadStatusChanged();
 
     // Directly update StructureModel since std::shared_ptr can't pass through QML
-    StructureModel::instance()->setStructure(structure);
+    StructureModel::instance()->addStructure(structure);
 
     emit structureLoaded(structure);
 
     qInfo() << "Loaded structure with" << structure->atomCount() << "atoms from"
             << m_currentFilePath;
+    continueLoading();
 }
 
 void FileController::onLoadingFailed(const QString& error) {
-    m_isLoading = false;
     m_loadProgress = 0.0f;
     m_loadStatus = tr("Failed: %1").arg(error);
 
-    emit isLoadingChanged();
     emit loadProgressChanged();
     emit loadStatusChanged();
     emit loadFailed(error);
 
     qWarning() << "Failed to load file:" << error;
+    continueLoading();
 }
 
 void FileController::onLoadingCancelled() {
-    m_isLoading = false;
     m_loadProgress = 0.0f;
     m_loadStatus = tr("Cancelled");
 
-    emit isLoadingChanged();
     emit loadProgressChanged();
     emit loadStatusChanged();
+    continueLoading();
 }
 
 } // namespace atom::ui

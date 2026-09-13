@@ -11,6 +11,12 @@ namespace atom::render {
 
 namespace {
 
+struct BuildCancelled {};
+void checkCancellation(const BVHBuildOptions& options) {
+    if (options.cancelled && options.cancelled->load(std::memory_order_relaxed))
+        throw BuildCancelled{};
+}
+
 constexpr uint32_t kInvalidIndex = 0xFFFFFFFFu;
 
 // Parallel subtree builds only pay off once the build itself is measurable;
@@ -51,9 +57,11 @@ struct BuildContext {
 };
 
 NodeBuildStats computeStats(const BuildContext& ctx, size_t begin, size_t end) {
+    checkCancellation(ctx.options);
     NodeBuildStats stats;
 
     for (size_t i = begin; i < end; ++i) {
+        if ((i & 4095) == 0) checkCancellation(ctx.options);
         const uint32_t idx = ctx.indices[i];
         const auto& p = ctx.primitives[idx];
 
@@ -123,6 +131,7 @@ std::pair<int, float> pickSplitAxis(const NodeBuildStats& stats) {
 
 // Median-partitions [begin, end) on the given axis; returns the split point.
 size_t partitionRange(BuildContext& ctx, size_t begin, size_t end, int splitAxis) {
+    checkCancellation(ctx.options);
     const size_t mid = begin + (end - begin) / 2;
     std::nth_element(ctx.indices + begin, ctx.indices + mid, ctx.indices + end,
                      [&](uint32_t a, uint32_t b) {
@@ -279,23 +288,28 @@ BVHData buildBVH(const PrimitiveBounds* primitives, size_t count,
     if (!primitives || count == 0) return data;
     if (count > std::numeric_limits<uint32_t>::max()) return data;
 
-    std::vector<uint32_t> indices(count);
-    std::iota(indices.begin(), indices.end(), 0u);
+    try {
+        checkCancellation(options);
+        std::vector<uint32_t> indices(count);
+        std::iota(indices.begin(), indices.end(), 0u);
 
-    BuildContext ctx;
-    ctx.primitives = primitives;
-    ctx.options = options;
-    ctx.indices = indices.data();
-    ctx.result.nodes.reserve(nodeCapacity(count, options.leafSize));
-    ctx.result.primitiveIndices.reserve(count);
+        BuildContext ctx;
+        ctx.primitives = primitives;
+        ctx.options = options;
+        ctx.indices = indices.data();
+        ctx.result.nodes.reserve(nodeCapacity(count, options.leafSize));
+        ctx.result.primitiveIndices.reserve(count);
 
-    const int maxDepth = parallelSplitDepth(count, options);
-    if (maxDepth > 0) {
-        buildParallel(ctx, count, maxDepth);
-    } else {
-        buildNode(ctx, 0, count);
+        const int maxDepth = parallelSplitDepth(count, options);
+        if (maxDepth > 0) {
+            buildParallel(ctx, count, maxDepth);
+        } else {
+            buildNode(ctx, 0, count);
+        }
+        return std::move(ctx.result);
+    } catch (const BuildCancelled&) {
+        return {};
     }
-    return std::move(ctx.result);
 }
 
 BVHData buildSphereBVH(const float* posX,

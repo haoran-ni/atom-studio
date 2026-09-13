@@ -44,12 +44,12 @@ public slots:
      * @brief Start loading a file asynchronously
      * @param filePath Path to the file to load
      */
-    void loadFile(const QString& filePath);
+    virtual void loadFile(const QString& filePath);
 
     /**
      * @brief Cancel current loading operation
      */
-    void cancel();
+    virtual void cancel();
 
 signals:
     /**

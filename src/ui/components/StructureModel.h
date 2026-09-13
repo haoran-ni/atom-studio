@@ -6,12 +6,17 @@
 #include <QStringList>
 #include <QQmlEngine>
 #include <QtQml/qqmlregistration.h>
+#include "StructureDocument.h"
+#include <QFutureWatcher>
+#include <atomic>
+#include <vector>
 #include <array>
 #include <cstddef>
 #include <memory>
 
 namespace atom::data {
 class Structure;
+class BondList;
 struct ConnectedSelection;
 }
 
@@ -27,6 +32,10 @@ class StructureModel : public QObject {
     QML_ELEMENT
     QML_SINGLETON
 
+    Q_PROPERTY(int structureCount READ structureCount NOTIFY structuresChanged)
+    Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeStructureChanged)
+    Q_PROPERTY(qint64 activeId READ activeId NOTIFY activeStructureChanged)
+    Q_PROPERTY(bool switchingLocked READ switchingLocked WRITE setSwitchingLocked NOTIFY switchingLockedChanged)
     Q_PROPERTY(bool hasStructure READ hasStructure NOTIFY structureChanged)
     Q_PROPERTY(QString fileName READ fileName NOTIFY structureChanged)
     Q_PROPERTY(QString structureName READ structureName NOTIFY structureChanged)
@@ -35,6 +44,7 @@ class StructureModel : public QObject {
     Q_PROPERTY(int atomTypeCount READ atomTypeCount NOTIFY structureChanged)
     Q_PROPERTY(QStringList elements READ elements NOTIFY structureChanged)
     Q_PROPERTY(bool hasUnitCell READ hasUnitCell NOTIFY structureChanged)
+    Q_PROPERTY(bool hasReplicableStructures READ hasReplicableStructures NOTIFY structuresChanged)
     Q_PROPERTY(bool hasBonds READ hasBonds NOTIFY structureChanged)
     Q_PROPERTY(QString cellParameters READ cellParameters NOTIFY structureChanged)
     Q_PROPERTY(int replicationX READ replicationX NOTIFY replicationFactorsChanged)
@@ -54,11 +64,21 @@ public:
     static StructureModel* instance() { return s_instance; }
 
     /** Returns the working (possibly modified) structure shown in the viewport. */
-    std::shared_ptr<data::Structure> structure() const { return m_structure; }
+    std::shared_ptr<data::Structure> structure() const { return m_active->current; }
 
     /** Returns the original structure as loaded from file (never modified). */
-    std::shared_ptr<data::Structure> originalStructure() const { return m_originalStructure; }
+    std::shared_ptr<const data::Structure> originalStructure() const { return m_active->raw; }
 
+    int structureCount() const { return static_cast<int>(m_documents.size()); }
+    int activeIndex() const { return m_activeIndex; }
+    qint64 activeId() const { return m_active->id; }
+    bool switchingLocked() const { return m_switchingLocked; }
+    void addStructure(std::shared_ptr<data::Structure> structure);
+    Q_INVOKABLE void setActiveIndex(int index);
+    void setSwitchingLocked(bool locked);
+    void applySharedAppearance(int colorScheme, float bondRadius);
+    void ensureBonds(float scale);
+    bool isDetectingBonds() const { return m_bondRunning || m_bondPending; }
     bool hasStructure() const;
     QString fileName() const;
     QString structureName() const;
@@ -67,11 +87,13 @@ public:
     int atomTypeCount() const;
     QStringList elements() const;
     bool hasUnitCell() const;
+    bool hasReplicableStructures() const;
+    float maximumViewExtent() const;
     bool hasBonds() const;
     QString cellParameters() const;
-    int replicationX() const { return m_replicationFactors[0]; }
-    int replicationY() const { return m_replicationFactors[1]; }
-    int replicationZ() const { return m_replicationFactors[2]; }
+    int replicationX() const { return m_replication[0]; }
+    int replicationY() const { return m_replication[1]; }
+    int replicationZ() const { return m_replication[2]; }
     int selectionMode() const;
     bool selectionEnabled() const;
     int selectedAtomCount() const;
@@ -101,6 +123,10 @@ public slots:
     void notifyBondsUpdated();
 
 signals:
+    void structuresChanged();
+    void activeStructureChanged();
+    void switchingLockedChanged();
+    void structureActivated(std::shared_ptr<data::Structure> structure, bool firstStructure);
     void structureChanged();
     void replicationFactorsChanged();
     void selectionModeChanged();
@@ -122,11 +148,32 @@ private:
     void emitSelectionResetSignals();
     void setReplicationFactors(int nx, int ny, int nz);
 
-    std::shared_ptr<data::Structure> m_originalStructure;  // immutable — set once on load
-    std::shared_ptr<data::Structure> m_structure;          // working copy shown in viewport
-    std::array<int, 3> m_replicationFactors{1, 1, 1};
-    QStringList m_elements;
-    int m_selectionMode = 0;
+    std::vector<std::shared_ptr<StructureDocument>> m_documents;
+    std::array<int, 3> m_replication{1, 1, 1};
+    std::shared_ptr<StructureDocument> m_active = std::make_shared<StructureDocument>();
+    qint64 m_nextId = 0;
+    int m_activeIndex = -1;
+    bool m_switchingLocked = false;
+    int m_deferredIndex = -1;
+
+    struct BondResult {
+        std::shared_ptr<data::BondList> bonds;
+        std::shared_ptr<data::Structure> source;
+        quint64 revision;
+        float scale;
+    };
+    QFutureWatcher<BondResult>* m_bondWatcher = nullptr;
+    std::shared_ptr<std::atomic_bool> m_bondCancellation;
+    quint64 m_bondRevision = 0;
+    bool m_bondRunning = false;
+    bool m_bondPending = false;
+    float m_requestedBondScale = 1.1f;
+    int m_colorScheme = 0;
+    float m_bondRadius = 0.1f;
+    void cancelBondDetection();
+    void launchBondDetection();
+    void onBondsReady();
+    void nameCurrentStructure();
 
     static StructureModel* s_instance;
 };

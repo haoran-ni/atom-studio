@@ -9,7 +9,6 @@
 #include "../../render/metal/MetalRayTracingRenderer.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
-#include "../../data/NeighborList.h"
 
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
@@ -21,8 +20,6 @@
 #include <QDebug>
 #include <QMetaObject>
 #include <QRunnable>
-#include <QFutureWatcher>
-#include <QtConcurrent>
 #include <algorithm>
 #include <vector>
 
@@ -171,6 +168,8 @@ MetalViewport::MetalViewport(QQuickItem* parent)
     // Connect to StructureModel for file loads
     QTimer::singleShot(0, this, [this]() {
         if (auto* model = StructureModel::instance()) {
+            connect(model, &StructureModel::structureActivated,
+                    this, &MetalViewport::activateStructure);
             connect(model, &StructureModel::structureUpdated,
                     this, &MetalViewport::setStructure);
             connect(model, &StructureModel::structureEdited,
@@ -179,6 +178,7 @@ MetalViewport::MetalViewport(QQuickItem* parent)
                     this, &MetalViewport::onStructureStyleChanged);
             connect(model, &StructureModel::structureGeometryChanged,
                     this, &MetalViewport::onStructureGeometryChanged);
+            if (model->structure()) activateStructure(model->structure(), true);
         }
     });
 }
@@ -258,25 +258,26 @@ QVariantList MetalViewport::getAxisDirections() const {
 // ---------------------------------------------------------------------------
 
 void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
-    m_structure = structure;
-    setHoverStatus(QString());
-    if (m_structure) {
-        const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
-        m_structure->updateColorsFromElements(scheme);
-        m_structure->updateBondColorsFromElements(scheme);
-    }
-    m_needsStructureUpdate = true;
+    activateStructure(std::move(structure), true);
+}
 
+void MetalViewport::activateStructure(std::shared_ptr<data::Structure> structure, bool firstStructure) {
+    m_structure = std::move(structure);
+    setHoverStatus(QString());
+    m_pressedButtons = Qt::NoButton;
+    m_sceneSwitchPending = true;
+    m_needsStructureUpdate = true;
+    m_sampleCount = 0;
+    emit sampleCountChanged();
+    ++m_requestedFrameToken;
     emit atomCountChanged();
     emit bondCountChanged();
-
     if (m_structure) {
-        if (m_autoFitOnLoad) {
-            fitToView();
-        } else {
-            updateCameraForStructure(false);
-            emit cameraChanged();
-        }
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+        // Share orientation, zoom and relative pan, but orbit this structure's center.
+        updateCameraForStructure(firstStructure && m_autoFitOnLoad);
+        emit cameraChanged();
         startBondDetection();
     }
     update();
@@ -284,8 +285,6 @@ void MetalViewport::setStructure(std::shared_ptr<data::Structure> structure) {
 
 void MetalViewport::setEditedStructure(std::shared_ptr<data::Structure> structure) {
     m_structure = structure;
-    m_bondTaskPending = false;
-    m_pendingStructure.reset();
     setHoverStatus(QString());
     m_needsStructureUpdate = true;
 
@@ -306,9 +305,12 @@ void MetalViewport::updateCameraForStructure(bool fitScale) {
 
     extent = extent > 0 ? extent : 10.0f;
     if (fitScale) {
+        // One scale must accommodate every centered structure after a global edit.
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            extent = std::max(extent, model->maximumViewExtent());
         m_camera->fitToView(center, extent);
     } else {
-        m_camera->setTarget(center);
+        m_camera->setSceneCenter(center);
         m_camera->setSceneExtent(extent);
     }
 }
@@ -416,8 +418,12 @@ void MetalViewport::setAtomColorScheme(int scheme) {
 
     if (m_structure) {
         const auto scheme = colorSchemeFromIndex(m_atomColorScheme);
-        m_structure->updateColorsFromElements(scheme);
-        m_structure->updateBondColorsFromElements(scheme);
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+        else {
+            m_structure->updateColorsFromElements(scheme, true);
+            m_structure->updateBondColorsFromElements(scheme, true);
+        }
         m_needsAppearanceUpdate = true;  // colors only — geometry unchanged
     }
     update();
@@ -450,7 +456,9 @@ void MetalViewport::setBondRadius(float radius) {
     if (!qFuzzyCompare(m_bondRadius, clamped)) {
         m_bondRadius = clamped;
         if (m_structure) {
-            m_structure->bonds().setAllRadii(m_bondRadius);
+            if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+                model->applySharedAppearance(m_atomColorScheme, m_bondRadius);
+            else m_structure->bonds().setAllRadii(m_bondRadius, true);
             m_needsStructureUpdate = true;
         }
         emit bondRadiusChanged();
@@ -462,63 +470,8 @@ void MetalViewport::setBondRadius(float radius) {
 }
 
 void MetalViewport::startBondDetection() {
-    if (!m_structure) return;
-
-    if (m_bondTaskRunning) {
-        // Coalesce: remember the latest request; launchBondTask will pick it up.
-        m_bondTaskPending  = true;
-        m_pendingStructure = m_structure;
-        m_pendingScale     = m_bondScale;
-        return;
-    }
-    launchBondTask(m_structure, m_bondScale);
-}
-
-void MetalViewport::launchBondTask(
-    std::shared_ptr<data::Structure> structure, float scale)
-{
-    if (!m_bondWatcher) {
-        m_bondWatcher = new QFutureWatcher<BondResult>(this);
-        connect(m_bondWatcher, &QFutureWatcher<BondResult>::finished,
-                this, &MetalViewport::onBondsReady);
-    }
-    m_bondTaskRunning = true;
-    m_bondTaskPending = false;
-
-    m_bondWatcher->setFuture(
-        QtConcurrent::run([structure, scale]() -> BondResult {
-            data::NeighborList nl;
-            nl.build(*structure, scale);
-            return {nl.buildBondList(*structure, scale), structure};
-        }));
-}
-
-void MetalViewport::onBondsReady() {
-    m_bondTaskRunning = false;
-
-    if (m_bondWatcher && m_structure) {
-        BondResult result = m_bondWatcher->result();
-        // Discard if the structure has changed since the task was launched.
-        if (result.structure == m_structure && result.bonds) {
-            result.bonds->setAllRadii(m_bondRadius);
-            m_structure->setBondList(std::move(result.bonds));
-            m_structure->updateBondColorsFromElements(colorSchemeFromIndex(m_atomColorScheme));
-            m_needsStructureUpdate = true;
-            emit bondCountChanged();
-            if (auto* model = StructureModel::instance())
-                model->notifyBondsUpdated();
-            if (!m_hoverStatus.isEmpty()) {
-                updateHoverStatus(m_lastMousePos);
-            }
-            update();
-        }
-    }
-
-    if (m_bondTaskPending && m_pendingStructure) {
-        auto s   = std::move(m_pendingStructure);
-        float sc = m_pendingScale;
-        launchBondTask(std::move(s), sc);
-    }
+    if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+        model->ensureBonds(m_bondScale);
 }
 
 void MetalViewport::setRendererMode(int mode) {
@@ -779,6 +732,18 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
         m_impl->activeRenderer = m_impl->rasterRenderer.get();
         m_impl->currentMode = 0;
         m_metalInitialized = true;
+    }
+
+    if (m_sceneSwitchPending) {
+        // Retain only the last displayed image until the new scene is ready.
+        // Release old geometry now and reject obsolete in-flight completions.
+        // The renderer reserves the presented texture slot against GPU writes.
+        m_impl->rasterRenderer->releaseStructure();
+        if (m_impl->rtRenderer) m_impl->rtRenderer->releaseStructure();
+        m_impl->preparedGeometry.reset();
+        m_impl->renderedStructure.reset();
+        m_lastRasterFrameHash = 0;
+        m_sceneSwitchPending = false;
     }
 
     // 3. Handle renderer mode switching
@@ -1173,6 +1138,7 @@ void MetalViewport::onStructureStyleChanged() {
 }
 
 void MetalViewport::onStructureGeometryChanged() {
+    emit bondCountChanged();
     m_needsStructureUpdate = true;
     update();
 }

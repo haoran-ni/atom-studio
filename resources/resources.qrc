@@ -3,6 +3,7 @@
     <qresource prefix="/qml">
         <file alias="Main.qml">../src/ui/qml/Main.qml</file>
         <file alias="Sidebar.qml">../src/ui/qml/Sidebar.qml</file>
+        <file alias="StructureSwitcher.qml">../src/ui/qml/StructureSwitcher.qml</file>
         <file alias="ViewportPanel.qml">../src/ui/qml/ViewportPanel.qml</file>
         <file alias="CollapsibleSection.qml">../src/ui/qml/CollapsibleSection.qml</file>
         <file alias="PropertyRow.qml">../src/ui/qml/PropertyRow.qml</file>

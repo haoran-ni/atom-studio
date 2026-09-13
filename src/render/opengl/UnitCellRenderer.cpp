@@ -182,6 +182,12 @@ void UnitCellRenderer::setUnitCellData(const data::Structure* structure) {
     if (!structure || !structure->hasLattice()) {
         m_edgeCount = 0;
         m_jointCount = 0;
+        m_edgeStartBuffer.bind(); m_edgeStartBuffer.allocate(0); m_edgeStartBuffer.release();
+        m_edgeEndBuffer.bind(); m_edgeEndBuffer.allocate(0); m_edgeEndBuffer.release();
+        m_edgeColorBuffer.bind(); m_edgeColorBuffer.allocate(0); m_edgeColorBuffer.release();
+        m_edgeRadiusBuffer.bind(); m_edgeRadiusBuffer.allocate(0); m_edgeRadiusBuffer.release();
+        m_jointPosRadiusBuffer.bind(); m_jointPosRadiusBuffer.allocate(0); m_jointPosRadiusBuffer.release();
+        m_jointColorBuffer.bind(); m_jointColorBuffer.allocate(0); m_jointColorBuffer.release();
         return;
     }
 

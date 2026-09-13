@@ -4,6 +4,7 @@
 #include "Structure.h"
 
 #include <cstdint>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -56,7 +57,7 @@ public:
      * @param scale       Bond scale factor: bond exists if dist < (r_cov_i + r_cov_j) * scale.
      *                    Determines the global cutoff used for the cell grid.
      */
-    void build(const Structure& structure, float scale);
+    void build(const Structure& structure, float scale, const std::atomic_bool* cancelled = nullptr);
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ public:
      * @param scale     Bond scale factor.
      * @return New BondList (heap-allocated).
      */
-    std::shared_ptr<BondList> buildBondList(const Structure& structure, float scale) const;
+    std::shared_ptr<BondList> buildBondList(const Structure& structure, float scale, const std::atomic_bool* cancelled = nullptr) const;
 
 private:
     // ── Internal helpers ────────────────────────────────────────────────────
@@ -110,6 +111,8 @@ private:
         int8_t& imgX, int8_t& imgY, int8_t& imgZ,
         const Lattice& lattice,
         const std::array<bool, 3>& pbc);
+
+    const std::atomic_bool* m_cancelled = nullptr;
 
     // ── CSR storage ─────────────────────────────────────────────────────────
     std::vector<NeighborEntry> m_neighbors; // flat neighbor array

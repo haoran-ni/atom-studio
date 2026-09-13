@@ -4,6 +4,7 @@
 #include <QString>
 #include <QStringList>
 #include <QUrl>
+#include <QQueue>
 #include <QQmlEngine>
 #include <QtQml/qqmlregistration.h>
 #include <memory>
@@ -36,7 +37,8 @@ class FileController : public QObject {
     Q_PROPERTY(QStringList structureExportFormats READ structureExportFormats CONSTANT)
 
 public:
-    explicit FileController(QObject* parent = nullptr);
+    explicit FileController(QObject* parent = nullptr,
+                            std::unique_ptr<io::AsyncFileLoader> loader = {});
     ~FileController() override;
 
     static FileController* create(QQmlEngine* qmlEngine, QJSEngine* jsEngine);
@@ -64,6 +66,8 @@ public slots:
      * @brief Load a file by URL
      */
     void loadFileUrl(const QUrl& fileUrl);
+    void loadFileUrls(const QList<QUrl>& fileUrls);
+    void loadFiles(const QStringList& filePaths);
 
     /**
      * @brief Cancel current loading operation
@@ -121,6 +125,9 @@ private slots:
 private:
     std::unique_ptr<io::AsyncFileLoader> m_loader;
     std::unique_ptr<io::AsyncStructureExporter> m_exporter;
+    QQueue<QString> m_pendingFiles;
+    void startNextLoad();
+    void continueLoading();
     QString m_currentFilePath;
     QString m_loadStatus;
     float m_loadProgress = 0.0f;

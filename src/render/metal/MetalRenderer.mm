@@ -145,6 +145,16 @@ void MetalRenderer::resize(int width, int height) {
     createRenderTargets();
 }
 
+void MetalRenderer::releaseStructure() {
+    setStructure(nullptr);
+    m_sphereRenderer.setAtomData(nullptr);
+    m_bondRenderer.setBondData(nullptr);
+    m_unitCellRenderer.setUnitCellData(nullptr);
+    m_outputGeneration = invalidateOutput(*m_impl->asyncState, true);
+    // Qt still displays this slot while the next scene is prepared.
+    // Keep it reserved until a replacement frame is actually presented.
+}
+
 void MetalRenderer::setStructure(const data::Structure* structure) {
     m_preparedGeometry.reset();
     m_structure = structure;

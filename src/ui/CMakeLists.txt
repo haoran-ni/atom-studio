@@ -9,6 +9,7 @@ set(UI_SHARED_SOURCES
     components/FileController.h
     components/StructureModel.cpp
     components/StructureModel.h
+    components/StructureDocument.h
     components/ViewportSelection.cpp
     components/ViewportSelection.h
 )
@@ -91,6 +92,10 @@ endif()
 
 # Exercise structure export and QML controls without an embedded Python runtime.
 if(BUILD_TESTING)
+    add_executable(atom-ui-multiple-structures-test tests/MultipleStructuresTest.cpp)
+    target_link_libraries(atom-ui-multiple-structures-test PRIVATE atom-ui)
+    add_test(NAME atom-ui-multiple-structures COMMAND atom-ui-multiple-structures-test -platform offscreen)
+    set_tests_properties(atom-ui-multiple-structures PROPERTIES TIMEOUT 45)
     if(APPLE)
         add_executable(atom-ui-metal-viewport-test tests/MetalViewportTest.mm)
         target_link_libraries(atom-ui-metal-viewport-test PRIVATE atom-ui)

@@ -131,5 +131,36 @@ int main() {
         return 1;
     }
 
+    // Switching translated structures shares pan/orientation/zoom relative to
+    // each structure's center, including repeated A -> B -> A switches.
+    for (bool perspective : {true, false}) {
+        Camera centered;
+        centered.setProjection(perspective);
+        const QVector3D firstCenter(2, 3, 4), secondCenter(102, -17, 9);
+        centered.fitToView(firstCenter, 12);
+        centered.orbit(17, -11);
+        centered.zoom(.7f);
+        centered.pan(24, -9);
+        const auto panOffset = centered.target() - firstCenter;
+        const auto originalPosition = centered.position();
+        const auto originalOrientation = centered.orientation();
+        const auto originalProjection = centered.projectionMatrix();
+        centered.setSceneCenter(secondCenter);
+        if ((centered.target() - secondCenter - panOffset).length() > 1e-4f
+                || (centered.position() - originalPosition - secondCenter + firstCenter).length() > 1e-4f
+                || centered.orientation() != originalOrientation
+                || centered.projectionMatrix() != originalProjection) {
+            std::cerr << "Changing structure center lost the shared relative view\n";
+            return 1;
+        }
+        centered.setSceneCenter(firstCenter);
+        if ((centered.position() - originalPosition).length() > 1e-4f) return 1;
+        centered.fitToView(secondCenter, 30);
+        centered.setSceneCenter(firstCenter);
+        if (centered.target() != firstCenter) {
+            std::cerr << "Fit did not reset the shared pan offset\n";
+            return 1;
+        }
+    }
     return 0;
 }

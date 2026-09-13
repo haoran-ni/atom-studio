@@ -139,6 +139,11 @@ void BondRenderer::setBondData(const data::Structure* structure) {
 
     if (!structure || structure->bonds().bondCount() == 0) {
         m_bondCount = 0;
+        m_instanceStartBuffer.bind(); m_instanceStartBuffer.allocate(0); m_instanceStartBuffer.release();
+        m_instanceEndBuffer.bind(); m_instanceEndBuffer.allocate(0); m_instanceEndBuffer.release();
+        m_instanceStartColorBuffer.bind(); m_instanceStartColorBuffer.allocate(0); m_instanceStartColorBuffer.release();
+        m_instanceEndColorBuffer.bind(); m_instanceEndColorBuffer.allocate(0); m_instanceEndColorBuffer.release();
+        m_instanceRadiusBuffer.bind(); m_instanceRadiusBuffer.allocate(0); m_instanceRadiusBuffer.release();
         return;
     }
 

@@ -102,7 +102,7 @@ Item {
             verify(sidebar.maxRTSamplesErrorMessage.length > 0)
         }
 
-        function test_countsSurviveCollapseAndResetOnLoad() {
+        function test_countsSurviveCollapseAndReset() {
             mouseClick(control("X", "Up"))
             section.expanded = false
             tryCompare(section, "expansion", 0)
@@ -111,9 +111,9 @@ Item {
             compare(control("X", "Input").text, "2")
             mouseClick(control("Y", "Up"))
             StructureModel.resetToOriginal()
-            compare(control("X", "Input").text, "1")
-            compare(control("Y", "Input").text, "1")
-            compare(StructureModel.atomCount, 2)
+            compare(control("X", "Input").text, "2")
+            compare(control("Y", "Input").text, "2")
+            compare(StructureModel.atomCount, 8)
             mouseClick(control("Z", "Up"))
             ReplicationFixture.load()
             compare(control("Z", "Input").text, "1")
@@ -124,6 +124,25 @@ Item {
             StructureModel.clear()
             compare(StructureModel.replicationX, 1)
             verify(!control("X", "Input").enabled)
+        }
+
+        function test_globalReplicationAndNewImports() {
+            ReplicationFixture.add()
+            mouseClick(control("X", "Up"))
+            compare(StructureModel.atomCount, 4)
+            StructureModel.setActiveIndex(0)
+            compare(StructureModel.atomCount, 4)
+            compare(control("X", "Input").text, "2")
+            ReplicationFixture.add()
+            compare(StructureModel.atomCount, 4)
+            ReplicationFixture.add(false)
+            compare(StructureModel.atomCount, 2)
+            verify(control("Y", "Up").enabled)
+            mouseClick(control("Y", "Up"))
+            compare(StructureModel.atomCount, 2)
+            StructureModel.setActiveIndex(0)
+            compare(StructureModel.atomCount, 8)
+            compare(control("Y", "Input").text, "2")
         }
 
         function test_replicationDiscardsWorkingEdits() {

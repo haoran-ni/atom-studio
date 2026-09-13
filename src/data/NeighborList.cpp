@@ -47,8 +47,9 @@ void NeighborList::applyMIC(float& dx, float& dy, float& dz,
 // build()
 // ============================================================================
 
-void NeighborList::build(const Structure& structure, float scale)
+void NeighborList::build(const Structure& structure, float scale, const std::atomic_bool* cancelled)
 {
+    m_cancelled = cancelled;
     const size_t n = structure.atomCount();
     m_atomCount = n;
     m_offsets.assign(n + 1, 0u);
@@ -71,6 +72,7 @@ void NeighborList::build(const Structure& structure, float scale)
 
     activeAtoms.reserve(n);
     for (size_t i = 0; i < n; ++i) {
+        if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
         auto r = ElementData::covalentRadius(atomicNums[i]);
         if (r.has_value()) {
             covRadii[i] = r.value();
@@ -134,6 +136,7 @@ void NeighborList::buildCellList(
         float zmax = -std::numeric_limits<float>::max();
 
         for (uint32_t idx : activeAtoms) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             xmin = std::min(xmin, posX[idx]);
             ymin = std::min(ymin, posY[idx]);
             zmin = std::min(zmin, posZ[idx]);
@@ -171,10 +174,12 @@ void NeighborList::buildCellList(
         };
 
         for (uint32_t idx : activeAtoms) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             cellAtoms[cellOf(posX[idx], posY[idx], posZ[idx])].push_back(idx);
         }
 
         for (uint32_t i : activeAtoms) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             const float xi = posX[i];
             const float yi = posY[i];
             const float zi = posZ[i];
@@ -236,6 +241,7 @@ void NeighborList::buildCellList(
         float zmax = -std::numeric_limits<float>::max();
 
         for (uint32_t idx : activeAtoms) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             auto frac = lattice.cartesianToFractional(
                 static_cast<double>(posX[idx]),
                 static_cast<double>(posY[idx]),
@@ -276,6 +282,7 @@ void NeighborList::buildCellList(
             const int maxImgZ = pbc[2] ?  1 : 0;
 
             for (int imgZ = minImgZ; imgZ <= maxImgZ; ++imgZ) {
+                if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
                 for (int imgY = minImgY; imgY <= maxImgY; ++imgY) {
                     for (int imgX = minImgX; imgX <= maxImgX; ++imgX) {
                         const float rx = principalX[idx] + static_cast<float>(
@@ -331,12 +338,14 @@ void NeighborList::buildCellList(
         };
 
         for (size_t imageIdx = 0; imageIdx < imageAtoms.size(); ++imageIdx) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             const auto& image = imageAtoms[imageIdx];
             cellImages[cellOf(image.x, image.y, image.z)].push_back(
                 static_cast<uint32_t>(imageIdx));
         }
 
         for (uint32_t i : activeAtoms) {
+            if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
             const float xi = principalX[i];
             const float yi = principalY[i];
             const float zi = principalZ[i];
@@ -392,6 +401,7 @@ void NeighborList::buildCellList(
     // Sort and unique each list to collapse identical {index, imgX, imgY, imgZ}
     // tuples before CSR packing.
     for (auto& neighbors : perAtom) {
+        if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
         std::sort(neighbors.begin(), neighbors.end(),
             [](const NeighborEntry& a, const NeighborEntry& b) {
                 if (a.index  != b.index)  return a.index  < b.index;
@@ -413,11 +423,13 @@ void NeighborList::buildCellList(
     // ── Pack into CSR ────────────────────────────────────────────────────────
     m_offsets[0] = 0;
     for (size_t i = 0; i < atomCount; ++i) {
+        if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
         m_offsets[i + 1] = m_offsets[i] + static_cast<uint32_t>(perAtom[i].size());
     }
 
     m_neighbors.resize(m_offsets[atomCount]);
     for (size_t i = 0; i < atomCount; ++i) {
+        if (m_cancelled && m_cancelled->load(std::memory_order_relaxed)) return;
         std::copy(perAtom[i].begin(), perAtom[i].end(),
                   m_neighbors.begin() + m_offsets[i]);
     }
@@ -428,7 +440,7 @@ void NeighborList::buildCellList(
 // ============================================================================
 
 std::shared_ptr<BondList> NeighborList::buildBondList(
-    const Structure& structure, float scale) const
+    const Structure& structure, float scale, const std::atomic_bool* cancelled) const
 {
     auto bonds = std::make_shared<BondList>();
     if (m_atomCount == 0 || m_neighbors.empty()) return bonds;
@@ -440,6 +452,7 @@ std::shared_ptr<BondList> NeighborList::buildBondList(
     const Lattice& lattice  = structure.lattice();
 
     for (size_t i = 0; i < m_atomCount; ++i) {
+        if (cancelled && cancelled->load(std::memory_order_relaxed)) return nullptr;
         auto ri_opt = ElementData::covalentRadius(atomicNums[i]);
         if (!ri_opt.has_value()) continue;
         float ri = ri_opt.value();

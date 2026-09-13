@@ -10,6 +10,9 @@ void BondList::reserve(size_t count) {
     m_startColors.reserve(count);
     m_endColors.reserve(count);
     m_selected.reserve(count);
+    m_radiusOverrides.reserve(count);
+    m_startOverrides.reserve(count);
+    m_endOverrides.reserve(count);
 }
 
 void BondList::clear() {
@@ -18,6 +21,9 @@ void BondList::clear() {
     m_startColors.clear();
     m_endColors.clear();
     m_selected.clear();
+    m_radiusOverrides.clear();
+    m_startOverrides.clear();
+    m_endOverrides.clear();
 }
 
 size_t BondList::addBond(uint32_t atomIndex1, uint32_t atomIndex2,
@@ -38,6 +44,9 @@ size_t BondList::addBond(uint32_t atomIndex1, uint32_t atomIndex2,
     m_startColors.emplace_back(1.0f, 1.0f, 1.0f);
     m_endColors.emplace_back(1.0f, 1.0f, 1.0f);
     m_selected.push_back(0);
+    m_radiusOverrides.push_back(0);
+    m_startOverrides.push_back(0);
+    m_endOverrides.push_back(0);
     return index;
 }
 
@@ -48,6 +57,9 @@ void BondList::removeBond(size_t bondIndex) {
         m_startColors.erase(m_startColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_endColors.erase(m_endColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_selected.erase(m_selected.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_radiusOverrides.erase(m_radiusOverrides.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_startOverrides.erase(m_startOverrides.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_endOverrides.erase(m_endOverrides.begin() + static_cast<std::ptrdiff_t>(bondIndex));
     }
 }
 
@@ -88,25 +100,30 @@ std::vector<size_t> BondList::bondsForAtom(uint32_t atomIndex) const {
     return result;
 }
 
-void BondList::setRadius(size_t bondIndex, float radius) {
+void BondList::setRadius(size_t bondIndex, float radius, bool custom) {
     if (bondIndex < m_radii.size()) {
         m_radii[bondIndex] = radius;
+        m_radiusOverrides[bondIndex] = custom;
     }
 }
 
-void BondList::setAllRadii(float radius) {
-    std::fill(m_radii.begin(), m_radii.end(), radius);
+void BondList::setAllRadii(float radius, bool preserveOverrides) {
+    for (size_t i = 0; i < m_radii.size(); ++i) {
+        if (!preserveOverrides || !m_radiusOverrides[i]) setRadius(i, radius);
+    }
 }
 
-void BondList::setStartColor(size_t bondIndex, Color color) {
+void BondList::setStartColor(size_t bondIndex, Color color, bool custom) {
     if (bondIndex < m_startColors.size()) {
         m_startColors[bondIndex] = color;
+        m_startOverrides[bondIndex] = custom;
     }
 }
 
-void BondList::setEndColor(size_t bondIndex, Color color) {
+void BondList::setEndColor(size_t bondIndex, Color color, bool custom) {
     if (bondIndex < m_endColors.size()) {
         m_endColors[bondIndex] = color;
+        m_endOverrides[bondIndex] = custom;
     }
 }
 
@@ -114,6 +131,7 @@ void BondList::setEndpointColors(size_t bondIndex, Color startColor, Color endCo
     if (bondIndex < m_startColors.size() && bondIndex < m_endColors.size()) {
         m_startColors[bondIndex] = startColor;
         m_endColors[bondIndex] = endColor;
+        m_startOverrides[bondIndex] = m_endOverrides[bondIndex] = 0;
     }
 }
 

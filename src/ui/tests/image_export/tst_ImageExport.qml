@@ -16,7 +16,39 @@ Item {
         name: "ImageExport"
         when: windowShown
 
-        function init() { ExportFiles.clear() }
+        function init() {
+            ExportFiles.clear()
+            StructureModel.structureCount = 3
+            StructureModel.activeIndex = 0
+            FileController.loadedUrls = []
+        }
+
+        function test_dropAllFiles() {
+            var panel = createTemporaryObject(panelComponent, parent)
+            verify(waitForRendering(panel))
+            verify(ExportFiles.dropFiles(panel))
+            compare(FileController.loadedUrls.length, 2)
+            compare(FileController.loadedUrls[0].toString(), "file:///tmp/first.xyz")
+            compare(FileController.loadedUrls[1].toString(), "file:///tmp/second.xyz")
+        }
+
+        function test_switcher() {
+            var panel = createTemporaryObject(panelComponent, parent)
+            var switcher = findChild(panel, "structureSwitcher")
+            verify(switcher.visible)
+            verify(waitForRendering(panel))
+            var slider = findChild(panel, "structureSlider")
+            mouseClick(slider, slider.width - 1, slider.height / 2)
+            compare(StructureModel.activeIndex, 2)
+            var previous = findChild(panel, "previousStructure")
+            mouseClick(previous)
+            compare(StructureModel.activeIndex, 1)
+            slider.forceActiveFocus()
+            keyClick(Qt.Key_Left)
+            compare(StructureModel.activeIndex, 0)
+            StructureModel.structureCount = 1
+            verify(!switcher.visible)
+        }
 
         function test_waitsForRequestedFrame_data() {
             return [
@@ -32,9 +64,14 @@ Item {
             var panel = createTemporaryObject(panelComponent, parent)
             verify(panel !== null)
             var viewport = panel.viewport
+            var switcher = findChild(panel, "structureSwitcher")
+            switcher.color = "magenta"
+            verify(switcher.visible)
             viewport.backgroundColor = Qt.rgba(1, 1, 1, data.initialAlpha)
             FileController.saveImagePathSelected(ExportFiles.outputPath, ".png", data.axes, data.transparent)
 
+            verify(!switcher.visible)
+            verify(StructureModel.switchingLocked)
             viewport.presentOldFrame()
             wait(100) // Allow any incorrectly started grabToImage callback to finish.
             verify(panel.imageExportInProgress, "An old frame must not finish the export")
@@ -43,6 +80,10 @@ Item {
             viewport.presentRequestedFrame()
             tryCompare(panel, "imageExportInProgress", false)
             verify(ExportFiles.exists())
+            verify(switcher.visible)
+            verify(!StructureModel.switchingLocked)
+            var sliderPixel = ExportFiles.pixel(240, 315)
+            compare(sliderPixel.r, sliderPixel.g, "Switcher must be absent from exports")
             // Qt's software Canvas capture flattens alpha when the QML axes
             // labels are visible. Native GPU checks cover that combination.
             if (!data.axes) {

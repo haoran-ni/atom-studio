@@ -230,6 +230,7 @@ std::unique_ptr<Structure> Structure::clone() const {
     s->m_colorG = m_colorG;
     s->m_colorB = m_colorB;
     s->m_selectedAtoms = m_selectedAtoms;
+    s->m_colorOverrides = m_colorOverrides;
 
     s->m_lattice = m_lattice;
     s->m_bonds   = std::make_shared<BondList>(*m_bonds);
@@ -253,6 +254,7 @@ void Structure::reserve(size_t count) {
     m_colorG.reserve(count);
     m_colorB.reserve(count);
     m_selectedAtoms.reserve(count);
+    m_colorOverrides.reserve(count);
 }
 
 void Structure::resize(size_t count) {
@@ -266,6 +268,7 @@ void Structure::resize(size_t count) {
     m_colorG.resize(count, 1.0f);
     m_colorB.resize(count, 1.0f);
     m_selectedAtoms.resize(count, 0);
+    m_colorOverrides.resize(count, 0);
     m_atomCount = count;
 }
 
@@ -280,6 +283,7 @@ void Structure::clear() {
     m_colorG.clear();
     m_colorB.clear();
     m_selectedAtoms.clear();
+    m_colorOverrides.clear();
 
     m_velX.clear();
     m_velY.clear();
@@ -314,6 +318,7 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
     m_colorG.push_back(color.g);
     m_colorB.push_back(color.b);
     m_selectedAtoms.push_back(0);
+    m_colorOverrides.push_back(0);
 
     return index;
 }
@@ -370,8 +375,10 @@ void Structure::clearMasses() {
     m_masses.clear();
 }
 
-void Structure::updateColorsFromElements(ElementColorScheme scheme) {
+void Structure::updateColorsFromElements(ElementColorScheme scheme, bool preserveOverrides) {
     for (size_t i = 0; i < m_atomCount; ++i) {
+        if (preserveOverrides && m_colorOverrides[i]) continue;
+        m_colorOverrides[i] = 0;
         const auto color = ElementData::colorForElement(m_atomicNumbers[i], scheme);
         m_colorR[i] = color.r;
         m_colorG[i] = color.g;
@@ -393,17 +400,17 @@ void Structure::updateBondColorsFromAtomColors() {
     }
 }
 
-void Structure::updateBondColorsFromElements(ElementColorScheme scheme) {
+void Structure::updateBondColorsFromElements(ElementColorScheme scheme, bool preserveOverrides) {
     if (!m_bonds) return;
 
     for (size_t i = 0; i < m_bonds->bondCount(); ++i) {
         const Bond& bond = m_bonds->bond(i);
         if (bond.atomIndex1 >= m_atomCount || bond.atomIndex2 >= m_atomCount) continue;
 
-        m_bonds->setEndpointColors(
-            i,
-            ElementData::colorForElement(m_atomicNumbers[bond.atomIndex1], scheme),
-            ElementData::colorForElement(m_atomicNumbers[bond.atomIndex2], scheme));
+        if (!preserveOverrides || !m_bonds->startColorOverridden(i))
+            m_bonds->setStartColor(i, ElementData::colorForElement(m_atomicNumbers[bond.atomIndex1], scheme));
+        if (!preserveOverrides || !m_bonds->endColorOverridden(i))
+            m_bonds->setEndColor(i, ElementData::colorForElement(m_atomicNumbers[bond.atomIndex2], scheme));
     }
 }
 
@@ -485,6 +492,7 @@ bool Structure::deleteSelectedObjects() {
     compactAtomVector(m_colorR, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorG, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorB, removedAtoms, keptAtomCount);
+    compactAtomVector(m_colorOverrides, removedAtoms, keptAtomCount);
     m_selectedAtoms.assign(keptAtomCount, 0);
     m_atomCount = keptAtomCount;
 
@@ -512,11 +520,9 @@ bool Structure::deleteSelectedObjects() {
                 bond.imageY,
                 bond.imageZ,
                 bond.order);
-            rebuiltBonds->setRadius(newBondIndex, oldBonds->radius(i));
-            rebuiltBonds->setEndpointColors(
-                newBondIndex,
-                oldBonds->startColor(i),
-                oldBonds->endColor(i));
+            rebuiltBonds->setRadius(newBondIndex, oldBonds->radius(i), oldBonds->radiusOverridden(i));
+            rebuiltBonds->setStartColor(newBondIndex, oldBonds->startColor(i), oldBonds->startColorOverridden(i));
+            rebuiltBonds->setEndColor(newBondIndex, oldBonds->endColor(i), oldBonds->endColorOverridden(i));
         }
     }
     m_bonds = std::move(rebuiltBonds);

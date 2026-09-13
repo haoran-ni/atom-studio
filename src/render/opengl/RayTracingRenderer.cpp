@@ -695,6 +695,17 @@ void RayTracingRenderer::resize(int width, int height) {
     resetAccumulation();
 }
 
+void RayTracingRenderer::releaseStructure() {
+    setStructure(nullptr);
+    for (const auto& [buffer, capacity] : m_tboCapacity) {
+        glBindBuffer(GL_TEXTURE_BUFFER, buffer);
+        glBufferData(GL_TEXTURE_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    }
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    m_tboCapacity.clear();
+    uploadSceneData();
+}
+
 void RayTracingRenderer::setStructure(const data::Structure* structure) {
     m_structure = structure;
     m_atomDataDirty = true;

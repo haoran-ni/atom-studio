@@ -5,6 +5,10 @@
 #include "../../data/StructureOperations.h"
 
 #include <QFileInfo>
+#include <QtConcurrent>
+#include "../../data/NeighborList.h"
+#include <map>
+#include <tuple>
 #include <QQmlEngine>
 #include <algorithm>
 #include <cmath>
@@ -15,6 +19,24 @@ namespace atom::ui {
 StructureModel* StructureModel::s_instance = nullptr;
 
 namespace {
+
+std::shared_ptr<data::Structure> workingCopy(const data::Structure& raw, qint64 id,
+                                           const std::array<int, 3>& replication) {
+    auto current = raw.hasLattice() && replication != std::array<int, 3>{1, 1, 1}
+        ? data::replicateCell(raw, replication[0], replication[1], replication[2])
+        : raw.clone();
+    if (current) current->setName("STRUCT_" + std::to_string(id) + "_CURRENT");
+    return current;
+}
+
+void replaceWorkingCopy(StructureDocument& document, std::shared_ptr<data::Structure> current) {
+    document.current = std::move(current);
+    document.current->clearSelection();
+    document.elements.clear();
+    document.appliedColorScheme = -1;
+    document.appliedBondRadius = -1;
+    document.detectedBondScale = std::numeric_limits<float>::quiet_NaN();
+}
 
 data::ElementColorScheme colorSchemeFromIndex(int index) {
     return index == 1 ? data::ElementColorScheme::Cpk
@@ -43,11 +65,11 @@ void syncSelectedBondEndpointColorsFromSelectedAtoms(data::Structure& structure)
         const data::Bond& bond = bonds.bond(i);
         if (bond.atomIndex1 < selectedAtoms.size() && selectedAtoms[bond.atomIndex1]) {
             bonds.setStartColor(i, data::Color(
-                cr[bond.atomIndex1], cg[bond.atomIndex1], cb[bond.atomIndex1]));
+                cr[bond.atomIndex1], cg[bond.atomIndex1], cb[bond.atomIndex1]), true);
         }
         if (bond.atomIndex2 < selectedAtoms.size() && selectedAtoms[bond.atomIndex2]) {
             bonds.setEndColor(i, data::Color(
-                cr[bond.atomIndex2], cg[bond.atomIndex2], cb[bond.atomIndex2]));
+                cr[bond.atomIndex2], cg[bond.atomIndex2], cb[bond.atomIndex2]), true);
         }
     }
 }
@@ -61,6 +83,7 @@ StructureModel::StructureModel(QObject* parent)
 }
 
 StructureModel::~StructureModel() {
+    cancelBondDetection();
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -77,51 +100,65 @@ StructureModel* StructureModel::create(QQmlEngine* qmlEngine, QJSEngine* jsEngin
 }
 
 bool StructureModel::hasStructure() const {
-    return m_structure != nullptr && m_structure->atomCount() > 0;
+    return m_active->current != nullptr && m_active->current->atomCount() > 0;
 }
 
 QString StructureModel::fileName() const {
-    if (!m_structure) return tr("No file loaded");
+    if (!m_active->current) return tr("No file loaded");
 
-    QString path = QString::fromStdString(m_structure->sourcePath());
+    QString path = QString::fromStdString(m_active->current->sourcePath());
     if (path.isEmpty()) return tr("Untitled");
 
     return QFileInfo(path).fileName();
 }
 
 QString StructureModel::structureName() const {
-    if (!m_structure) return QString();
-    return QString::fromStdString(m_structure->name());
+    if (!m_active->current) return QString();
+    return QString::fromStdString(m_active->current->name());
 }
 
 int StructureModel::atomCount() const {
-    return m_structure ? static_cast<int>(m_structure->atomCount()) : 0;
+    return m_active->current ? static_cast<int>(m_active->current->atomCount()) : 0;
 }
 
 int StructureModel::bondCount() const {
-    return m_structure ? static_cast<int>(m_structure->bonds().bondCount()) : 0;
+    return m_active->current ? static_cast<int>(m_active->current->bonds().bondCount()) : 0;
 }
 
 int StructureModel::atomTypeCount() const {
-    return m_elements.count();
+    return m_active->elements.count();
 }
 
 QStringList StructureModel::elements() const {
-    return m_elements;
+    return m_active->elements;
 }
 
 bool StructureModel::hasUnitCell() const {
-    return m_structure && m_structure->hasLattice();
+    return m_active->current && m_active->current->hasLattice();
+}
+
+bool StructureModel::hasReplicableStructures() const {
+    return std::any_of(m_documents.begin(), m_documents.end(), [](const auto& document) {
+        return document->raw->hasLattice();
+    });
+}
+
+float StructureModel::maximumViewExtent() const {
+    float extent = 0.0f;
+    for (const auto& document : m_documents) {
+        extent = std::max(extent, document->current->computeViewBoundingBox().maxExtent());
+    }
+    return extent;
 }
 
 bool StructureModel::hasBonds() const {
-    return m_structure && !m_structure->bonds().empty();
+    return m_active->current && !m_active->current->bonds().empty();
 }
 
 QString StructureModel::cellParameters() const {
     if (!hasUnitCell()) return QString();
 
-    const auto& lattice = m_structure->lattice();
+    const auto& lattice = m_active->current->lattice();
     return QString("a=%1 b=%2 c=%3\n\u03B1=%4\u00B0 \u03B2=%5\u00B0 \u03B3=%6\u00B0")
            .arg(lattice.a(), 0, 'f', 3)
            .arg(lattice.b(), 0, 'f', 3)
@@ -132,19 +169,19 @@ QString StructureModel::cellParameters() const {
 }
 
 int StructureModel::selectionMode() const {
-    return m_selectionMode;
+    return m_active->selectionMode;
 }
 
 bool StructureModel::selectionEnabled() const {
-    return m_selectionMode != 0;
+    return m_active->selectionMode != 0;
 }
 
 int StructureModel::selectedAtomCount() const {
-    return m_structure ? static_cast<int>(m_structure->selectedAtomCount()) : 0;
+    return m_active->current ? static_cast<int>(m_active->current->selectedAtomCount()) : 0;
 }
 
 int StructureModel::selectedBondCount() const {
-    return m_structure ? static_cast<int>(m_structure->selectedBondCount()) : 0;
+    return m_active->current ? static_cast<int>(m_active->current->selectedBondCount()) : 0;
 }
 
 bool StructureModel::hasActiveAtomSelection() const {
@@ -156,12 +193,12 @@ bool StructureModel::hasActiveBondSelection() const {
 }
 
 QColor StructureModel::selectedAtomColor() const {
-    if (!m_structure) return QColor(255, 255, 255);
+    if (!m_active->current) return QColor(255, 255, 255);
 
-    const auto& selectedAtoms = m_structure->atomSelectionMask();
-    const float* cr = m_structure->colorsR();
-    const float* cg = m_structure->colorsG();
-    const float* cb = m_structure->colorsB();
+    const auto& selectedAtoms = m_active->current->atomSelectionMask();
+    const float* cr = m_active->current->colorsR();
+    const float* cg = m_active->current->colorsG();
+    const float* cb = m_active->current->colorsB();
     for (size_t i = 0; i < selectedAtoms.size(); ++i) {
         if (selectedAtoms[i]) {
             return QColor::fromRgbF(cr[i], cg[i], cb[i], 1.0);
@@ -170,63 +207,141 @@ QColor StructureModel::selectedAtomColor() const {
     return QColor(255, 255, 255);
 }
 
+// Compatibility entry point for replacing a session; file imports use addStructure.
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
-    m_originalStructure = structure;
-    m_structure = structure->clone();
-    setReplicationFactors(1, 1, 1);
-    setSelectionModeInternal(0, false);
-    updateElementList();
+    clear();
+    addStructure(std::move(structure));
+}
+
+void StructureModel::addStructure(std::shared_ptr<data::Structure> structure) {
+    if (!structure) return;
+    auto document = std::make_shared<StructureDocument>();
+    document->id = m_nextId;
+    auto raw = structure->clone();
+    raw->setName("STRUCT_" + std::to_string(document->id) + "_RAW");
+    document->current = workingCopy(*raw, document->id, m_replication);
+    if (!document->current) return;
+    document->raw = std::move(raw);
+    m_documents.push_back(std::move(document));
+    ++m_nextId;
+    emit structuresChanged();
+    setActiveIndex(structureCount() - 1);
+}
+
+void StructureModel::setActiveIndex(int index) {
+    if (index < 0 || index >= structureCount()) return;
+    if (m_switchingLocked) {
+        m_deferredIndex = index;
+        return;
+    }
+    if (index == m_activeIndex) return;
+    const bool firstStructure = m_activeIndex < 0;
+    cancelBondDetection();
+    m_activeIndex = index;
+    m_active = m_documents[index];
+    if (m_active->elements.isEmpty()) updateElementList();
+    emit activeStructureChanged();
     emit structureChanged();
     emitSelectionResetSignals();
-    emit structureUpdated(m_structure);
+    emit structureActivated(m_active->current, firstStructure);
+}
+
+void StructureModel::setSwitchingLocked(bool locked) {
+    if (locked == m_switchingLocked) return;
+    m_switchingLocked = locked;
+    emit switchingLockedChanged();
+    if (!locked && m_deferredIndex >= 0) {
+        const int index = std::exchange(m_deferredIndex, -1);
+        setActiveIndex(index);
+    }
+}
+
+void StructureModel::nameCurrentStructure() {
+    if (m_active->current)
+        m_active->current->setName("STRUCT_" + std::to_string(activeId()) + "_CURRENT");
+}
+
+void StructureModel::applySharedAppearance(int colorScheme, float bondRadius) {
+    m_colorScheme = colorScheme;
+    m_bondRadius = bondRadius;
+    if (!m_active->current) return;
+    if (m_active->appliedColorScheme != colorScheme) {
+        const auto scheme = colorSchemeFromIndex(colorScheme);
+        m_active->current->updateColorsFromElements(scheme, true);
+        m_active->current->updateBondColorsFromElements(scheme, true);
+        m_active->appliedColorScheme = colorScheme;
+        emit structureStyleChanged();
+    }
+    if (m_active->appliedBondRadius != bondRadius) {
+        m_active->current->bonds().setAllRadii(bondRadius, true);
+        m_active->appliedBondRadius = bondRadius;
+        emit structureGeometryChanged();
+    }
 }
 
 void StructureModel::resetToOriginal() {
-    if (!m_originalStructure) return;
-    m_structure = m_originalStructure->clone();
-    setReplicationFactors(1, 1, 1);
+    if (!m_active->raw) return;
+    auto current = workingCopy(*m_active->raw, activeId(), m_replication);
+    if (!current) return;
+    cancelBondDetection();
+    replaceWorkingCopy(*m_active, std::move(current));
     setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
     emitSelectionResetSignals();
-    emit structureUpdated(m_structure);
+    emit structureUpdated(m_active->current);
 }
 
 void StructureModel::replicateCell(int nx, int ny, int nz) {
-    if (!m_originalStructure || !m_originalStructure->hasLattice()) return;
-    if (nx < 1 || ny < 1 || nz < 1) return;
+    if (!hasReplicableStructures()) return;
+    if (nx < 1 || ny < 1 || nz < 1 || nx > 99 || ny > 99 || nz > 99) return;
+    const std::array<int, 3> factors{nx, ny, nz};
+    if (m_replication == factors) return;
 
-    auto replicated = data::replicateCell(*m_originalStructure, nx, ny, nz);
-    if (!replicated) return;
+    // Stage every result before replacing any document. Hidden structures keep
+    // only CPU data; appearance, bonds and GPU preparation remain lazy.
+    std::vector<std::shared_ptr<data::Structure>> replicated(m_documents.size());
+    for (size_t i = 0; i < m_documents.size(); ++i) {
+        const auto& document = m_documents[i];
+        if (!document->raw->hasLattice()) continue;
+        replicated[i] = workingCopy(*document->raw, document->id, factors);
+        if (!replicated[i]) return;
+    }
 
-    m_structure = std::move(replicated);
+    cancelBondDetection();
+    for (size_t i = 0; i < m_documents.size(); ++i) {
+        if (replicated[i]) replaceWorkingCopy(*m_documents[i], std::move(replicated[i]));
+    }
     setReplicationFactors(nx, ny, nz);
-    clearSelection();
     updateElementList();
     emit structureChanged();
-    emit structureUpdated(m_structure);
+    emitSelectionResetSignals();
+    // Notify the single viewport once, after the entire collection is updated.
+    emit structureUpdated(m_active->current);
 }
 
 void StructureModel::unwrapMolecules() {
-    if (!m_structure || !m_structure->hasLattice()) return;
-    if (m_structure->bonds().empty()) return;
+    if (!m_active->current || !m_active->current->hasLattice()) return;
+    if (m_active->current->bonds().empty()) return;
 
-    data::unwrapMolecules(*m_structure);
+    cancelBondDetection();
+    data::unwrapMolecules(*m_active->current);
+    m_active->detectedBondScale = std::numeric_limits<float>::quiet_NaN();
     clearSelection();
     emit structureChanged();
-    emit structureUpdated(m_structure);
+    emit structureUpdated(m_active->current);
 }
 
 void StructureModel::setReplicationFactors(int nx, int ny, int nz) {
     const std::array<int, 3> factors{nx, ny, nz};
-    if (m_replicationFactors == factors) return;
-    m_replicationFactors = factors;
+    if (m_replication == factors) return;
+    m_replication = factors;
     emit replicationFactorsChanged();
 }
 
 void StructureModel::setSelectionMode(int mode) {
     mode = std::clamp(mode, 0, 2);
-    const bool modeChanged = mode != m_selectionMode;
+    const bool modeChanged = mode != m_active->selectionMode;
     setSelectionModeInternal(mode, modeChanged);
     if (modeChanged && mode == 0) {
         clearSelection();
@@ -234,52 +349,52 @@ void StructureModel::setSelectionMode(int mode) {
 }
 
 void StructureModel::clearSelection() {
-    if (m_structure) {
-        m_structure->clearSelection();
+    if (m_active->current) {
+        m_active->current->clearSelection();
     }
     emit selectionChanged();
     emit structureStyleChanged();
 }
 
 bool StructureModel::toggleAtomSelection(size_t atomIndex) {
-    if (!m_structure || atomIndex >= m_structure->atomCount()) return false;
-    m_structure->toggleAtomSelected(atomIndex);
+    if (!m_active->current || atomIndex >= m_active->current->atomCount()) return false;
+    m_active->current->toggleAtomSelected(atomIndex);
     emit selectionChanged();
     emit structureStyleChanged();
     return true;
 }
 
 bool StructureModel::toggleBondSelection(size_t bondIndex) {
-    if (!m_structure || bondIndex >= m_structure->bonds().bondCount()) return false;
-    m_structure->bonds().toggleSelected(bondIndex);
+    if (!m_active->current || bondIndex >= m_active->current->bonds().bondCount()) return false;
+    m_active->current->bonds().toggleSelected(bondIndex);
     emit selectionChanged();
     emit structureStyleChanged();
     return true;
 }
 
 bool StructureModel::toggleMoleculeSelectionFromAtom(size_t atomIndex) {
-    if (!m_structure || atomIndex >= m_structure->atomCount()) return false;
-    const data::ConnectedSelection component = data::connectedSelectionFromAtom(*m_structure, atomIndex);
+    if (!m_active->current || atomIndex >= m_active->current->atomCount()) return false;
+    const data::ConnectedSelection component = data::connectedSelectionFromAtom(*m_active->current, atomIndex);
     const bool deselect = componentFullySelected(component);
     return setComponentSelection(component, !deselect);
 }
 
 bool StructureModel::toggleMoleculeSelectionFromBond(size_t bondIndex) {
-    if (!m_structure || bondIndex >= m_structure->bonds().bondCount()) return false;
-    const data::ConnectedSelection component = data::connectedSelectionFromBond(*m_structure, bondIndex);
+    if (!m_active->current || bondIndex >= m_active->current->bonds().bondCount()) return false;
+    const data::ConnectedSelection component = data::connectedSelectionFromBond(*m_active->current, bondIndex);
     const bool deselect = componentFullySelected(component);
     return setComponentSelection(component, !deselect);
 }
 
 bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScale) {
-    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+    if (!m_active->current || !selectionEnabled() || selectedAtomCount() == 0) return false;
     if (!std::isfinite(scale) || !std::isfinite(globalAtomScale)) return false;
 
     const float safeGlobalScale = std::max(globalAtomScale, 0.0001f);
-    float* radii = m_structure->radii();
-    const int* atomicNumbers = m_structure->atomicNumbers();
-    const auto& selectedAtoms = m_structure->atomSelectionMask();
-    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+    float* radii = m_active->current->radii();
+    const int* atomicNumbers = m_active->current->atomicNumbers();
+    const auto& selectedAtoms = m_active->current->atomSelectionMask();
+    for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
         radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false) * scale / safeGlobalScale;
     }
@@ -290,58 +405,60 @@ bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScal
 }
 
 bool StructureModel::applyAtomColorSchemeToSelection(int scheme) {
-    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+    if (!m_active->current || !selectionEnabled() || selectedAtomCount() == 0) return false;
 
     const auto colorScheme = colorSchemeFromIndex(scheme);
-    float* cr = m_structure->colorsR();
-    float* cg = m_structure->colorsG();
-    float* cb = m_structure->colorsB();
-    const int* atomicNumbers = m_structure->atomicNumbers();
-    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    float* cr = m_active->current->colorsR();
+    float* cg = m_active->current->colorsG();
+    float* cb = m_active->current->colorsB();
+    const int* atomicNumbers = m_active->current->atomicNumbers();
+    const auto& selectedAtoms = m_active->current->atomSelectionMask();
 
-    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+    for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
         const auto color = data::ElementData::colorForElement(atomicNumbers[i], colorScheme);
+        m_active->current->setColorOverride(i, true);
         cr[i] = color.r;
         cg[i] = color.g;
         cb[i] = color.b;
     }
 
-    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_structure);
+    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_active->current);
     emit structureStyleChanged();
     return true;
 }
 
 bool StructureModel::applyAtomColorToSelection(const QColor& color) {
-    if (!m_structure || !selectionEnabled() || selectedAtomCount() == 0) return false;
+    if (!m_active->current || !selectionEnabled() || selectedAtomCount() == 0) return false;
 
     const data::Color target = colorFromQColor(color);
-    float* cr = m_structure->colorsR();
-    float* cg = m_structure->colorsG();
-    float* cb = m_structure->colorsB();
-    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    float* cr = m_active->current->colorsR();
+    float* cg = m_active->current->colorsG();
+    float* cb = m_active->current->colorsB();
+    const auto& selectedAtoms = m_active->current->atomSelectionMask();
 
-    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+    for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
+        m_active->current->setColorOverride(i, true);
         cr[i] = target.r;
         cg[i] = target.g;
         cb[i] = target.b;
     }
 
-    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_structure);
+    syncSelectedBondEndpointColorsFromSelectedAtoms(*m_active->current);
     emit structureStyleChanged();
     return true;
 }
 
 bool StructureModel::applyBondRadiusToSelection(float radius) {
-    if (!m_structure || !selectionEnabled() || selectedBondCount() == 0) return false;
+    if (!m_active->current || !selectionEnabled() || selectedBondCount() == 0) return false;
     if (!std::isfinite(radius)) return false;
 
-    auto& bonds = m_structure->bonds();
+    auto& bonds = m_active->current->bonds();
     const auto& selectedBonds = bonds.selectionMask();
     for (size_t i = 0; i < bonds.bondCount(); ++i) {
         if (selectedBonds[i]) {
-            bonds.setRadius(i, radius);
+            bonds.setRadius(i, radius, true);
         }
     }
 
@@ -351,35 +468,36 @@ bool StructureModel::applyBondRadiusToSelection(float radius) {
 }
 
 bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorScheme) {
-    if (!m_structure || !selectionEnabled() || !m_structure->hasSelection()) return false;
+    if (!m_active->current || !selectionEnabled() || !m_active->current->hasSelection()) return false;
     if (!std::isfinite(defaultBondRadius)) return false;
 
     const auto scheme = colorSchemeFromIndex(colorScheme);
-    float* radii = m_structure->radii();
-    float* cr = m_structure->colorsR();
-    float* cg = m_structure->colorsG();
-    float* cb = m_structure->colorsB();
-    const int* atomicNumbers = m_structure->atomicNumbers();
-    const auto& selectedAtoms = m_structure->atomSelectionMask();
+    float* radii = m_active->current->radii();
+    float* cr = m_active->current->colorsR();
+    float* cg = m_active->current->colorsG();
+    float* cb = m_active->current->colorsB();
+    const int* atomicNumbers = m_active->current->atomicNumbers();
+    const auto& selectedAtoms = m_active->current->atomSelectionMask();
 
-    for (size_t i = 0; i < m_structure->atomCount(); ++i) {
+    for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
         radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false);
+        m_active->current->setColorOverride(i, false);
         const auto color = data::ElementData::colorForElement(atomicNumbers[i], scheme);
         cr[i] = color.r;
         cg[i] = color.g;
         cb[i] = color.b;
     }
 
-    auto& bonds = m_structure->bonds();
+    auto& bonds = m_active->current->bonds();
     const auto& selectedBonds = bonds.selectionMask();
     const float clampedBondRadius = std::clamp(defaultBondRadius, 0.01f, 0.6f);
     for (size_t i = 0; i < bonds.bondCount(); ++i) {
         if (!selectedBonds[i]) continue;
 
         const data::Bond& bond = bonds.bond(i);
-        if (bond.atomIndex1 >= m_structure->atomCount() ||
-            bond.atomIndex2 >= m_structure->atomCount()) {
+        if (bond.atomIndex1 >= m_active->current->atomCount() ||
+            bond.atomIndex2 >= m_active->current->atomCount()) {
             continue;
         }
 
@@ -398,29 +516,121 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
 }
 
 bool StructureModel::deleteSelectedObjects() {
-    if (!m_structure || !selectionEnabled() || !m_structure->hasSelection()) return false;
+    if (!m_active->current || !selectionEnabled() || !m_active->current->hasSelection()) return false;
 
-    auto editedStructure = m_structure->clone();
+    auto editedStructure = m_active->current->clone();
     if (!editedStructure->deleteSelectedObjects()) return false;
 
-    m_structure = std::move(editedStructure);
+    cancelBondDetection();
+    m_active->current = std::move(editedStructure);
+    // A valid edited bond list stays valid, including explicit deletions.
+    // If the import/cutoff calculation is unfinished, detect the surviving atoms.
+    const bool needsBonds = m_active->detectedBondScale != m_requestedBondScale;
     updateElementList();
 
     emit structureChanged();
     emit selectionChanged();
     emit structureStyleChanged();
-    emit structureEdited(m_structure);
+    emit structureEdited(m_active->current);
+    if (needsBonds) ensureBonds(m_requestedBondScale);
     return true;
 }
 
 void StructureModel::clear() {
-    m_originalStructure.reset();
-    m_structure.reset();
-    setReplicationFactors(1, 1, 1);
-    m_elements.clear();
-    setSelectionModeInternal(0, false);
+    cancelBondDetection();
+    m_documents.clear();
+    m_active = std::make_shared<StructureDocument>();
+    m_activeIndex = -1;
+    m_deferredIndex = -1;
+    m_replication = {1, 1, 1};
+    emit structuresChanged();
+    emit activeStructureChanged();
+    emit replicationFactorsChanged();
     emit structureChanged();
     emitSelectionResetSignals();
+    emit structureActivated(nullptr, false);
+}
+
+void StructureModel::cancelBondDetection() {
+    ++m_bondRevision;
+    m_bondPending = false;
+    if (m_bondCancellation) m_bondCancellation->store(true);
+}
+
+void StructureModel::ensureBonds(float scale) {
+    m_requestedBondScale = scale;
+    // Reverting a cutoff to cached data must also cancel an unfinished request
+    // for the previous cutoff, otherwise its result can overwrite the cache.
+    cancelBondDetection();
+    if (!m_active->current || m_active->detectedBondScale == scale) return;
+    m_bondPending = true;
+    if (!m_bondRunning) launchBondDetection();
+}
+
+void StructureModel::launchBondDetection() {
+    m_bondPending = false;
+    if (!m_active->current) return;
+    if (!m_bondWatcher) {
+        m_bondWatcher = new QFutureWatcher<BondResult>(this);
+        connect(m_bondWatcher, &QFutureWatcher<BondResult>::finished,
+                this, &StructureModel::onBondsReady);
+    }
+    // Copy only the input needed by neighbor detection. Never let a worker read
+    // live positions while the user unwraps, deletes, or switches structures.
+    auto snapshot = std::make_shared<data::Structure>();
+    snapshot->resize(m_active->current->atomCount());
+    const auto n = m_active->current->atomCount();
+    std::copy_n(m_active->current->positionsX(), n, snapshot->positionsX());
+    std::copy_n(m_active->current->positionsY(), n, snapshot->positionsY());
+    std::copy_n(m_active->current->positionsZ(), n, snapshot->positionsZ());
+    std::copy_n(m_active->current->atomicNumbers(), n, snapshot->atomicNumbers());
+    snapshot->lattice() = m_active->current->lattice();
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    m_bondCancellation = cancellation;
+    m_bondRunning = true;
+    const auto source = m_active->current;
+    const auto revision = m_bondRevision;
+    const float scale = m_requestedBondScale;
+    m_bondWatcher->setFuture(QtConcurrent::run([snapshot, source, revision, scale, cancellation]() {
+        data::NeighborList neighbors;
+        neighbors.build(*snapshot, scale, cancellation.get());
+        auto bonds = cancellation->load() ? nullptr
+            : neighbors.buildBondList(*snapshot, scale, cancellation.get());
+        return BondResult{std::move(bonds), source, revision, scale};
+    }));
+}
+
+void StructureModel::onBondsReady() {
+    m_bondRunning = false;
+    const auto result = m_bondWatcher->result();
+    if (result.revision == m_bondRevision && result.source == m_active->current && result.bonds) {
+        auto& bonds = *result.bonds;
+        bonds.setAllRadii(m_bondRadius);
+        // Restore surviving per-bond edits after an explicit cutoff change.
+        using Key = std::tuple<uint32_t, uint32_t, int, int, int>;
+        const auto key = [](const data::Bond& b) { return Key{b.atomIndex1, b.atomIndex2, b.imageX, b.imageY, b.imageZ}; };
+        const auto& previous = m_active->current->bonds();
+        std::map<Key, size_t> edits;
+        for (size_t i = 0; i < previous.bondCount(); ++i)
+            if (previous.radiusOverridden(i) || previous.startColorOverridden(i) || previous.endColorOverridden(i) || previous.selected(i))
+                edits.emplace(key(previous.bond(i)), i);
+        for (size_t i = 0; i < bonds.bondCount(); ++i) {
+            auto found = edits.find(key(bonds.bond(i)));
+            if (found == edits.end()) continue;
+            const size_t old = found->second;
+            if (previous.radiusOverridden(old)) bonds.setRadius(i, previous.radius(old), true);
+            if (previous.startColorOverridden(old)) bonds.setStartColor(i, previous.startColor(old), true);
+            if (previous.endColorOverridden(old)) bonds.setEndColor(i, previous.endColor(old), true);
+            bonds.setSelected(i, previous.selected(old));
+        }
+        m_active->current->setBondList(result.bonds);
+        m_active->current->updateBondColorsFromElements(colorSchemeFromIndex(m_colorScheme), true);
+        m_active->detectedBondScale = result.scale;
+        emit structureChanged();
+        emit selectionChanged();
+        emit structureGeometryChanged();
+    }
+    if (m_bondPending) launchBondDetection();
 }
 
 void StructureModel::notifyBondsUpdated() {
@@ -429,14 +639,14 @@ void StructureModel::notifyBondsUpdated() {
 }
 
 void StructureModel::updateElementList() {
-    m_elements.clear();
+    m_active->elements.clear();
 
-    if (!m_structure || m_structure->atomCount() == 0) return;
+    if (!m_active->current || m_active->current->atomCount() == 0) return;
 
     // Count atoms per element
     QMap<int, int> counts;
-    const int* atomicNums = m_structure->atomicNumbers();
-    size_t n = m_structure->atomCount();
+    const int* atomicNums = m_active->current->atomicNumbers();
+    size_t n = m_active->current->atomCount();
 
     for (size_t i = 0; i < n; ++i) {
         counts[atomicNums[i]]++;
@@ -446,28 +656,28 @@ void StructureModel::updateElementList() {
     for (auto it = counts.begin(); it != counts.end(); ++it) {
         const auto& elem = data::ElementData::byAtomicNumber(it.key());
         QString symbol = QString::fromUtf8(elem.symbol.data(), elem.symbol.size());
-        m_elements.append(QString("%1: %2").arg(symbol).arg(it.value()));
+        m_active->elements.append(QString("%1: %2").arg(symbol).arg(it.value()));
     }
 }
 
 void StructureModel::setSelectionModeInternal(int mode, bool emitChange) {
-    m_selectionMode = std::clamp(mode, 0, 2);
+    m_active->selectionMode = std::clamp(mode, 0, 2);
     if (emitChange) {
         emit selectionModeChanged();
     }
 }
 
 bool StructureModel::componentFullySelected(const data::ConnectedSelection& component) const {
-    if (!m_structure) return false;
+    if (!m_active->current) return false;
     if (component.atoms.empty() && component.bonds.empty()) return false;
 
     for (size_t atomIndex : component.atoms) {
-        if (atomIndex >= m_structure->atomCount() || !m_structure->atomSelected(atomIndex)) {
+        if (atomIndex >= m_active->current->atomCount() || !m_active->current->atomSelected(atomIndex)) {
             return false;
         }
     }
 
-    const auto& bonds = m_structure->bonds();
+    const auto& bonds = m_active->current->bonds();
     for (size_t bondIndex : component.bonds) {
         if (bondIndex >= bonds.bondCount() || !bonds.selected(bondIndex)) {
             return false;
@@ -478,18 +688,18 @@ bool StructureModel::componentFullySelected(const data::ConnectedSelection& comp
 }
 
 bool StructureModel::setComponentSelection(const data::ConnectedSelection& component, bool selected) {
-    if (!m_structure) return false;
+    if (!m_active->current) return false;
     bool changed = false;
 
     for (size_t atomIndex : component.atoms) {
-        if (atomIndex >= m_structure->atomCount()) continue;
-        if (m_structure->atomSelected(atomIndex) != selected) {
-            m_structure->setAtomSelected(atomIndex, selected);
+        if (atomIndex >= m_active->current->atomCount()) continue;
+        if (m_active->current->atomSelected(atomIndex) != selected) {
+            m_active->current->setAtomSelected(atomIndex, selected);
             changed = true;
         }
     }
 
-    auto& bonds = m_structure->bonds();
+    auto& bonds = m_active->current->bonds();
     for (size_t bondIndex : component.bonds) {
         if (bondIndex >= bonds.bondCount()) continue;
         if (bonds.selected(bondIndex) != selected) {

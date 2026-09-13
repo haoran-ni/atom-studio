@@ -10,6 +10,11 @@ class ReplicationSetup : public QObject {
 
 public:
     Q_INVOKABLE void load(bool periodic = true) {
+        m_model.clear();
+        add(periodic);
+    }
+
+    Q_INVOKABLE void add(bool periodic = true) {
         auto structure = std::make_shared<atom::data::Structure>();
         structure->addAtom(0.2f, 0.3f, 0.4f, 6);
         structure->addAtom(1.2f, 1.3f, 1.4f, 8);
@@ -17,7 +22,7 @@ public:
         cell.defined = periodic;
         cell.matrix = {{{3, 0.5, 0}, {0, 4, 0.25}, {0, 0, 5}}};
         cell.pbc = {periodic, periodic, periodic};
-        m_model.setStructure(structure);
+        m_model.addStructure(structure);
     }
 
     Q_INVOKABLE double latticeComponent(int axis, int component) const {

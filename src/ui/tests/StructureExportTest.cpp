@@ -61,6 +61,8 @@ ExportOutcome exportAndWait(ui::FileController& files, ui::StructureModel& model
     QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
     files.exportStructure(path, format);
     if (editAfterStart && model.hasStructure()) {
+        model.addStructure(makeStructure(false, false));
+        model.setActiveIndex(0);
         model.structure()->setPosition(0, 1000, 2000, 3000);
         model.clear(); // The worker must own an independent snapshot.
     }

@@ -563,7 +563,7 @@ Rectangle {
                                         Layout.fillWidth: true
                                         displayText: qsTr("Export Structures")
                                         model: FileController.structureExportFormats
-                                        enabled: StructureModel.hasStructure && !FileController.isLoading
+                                        enabled: StructureModel.hasStructure
                                                  && !FileController.isExporting
                                         onActivated: FileController.openSaveStructureDialog(currentText)
                                     }
@@ -689,7 +689,7 @@ Rectangle {
                                         spacing: 6
 
                                         Label {
-                                            text: qsTr("Replicate Unit Cell")
+                                            text: qsTr("Replicate All Unit Cells")
                                             color: sidebar.textStrong
                                             font.pixelSize: 13
                                             font.weight: Font.DemiBold
@@ -703,7 +703,7 @@ Rectangle {
                                                 id: replicateControls
                                                 width: parent.width
                                                 spacing: 6
-                                                enabled: StructureModel.hasUnitCell
+                                                enabled: StructureModel.hasReplicableStructures
                                                 opacity: enabled ? 1.0 : 0.4
 
                                                 RowLayout {
@@ -760,10 +760,10 @@ Rectangle {
                                             MouseArea {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
-                                                enabled: !StructureModel.hasUnitCell
+                                                enabled: !StructureModel.hasReplicableStructures
                                                 onContainsMouseChanged: {
                                                     if (containsMouse) {
-                                                        sidebar.setStatusHint(this, qsTr("Not applicable for non-periodic structures"))
+                                                        sidebar.setStatusHint(this, qsTr("No imported structure has a unit cell"))
                                                     } else {
                                                         sidebar.clearStatusHint(this)
                                                     }
@@ -819,11 +819,6 @@ Rectangle {
                                         enabled: StructureModel.hasStructure
                                         onClicked: {
                                             StructureModel.resetToOriginal()
-                                            if (sidebar.viewport) {
-                                                sidebar.viewport.atomScale = 1.0
-                                                sidebar.viewport.atomColorScheme = 0
-                                                sidebar.viewport.bondRadius = 0.1
-                                            }
                                         }
                                     }
                                 }
@@ -1289,7 +1284,7 @@ Rectangle {
                             SidebarBranchRow {
                                 content: Component {
                                     SidebarCheckBox {
-                                        text: qsTr("Auto-fit on structure load")
+                                        text: qsTr("Auto-fit first structure and resets")
                                         checked: sidebar.viewport ? sidebar.viewport.autoFitOnLoad : true
                                         onToggled: {
                                             if (sidebar.viewport) {

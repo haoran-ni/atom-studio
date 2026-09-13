@@ -21,8 +21,6 @@ public:
 
 public slots:
     void doLoad(const QString& filePath) {
-        cancelFlag = false;
-
         python::ASEReader reader;
         auto progressCallback = [this](float progress, std::string_view message) -> bool {
             if (cancelFlag.load()) {
@@ -88,7 +86,6 @@ void AsyncFileLoader::loadFile(const QString& filePath) {
 
     // Connect signals
     connect(m_workerThread, &QThread::finished, m_worker, &QObject::deleteLater);
-    connect(this, &AsyncFileLoader::loadingStarted, m_worker, &LoadWorker::doLoad);
     connect(m_worker, &LoadWorker::progressChanged,
             this, &AsyncFileLoader::onWorkerProgress);
     connect(m_worker, &LoadWorker::finished,
