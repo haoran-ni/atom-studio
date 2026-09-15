@@ -117,6 +117,14 @@ def _id_for(atoms):
     return matches[0]
 
 
+def _pack_document(sid, atoms):
+    """Keep the registered name in errors from the shared ASE bridge."""
+    try:
+        return pack(atoms)
+    except Exception as error:
+        raise ValueError(f"STRUCT_{sid}: {error}") from error
+
+
 def update(atoms, *, _final=False):
     """Publish geometry without calculating forces or energy; suitable for ASE attach()."""
     _check_cancel()
@@ -124,7 +132,7 @@ def update(atoms, *, _final=False):
     now = time.monotonic()
     if not _final and (sid in _pending or now - _last_update.get(sid, 0) < _interval):
         return
-    snapshot = pack(atoms)
+    snapshot = _pack_document(sid, atoms)
     encoded = json.dumps(snapshot, sort_keys=True, allow_nan=False)
     if encoded == _published.get(sid):
         return
@@ -206,7 +214,7 @@ def _sync(message):
         _documents[sid] = incoming
         _namespace[f"STRUCT_{sid}"] = incoming
         _originals[sid] = unpack(doc["original"])
-        _published[sid] = json.dumps(pack(incoming), sort_keys=True, allow_nan=False)
+        _published[sid] = json.dumps(_pack_document(sid, incoming), sort_keys=True, allow_nan=False)
 
 
 def _unsupported_input(*args, **kwargs):
@@ -240,7 +248,15 @@ while True:
         _executing = True
         success = False
         old_input = builtins.input
+        environment_lock = None
         try:
+            if os.name == "posix" and sys.prefix != sys.base_prefix:
+                import fcntl
+                environment_lock = open(os.path.join(sys.prefix, ".atom-studio.lock"), "a+b")
+                try:
+                    fcntl.flock(environment_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except OSError as error:
+                    raise RuntimeError("Package installation is in progress. Wait for it to finish, then restart Python.") from error
             if not _sync_ok:
                 raise RuntimeError("Structure synchronization failed. Fix the reported metadata error and restart Python.")
             os.chdir(command["directory"])
@@ -248,12 +264,13 @@ while True:
             sys.settrace(_trace)
             exec(compile(command["code"], "<ATOM-STUDIO>", "exec"), _namespace, _namespace)
             sys.settrace(None)
-            # Validate every registered object before publishing final states.
+            # Plain ASE/NumPy objects can change through aliases and in-place edits.
+            # Check every registered object before publishing any final states.
             for sid in list(_documents):
                 atoms = _namespace.get(f"STRUCT_{sid}")
                 if not isinstance(atoms, Atoms):
                     raise TypeError(f"STRUCT_{sid} must remain an ase.Atoms object")
-                pack(atoms)
+                _pack_document(sid, atoms)
             for sid in list(_documents):
                 update(_namespace[f"STRUCT_{sid}"], _final=True)
             success = True
@@ -263,6 +280,8 @@ while True:
             _send("output", channel="stderr", text=traceback.format_exc())
         finally:
             sys.settrace(None)
+            if environment_lock is not None:
+                environment_lock.close()
             _executing = False
             signal.signal(signal.SIGINT, _interrupt)
             builtins.input = old_input

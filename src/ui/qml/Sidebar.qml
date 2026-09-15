@@ -7,6 +7,8 @@ Rectangle {
     id: sidebar
     signal openInteractiveShell()
     signal openShellTutorial()
+    signal openPythonPackages()
+    signal openEnvironmentTerminal()
 
     property var viewport: null
     property string maxRTSamplesErrorMessage: ""
@@ -631,13 +633,33 @@ Rectangle {
                                 }
                             }
                             SidebarBranchRow {
-                                lastItem: true
                                 content: Component {
                                     SidebarButton {
                                         objectName: "shellTutorialButton"
                                         text: qsTr("Tutorial")
                                         Layout.fillWidth: true
                                         onClicked: sidebar.openShellTutorial()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openPythonPackagesButton"
+                                        text: qsTr("Manage Packages")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openPythonPackages()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openEnvironmentTerminalButton"
+                                        text: qsTr("Open Environment Terminal")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openEnvironmentTerminal()
                                     }
                                 }
                             }

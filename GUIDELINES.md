@@ -116,10 +116,19 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
 - When no lattice is defined, POSCAR must report an error; the other formats must omit lattice records without inventing a cell.
 
 ### Interactive Python
-- `PythonShellController` owns a persistent process started with the app's own
-  `--python-shell-worker` entry point, using the same bundled runtime. The worker
-  entry point runs before Qt GUI initialization. No external interpreter or
-  modification of the signed bundle is needed.
+- `PythonShellController` owns a persistent process using a user-owned venv created
+  from the bundled Qt-free `PythonLauncher`. `PythonEnvironmentManager` handles
+  preparation, package operations and external terminal launching; keep package UI
+  in `PythonPackagesWindow`. Native file imports retain the isolated embedded runtime.
+  The old `--python-shell-worker` entry remains available for embedded diagnostics.
+- User packages belong outside the signed bundle. Venvs may inherit bundled packages
+  and install local overrides; never pip-install into the base runtime. Key environment
+  storage by Python version/architecture and repair launcher links after app moves.
+  Use real subprocesses for pip, argument lists rather than shell interpolation, and
+  serialize environment changes. Stop the idle worker before changing its dependencies.
+- External terminals and the shell must use the same venv and Hugging Face credential
+  paths. Do not embed tokens into terminal scripts or logs. Open a new external terminal
+  session with safely quoted paths; never inject commands into an existing session.
 - Keep editor/window code in `InteractiveShellWindow`, transport in
   `PythonShellController` / `StructureSnapshot`, and ASE session behavior in
   `src/python/shell/`. The sidebar owns only the Code section and open action.
@@ -135,11 +144,17 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
   snapshots, reject stale run/document revisions, and commit only on the UI thread.
   Conflicting geometry edits are locked while a run is active. Image capture defers
   frame application. Inactive documents are updated without selecting them.
+  Include the registered `STRUCT_N` name in snapshot errors. Validate every registered
+  object before publishing final states: plain ASE/NumPy edits through aliases are
+  not tracked, and a failed validation must not publish partial final updates.
 - Coalesce previews, apply an active preview only after the prior frame has been
   presented, and always apply the final successful state. Never refit the camera
   for simulation frames. Preserve appearance by stable atom IDs and surviving bonds.
 - Stop cooperatively, then restart the process if blocked. Retain the last published
-  geometry after errors/stops; bound console output. On shutdown, stop shell and file
+  geometry after errors/stops and force-sync it back into registered Python objects
+  before another run. Native revisions do not track rejected Python edits; preserve
+  ASE object aliases and calculators while discarding unpublished structure changes.
+  Bound console output. On shutdown, stop shell and file
   workers before finalizing the main embedded interpreter.
 - Tests cover bridge precision/metadata and real bundled-process execution,
   persistent sessions, multiple structures, EMT relaxation, streaming and Stop.

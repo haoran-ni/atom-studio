@@ -110,6 +110,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 set(PYTHON_RUNTIME_BUNDLE_ROOT "${CMAKE_BINARY_DIR}/bin")
 
+add_executable(atom-python-launcher src/python/PythonLauncher.cpp)
+target_link_libraries(atom-python-launcher PRIVATE Python3::Python)
+set_target_properties(atom-python-launcher PROPERTIES MACOSX_BUNDLE FALSE)
+
 # macOS bundle settings
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -132,6 +136,16 @@ if(APPLE)
     )
     set(PYTHON_NATIVE_BUNDLE_DEPENDS atom-python-runtime-check ${PYTHON_NATIVE_BUNDLE_SCRIPT})
     if(BUILD_TESTING)
+        add_test(NAME atom-python-environment
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/tests/check_python_environment.py"
+                --bundle "${APP_BUNDLE_PATH}/Contents/Resources/python")
+        add_test(NAME atom-ui-python-environment
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/tests/check_python_environment.py"
+                --bundle "${APP_BUNDLE_PATH}/Contents/Resources/python"
+                --manager $<TARGET_FILE:atom-ui-python-environment-test>
+                --app $<TARGET_FILE:atom-studio>)
+        set_tests_properties(atom-ui-python-environment PROPERTIES TIMEOUT 120)
+        set_tests_properties(atom-python-environment PROPERTIES TIMEOUT 120)
         add_test(NAME atom-macos-packaging
             COMMAND "${Python3_EXECUTABLE}" -I
                 "${CMAKE_SOURCE_DIR}/scripts/tests/test_macos_packaging.py"
@@ -155,10 +169,13 @@ add_custom_target(bundle-python ALL
         -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
         -DPYTHON_REQUIREMENTS_FILE=${PYTHON_BUNDLE_REQUIREMENTS_FILE}
         -DPYTHON_PACKAGE_SYNC_SCRIPT=${PYTHON_PACKAGE_SYNC_SCRIPT}
+        -DPYTHON_LAUNCHER=$<TARGET_FILE:atom-python-launcher>
+        -DPYTHON_SHELL_SOURCE=${CMAKE_SOURCE_DIR}/src/python/shell
         ${PYTHON_NATIVE_BUNDLE_ARGS}
         -P ${CMAKE_SOURCE_DIR}/cmake/BundlePython.cmake
     DEPENDS
         ${PROJECT_NAME}
+        atom-python-launcher
         ${PYTHON_BUNDLE_REQUIREMENTS_FILE}
         ${PYTHON_PACKAGE_SYNC_SCRIPT}
         ${PYTHON_NATIVE_BUNDLE_DEPENDS}

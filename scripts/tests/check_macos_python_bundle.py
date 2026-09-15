@@ -38,6 +38,21 @@ def main() -> None:
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith(("PYTHON", "DYLD_")) and key != "__PYVENV_LAUNCHER__"}
         environment.update(PATH="/usr/bin:/bin")
+        launcher = python_home / "bin/python3"
+        environment_root = Path(directory) / "persistent environment"
+        run(launcher, "-I", python_home / "atom_studio/environment_tool.py", "ensure", environment_root,
+            cwd=directory, env=environment, timeout=30)
+        moved = app.with_name("Moved again 原子.app")
+        app.rename(moved)
+        moved_home = moved / "Contents/Resources/python"
+        run(moved_home / "bin/python3", "-I", moved_home / "atom_studio/environment_tool.py", "ensure", environment_root,
+            cwd=directory, env=environment, timeout=30)
+        run(environment_root / "bin/python", "-I", "-c",
+            "import sys,ssl,os; from pathlib import Path; import ase,numpy,pip; "
+            "assert 'Moved again' in sys.base_prefix; "
+            "assert Path(os.environ['SSL_CERT_FILE']).is_file(); "
+            "assert sys.prefix != sys.base_prefix", cwd=directory, env=environment, timeout=30)
+        moved.rename(app)
         missing_home = contents / "Resources/python-hidden"
         python_home.rename(missing_home)
         run(helper, "--expect-missing-runtime", cwd=directory, env=environment, timeout=30)

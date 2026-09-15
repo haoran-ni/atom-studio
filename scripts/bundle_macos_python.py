@@ -74,11 +74,12 @@ def relative_load_path(loader: Path, dependency: Path) -> str:
 
 
 class NativeBundle:
-    def __init__(self, app: Path, executable: Path, library: Path):
+    def __init__(self, app: Path, executable: Path, library: Path, launcher: Path | None = None):
         app = app.resolve()
         self.app = app
         self.executable = executable.resolve()
         self.library = library.resolve()
+        self.launcher = launcher.resolve() if launcher else None
         self.python_home = app / "Contents/Resources/python"
         self.libdir = self.python_home / f"lib/python{sys.version_info.major}.{sys.version_info.minor}"
         self.native_dir = app / "Contents/Frameworks/PythonRuntime"
@@ -97,6 +98,7 @@ class NativeBundle:
             "architectures": sorted(self.architectures),
             "packages": package_manifest.read_text(),
             "stdlib": stdlib_manifest.read_text(),
+            "launcher": str(self.launcher),
         }
 
     def up_to_date(self) -> bool:
@@ -182,6 +184,8 @@ class NativeBundle:
             return
 
         self.collect_python_extensions()
+        if self.launcher:
+            self.register(self.launcher, self.python_home / "bin/python3")
         self.register(self.library, self.native_dir / self.library.name)
         pending = list(self.destinations)
         processed = set()
@@ -274,8 +278,9 @@ def main() -> None:
     parser.add_argument("--executable", required=True, type=Path)
     parser.add_argument("--python-library", required=True, type=Path)
     parser.add_argument("--check-executable", required=True, type=Path)
+    parser.add_argument("--launcher", type=Path)
     args = parser.parse_args()
-    bundle = NativeBundle(args.app.resolve(), args.executable.resolve(), args.python_library)
+    bundle = NativeBundle(args.app.resolve(), args.executable.resolve(), args.python_library, args.launcher)
     bundle.synchronize()
     bundle.validate(args.check_executable)
 

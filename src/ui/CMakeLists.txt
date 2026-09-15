@@ -12,6 +12,10 @@ set(UI_SHARED_SOURCES
     components/StructureDocument.h
     components/PythonShellController.cpp
     components/PythonShellController.h
+    components/PythonEnvironmentManager.cpp
+    components/PythonEnvironmentManager.h
+    components/PythonPackagesWindow.cpp
+    components/PythonPackagesWindow.h
     components/InteractiveShellWindow.cpp
     components/InteractiveShellWindow.h
     components/InteractiveShellTutorialWindow.cpp
@@ -71,6 +75,7 @@ add_library(atom-ui STATIC
 target_include_directories(atom-ui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+target_compile_definitions(atom-ui PRIVATE ATOM_PYTHON_VERSION="${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
 
 target_link_libraries(atom-ui PUBLIC
     atom-data
@@ -98,6 +103,8 @@ endif()
 
 # Exercise structure export and QML controls without an embedded Python runtime.
 if(BUILD_TESTING)
+    add_executable(atom-ui-python-environment-test tests/PythonEnvironmentTest.cpp)
+    target_link_libraries(atom-ui-python-environment-test PRIVATE atom-ui)
     add_executable(atom-ui-python-shell-test tests/PythonShellTest.cpp)
     target_link_libraries(atom-ui-python-shell-test PRIVATE atom-ui)
     add_test(NAME atom-ui-python-shell COMMAND atom-ui-python-shell-test $<TARGET_FILE:atom-studio> -platform offscreen)

@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QThread>
 #include <QTimer>
+#include <QTemporaryDir>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -42,7 +43,8 @@ int main(int argc, char** argv) {
         input->lattice().defined = true;
         input->lattice().matrix = {{{10,0,0},{0,10,0},{0,0,10}}};
         model.addStructure(input); model.addStructure(input);
-        ui::PythonShellController shell(&model, QString::fromLocal8Bit(argv[1]));
+        QTemporaryDir environments;
+        ui::PythonShellController shell(&model, QString::fromLocal8Bit(argv[1]), nullptr, environments.path());
         QString output;
         QObject::connect(&shell, &ui::PythonShellController::output, [&](const QString& text, bool) {
             output += text; std::cout << text.toStdString() << std::flush;
@@ -66,7 +68,7 @@ int main(int argc, char** argv) {
             check(success == expected, "Unexpected Python run result");
             check(!model.editsLocked(), "Geometry edits remained locked");
         };
-        run("alias = STRUCT_0\nSTRUCT_0.positions[0, 2] = 1.23456789012345\nprint('persistent session')");
+        run("alias = STRUCT_0\nalias.positions[0, 2] = 1.23456789012345\nprint('persistent session')");
         check(model.activeId() == 1, "Updating an inactive document switched the viewport");
         check(std::abs(model.document(0)->current->precisePosition(0)[2] - 1.23456789012345) < 1e-14, "Position precision lost");
         check(model.document(0)->raw->position(0)[2] == 0, "Python modified original geometry");
@@ -91,22 +93,45 @@ int main(int argc, char** argv) {
         const int beforeFrames = frames;
         run("import time\nfor i in range(8):\n    STRUCT_0.positions[:, 2] += .1\n    studio.update(STRUCT_0)\n    time.sleep(.12)");
         check(frames - beforeFrames >= 4, "Intermediate updates were not delivered");
+        run("from ase.calculators.emt import EMT\nrecovery_alias = STRUCT_0\nrecovery_calc = EMT()\nSTRUCT_0.calc = recovery_calc\nexpected_0 = STRUCT_0.positions.copy()\nexpected_1 = STRUCT_1.positions.copy()");
         const auto beforeError = model.structure()->precisePosition(0);
-        run("STRUCT_0.positions[0, 0] = np.nan\nstudio.update(STRUCT_0)", false);
+        output.clear();
+        run("time.sleep(.12)\nSTRUCT_0.positions[0, 0] = np.nan\nstudio.update(STRUCT_0)", false);
+        check(output.contains("ValueError: STRUCT_0: Positions must be finite"),
+              "Live validation error did not identify its structure");
         check(model.structure()->precisePosition(0) == beforeError, "Invalid geometry replaced the last valid state");
-        run("STRUCT_0.positions[0, 0] = 0.123456789012345");
+        run("assert recovery_alias is STRUCT_0\nassert STRUCT_0.calc is recovery_calc\nassert np.array_equal(recovery_alias.positions, expected_0)");
+        const auto beforeFinalError = model.document(0)->current->precisePosition(0);
+        const auto beforeInactiveError = model.document(1)->current->precisePosition(0);
+        output.clear();
+        run("STRUCT_0.positions[0, 2] += 1\nSTRUCT_1.positions[0, 0] = np.inf", false);
+        check(output.contains("ValueError: STRUCT_1: Positions must be finite"),
+              "Final validation error did not identify the invalid inactive structure");
+        check(model.document(0)->current->precisePosition(0) == beforeFinalError,
+              "Final validation published part of a failed run");
+        check(model.document(1)->current->precisePosition(0) == beforeInactiveError,
+              "Invalid inactive geometry replaced the last valid state");
+        run("assert np.array_equal(STRUCT_0.positions, expected_0)\nassert np.array_equal(STRUCT_1.positions, expected_1)");
+        check(model.document(0)->current->precisePosition(0) == beforeFinalError,
+              "An unrelated later run published previously discarded edits");
+        run("STRUCT_0.positions[0, 2] += .25\nstudio.update(STRUCT_0)\naccepted_positions = STRUCT_0.positions.copy()\ntime.sleep(.12)\nSTRUCT_0.positions[0, 0] = 1e16\nstudio.update(STRUCT_0)", false);
+        check(std::abs(model.document(0)->current->precisePosition(0)[2] - beforeFinalError[2] - .25) < 1e-14,
+              "Recovery discarded a valid live frame before the error");
+        run("assert np.array_equal(recovery_alias.positions, accepted_positions)\nassert STRUCT_0.calc is recovery_calc");
+        run("STRUCT_1 = None", false);
+        run("assert isinstance(STRUCT_1, Atoms)\nassert np.array_equal(STRUCT_1.positions, expected_1)");
         run("raise ValueError('test traceback')", false);
         check(output.contains("ValueError: test traceback"), "Traceback was not reported");
         run("from ase.build import bulk\nfrom ase.calculators.emt import EMT\nfrom ase.optimize import BFGS\ncu = studio.add(bulk('Cu', cubic=True) * (2, 2, 2))\ncu.rattle(stdev=.1, seed=7)\ncu.calc = EMT()\nopt = BFGS(cu, logfile='-')\nopt.attach(studio.update, interval=1, atoms=cu)\nopt.run(fmax=.05, steps=100)\nassert np.linalg.norm(cu.get_forces(), axis=1).max() < .05", true, 30000);
         check(model.structureCount() == 3 && model.atomCount() == 32, "Relaxation did not create and publish a document");
         check(model.structure()->hasEnergy(), "Cached energy missing from relaxation result");
-        shell.run("print('loop-started')\nwhile True:\n    pass");
+        shell.run("before_stop = cu.positions.copy()\ncu.positions[0, 0] = np.nan\nprint('loop-started')\nwhile True:\n    pass");
         check(waitFor([&] { return output.contains("loop-started"); }), "Loop failed to start");
         auto count = model.atomCount(); model.resetToOriginal(); model.replicateCell(2, 2, 2);
         check(model.atomCount() == count, "Conflicting GUI edit was accepted during execution");
         shell.stop();
         check(waitFor([&] { return !shell.running(); }, 6000), "Stop failed");
-        run("assert len(cu) == 32\nprint('recovered')");
+        run("assert cu is STRUCT_2\nassert np.array_equal(cu.positions, before_stop)\nassert len(cu) == 32\nprint('recovered')");
 #ifndef Q_OS_WIN
         shell.run("import signal, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\nprint('blocking-started')\ntime.sleep(30)");
         check(waitFor([&] { return output.contains("blocking-started"); }), "Blocking call failed to start");

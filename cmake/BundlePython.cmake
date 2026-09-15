@@ -155,6 +155,7 @@ function(validate_bundle output_result output_error)
                 --executable "${APP_EXECUTABLE}"
                 --python-library "${PYTHON_LIBRARY}"
                 --check-executable "${PYTHON_CHECK_EXECUTABLE}"
+                --launcher "${PYTHON_LAUNCHER}"
             RESULT_VARIABLE validation_result
             OUTPUT_VARIABLE validation_output
             ERROR_VARIABLE validation_error
@@ -286,6 +287,20 @@ if(NOT validation_result EQUAL 0)
         message(FATAL_ERROR
             "Bundled Python validation failed after rebuild:\n${validation_error}")
     endif()
+endif()
+
+file(MAKE_DIRECTORY "${PYTHON_BUNDLE_DIR}/bin" "${PYTHON_BUNDLE_DIR}/atom_studio")
+file(COPY "${PYTHON_SHELL_SOURCE}/" DESTINATION "${PYTHON_BUNDLE_DIR}/atom_studio"
+    FILES_MATCHING PATTERN "*.py")
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    file(COPY_FILE "${PYTHON_LAUNCHER}" "${PYTHON_BUNDLE_DIR}/bin/python3.exe" ONLY_IF_DIFFERENT)
+    file(COPY_FILE "${PYTHON_LAUNCHER}" "${PYTHON_BUNDLE_DIR}/bin/python.exe" ONLY_IF_DIFFERENT)
+    file(GLOB LAUNCHER_DLLS "${PYTHON_BUNDLE_DIR}/*.dll")
+    if(LAUNCHER_DLLS)
+        file(COPY ${LAUNCHER_DLLS} DESTINATION "${PYTHON_BUNDLE_DIR}/bin")
+    endif()
+elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    file(COPY_FILE "${PYTHON_LAUNCHER}" "${PYTHON_BUNDLE_DIR}/bin/python3" ONLY_IF_DIFFERENT)
 endif()
 
 write_stdlib_manifest("${STDLIB_MANIFEST_FILE}")

@@ -1,5 +1,6 @@
 #include "InteractiveShellWindow.h"
 #include "PythonShellController.h"
+#include "PythonEnvironmentManager.h"
 #include <QApplication>
 #include <QComboBox>
 #include <QFileDialog>
@@ -114,6 +115,18 @@ InteractiveShellWindow::InteractiveShellWindow(PythonShellController* controller
                               "Use studio.update(atoms) during loops, or attach it to an ASE optimizer for live visualization."));
     help->setWordWrap(true);
     layout->addWidget(help);
+    auto* environmentRow = new QHBoxLayout;
+    auto* environmentName = new QLabel;
+    environmentName->setObjectName("shellEnvironmentName");
+    auto* packages = new QPushButton(tr("Manage Packages"));
+    auto* environmentTerminal = new QPushButton(tr("Open Environment Terminal"));
+    environmentRow->addWidget(environmentName, 1); environmentRow->addWidget(packages); environmentRow->addWidget(environmentTerminal);
+    layout->addLayout(environmentRow);
+    const auto updateEnvironment = [=] { environmentName->setText(tr("Environment: %1").arg(controller->environment()->name())); };
+    connect(controller->environment(), &PythonEnvironmentManager::stateChanged, this, updateEnvironment);
+    connect(packages, &QPushButton::clicked, controller, &PythonShellController::openPackages);
+    connect(environmentTerminal, &QPushButton::clicked, controller, &PythonShellController::openEnvironmentTerminal);
+    updateEnvironment();
     m_structures = new QTableWidget(0, 4);
     m_structures->setObjectName("shellStructures");
     m_structures->setHorizontalHeaderLabels({tr("Variable"), tr("Source"), tr("Atoms"), tr("View")});

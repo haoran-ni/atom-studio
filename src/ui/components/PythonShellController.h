@@ -13,11 +13,13 @@ namespace atom::ui {
 class StructureModel;
 class InteractiveShellWindow;
 class InteractiveShellTutorialWindow;
+class PythonEnvironmentManager;
+class PythonPackagesWindow;
 
 class PythonShellController : public QObject {
     Q_OBJECT
 public:
-    explicit PythonShellController(StructureModel* model, QString program = {}, QObject* parent = nullptr);
+    explicit PythonShellController(StructureModel* model, QString program = {}, QObject* parent = nullptr, QString environmentRoot = {});
     ~PythonShellController() override;
     static PythonShellController* create(QQmlEngine*, QJSEngine*);
     bool running() const { return m_running; }
@@ -30,6 +32,9 @@ public:
     void setFps(int fps) { m_fps = qBound(1, fps, 30); }
     Q_INVOKABLE void openWindow();
     Q_INVOKABLE void openTutorial();
+    Q_INVOKABLE void openPackages();
+    Q_INVOKABLE void openEnvironmentTerminal();
+    PythonEnvironmentManager* environment() const { return m_environment; }
     void start();
     void run(const QString& code);
     void stop();
@@ -50,6 +55,9 @@ private:
     void finishRun(bool success);
     void terminateWorker();
     void setStatus(const QString& status);
+    void startPreparedWorker();
+    PythonEnvironmentManager* m_environment;
+    bool m_startRequested = false;
     QPointer<StructureModel> m_model;
     QProcess m_process;
     QTimer m_flushTimer;
@@ -73,6 +81,7 @@ private:
     bool m_shuttingDown = false;
     QPointer<InteractiveShellWindow> m_window;
     QPointer<InteractiveShellTutorialWindow> m_tutorial;
+    QPointer<PythonPackagesWindow> m_packages;
 #ifdef Q_OS_WIN
     void* m_job = nullptr;
 #endif

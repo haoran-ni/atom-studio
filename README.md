@@ -74,6 +74,12 @@ is idle. Imports and variables persist between runs. Successful runs automatical
 publish changed registered structures, including assignments such as
 `STRUCT_0 = STRUCT_0[[2, 0, 1]]`.
 
+Before publishing final states, the shell validates every registered `STRUCT_N`:
+ordinary ASE objects and NumPy arrays can be edited through aliases without the app
+being notified. These checks do not evaluate calculators. A validation error names
+the affected structure and prevents all final updates from that run; previously
+published live frames remain available.
+
 ```python
 STRUCT_0.positions[:, 2] += 0.5
 ```
@@ -92,12 +98,46 @@ optimizer.run(fmax=0.05, steps=200)
 ```
 
 The **Live relaxation demo** example creates its own copper structure. Use a
-calculator appropriate for your material. ASE's bundled calculators are available;
-external calculation engines and additional Python packages are not installed by
-the shell. The signed application runtime remains read-only. Scripts and calculator
-files use the selected working directory; `input()` is not supported.
-The embedded session does not provide a standalone Python executable for
-`multiprocessing` spawn or subprocess commands launched through `sys.executable`.
+calculator appropriate for your material. Scripts and calculator files use the
+selected working directory; `input()` is not supported.
+
+**Code → Manage Packages** installs PyPI packages into a persistent, user-owned
+Python environment. Enter a package name and optional exact version, then choose
+**Install / Upgrade**. MACE and UMA shortcuts select `mace-torch` and `fairchem-core`.
+The window lists package versions and distinguishes writable environment packages
+from read-only bundled dependencies. It also provides uninstall, dependency checks,
+installation output, cancellation, and named environments for conflicting setups.
+Installing or switching environments clears shell variables and calculators while
+retaining loaded document geometry and editor contents. Failed/cancelled pip
+operations can leave partial changes; inspect the output and retry or use a new
+environment. Do not modify dependencies from another terminal during a calculation.
+
+**Code → Open Environment Terminal** opens an external terminal session with the
+same environment activated. On macOS it uses the default `.command` handler; choose
+another terminal application in Manage Packages if desired. The terminal is
+independent of ATOM-STUDIO. Use `python -m pip install PACKAGE`, install local wheels,
+or configure a calculator there, then **Restart Python** in the interactive shell.
+`sys.executable` now identifies a real interpreter, including for Python subprocesses.
+Multiprocessing still requires normal importable functions and an appropriate main
+guard; functions defined only in the interactive editor are not importable modules.
+
+The launcher and base dependencies come with the app; no system Python or Conda is
+required. Environments are stored outside the app under the user's application-data
+directory, separated by Python major/minor version and CPU architecture. They inherit
+bundled ASE/NumPy/pip but can install local overrides. The signed bundle and the
+isolated Python used for native file imports remain unchanged. Start the app again
+after moving/updating it to repair environment launcher links. Keep the installed
+app available while using its environment terminal.
+
+For UMA, obtain model access through Hugging Face, then run `hf auth login` in the
+environment terminal after installing `fairchem-core`. The shell and generated
+terminal session share `HF_HOME` and any configured `HF_TOKEN_PATH`/`HF_HUB_CACHE`;
+saved credentials are reused without placing tokens in scripts. Exporting a token
+in a separate terminal does not change a running app's environment. Model downloads,
+model access, supported devices, and any external calculation engines remain
+requirements of the selected package. The Tutorial includes MACE and UMA examples
+using `STRUCT_0`. Package/terminal integration is validated on macOS; Windows/Linux
+launch paths need validation on their respective platforms.
 
 - `studio.add(atoms)` creates a document, prints its new `STRUCT_N` name, and returns
   the registered ASE object. Its supplied geometry is used directly, without applying
@@ -106,11 +146,14 @@ The embedded session does not provide a standalone Python executable for
 - `studio.original(N)` returns an independent copy of the original input.
 - `studio.update(atoms)` publishes a snapshot without evaluating a calculator.
 
-Code runs in a separate process using the same bundled Python runtime. **Stop**
+Code runs in a separate process using the selected Python environment. **Stop**
 interrupts execution; if it cannot stop promptly, the process is restarted after
 two seconds. A forced restart loses Python variables, while the app retains the
 last accepted geometry. Errors also retain the last published geometry; unpublished
-Python edits remain in the session until corrected, published, or restarted.
+structure edits are discarded after errors or Stop. The registered ASE objects are
+restored to the app's last accepted geometry before the next run, including inactive
+structures. Ordinary Python variables and calculators persist unless the process
+is restarted.
 Geometry editing controls are disabled during execution. Camera and appearance
 controls remain available, and updating an inactive structure does not select it.
 
@@ -321,9 +364,10 @@ ctest --test-dir build-release --output-on-failure
 The result is `build-release/bin/atom-studio.app`. A successfully deployed bundle
 does not require users to install Python, Conda, ASE, or Qt. Check `macdeployqt`
 output for unresolved-framework errors; its exit status alone is not sufficient.
-Python is private to the app: it ignores external
-Python settings and packages, does not modify the user's Python environment,
-and reports a broken bundle instead of falling back to an external interpreter.
+The base runtime and native file reader are private to the app: they ignore external
+Python settings and packages and report a broken bundle instead of falling back to
+a system interpreter. The interactive shell uses the user-owned environments described
+above; their packages can be configured without changing system Python or the bundle.
 
 Normal builds bundle Python; `deploy` additionally packages Qt. The Python bundle
 test checks relocation, conflicting environment settings, native dependencies,

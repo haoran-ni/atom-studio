@@ -2,6 +2,7 @@
 #include "components/MetalViewport.h"
 #include "components/StructureModel.h"
 #include "components/PythonShellController.h"
+#include <QTemporaryDir>
 #include "common/Camera.h"
 #include "Structure.h"
 #include <QGuiApplication>
@@ -155,7 +156,8 @@ int main(int argc, char** argv) {
         // both raster and RT. Presentation acknowledgements must allow a stream
         // to progress while the camera stays fixed and final RT converges.
         if (argc > 1) {
-            atom::ui::PythonShellController shell(&model, QString::fromLocal8Bit(argv[1]));
+            QTemporaryDir environments;
+            atom::ui::PythonShellController shell(&model, QString::fromLocal8Bit(argv[1]), nullptr, environments.path());
             QString pythonErrors;
             QObject::connect(&shell, &atom::ui::PythonShellController::output,
                 [&](const QString& text, bool error) { if (error) pythonErrors += text; });

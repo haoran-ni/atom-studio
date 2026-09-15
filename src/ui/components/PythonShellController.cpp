@@ -1,6 +1,8 @@
 #include "PythonShellController.h"
 #include "InteractiveShellWindow.h"
 #include "InteractiveShellTutorialWindow.h"
+#include "PythonEnvironmentManager.h"
+#include "PythonPackagesWindow.h"
 #include "StructureModel.h"
 #include "../../io/StructureSnapshot.h"
 #include "../../data/Structure.h"
@@ -19,11 +21,28 @@
 #endif
 
 namespace atom::ui {
-PythonShellController::PythonShellController(StructureModel* model, QString program, QObject* parent)
+PythonShellController::PythonShellController(StructureModel* model, QString program, QObject* parent, QString environmentRoot)
     : QObject(parent), m_model(model),
       m_program(program.isEmpty() ? QCoreApplication::applicationFilePath() : std::move(program)),
       m_directory(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)) {
     if (!QDir(m_directory).exists()) m_directory = QDir::homePath();
+    m_environment = new PythonEnvironmentManager(m_program, this, std::move(environmentRoot));
+    connect(m_environment, &PythonEnvironmentManager::prepared, this, [this] {
+        if (m_startRequested) { m_startRequested = false; startPreparedWorker(); }
+    });
+    connect(m_environment, &PythonEnvironmentManager::failed, this, [this] {
+        if (m_startRequested) {
+            m_startRequested = false;
+            setStatus(m_environment->status());
+            if (m_running) finishRun(false);
+        }
+    });
+    connect(m_environment, &PythonEnvironmentManager::output, this, [this](const QString& text) { emit output(text, false); });
+    connect(m_environment, &PythonEnvironmentManager::aboutToModify, this, [this] {
+        terminateWorker();
+        setStatus(tr("Environment changed. Run starts a fresh Python session; document geometry is retained."));
+    });
+    connect(this, &PythonShellController::stateChanged, this, [this] { m_environment->setSessionRunning(m_running); });
     m_flushTimer.setInterval(100);
 #ifdef Q_OS_WIN
     connect(&m_process, &QProcess::started, this, [this] {
@@ -75,7 +94,7 @@ PythonShellController::PythonShellController(StructureModel* model, QString prog
     connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &PythonShellController::shutdown);
 }
 
-PythonShellController::~PythonShellController() { shutdown(); delete m_window; delete m_tutorial; }
+PythonShellController::~PythonShellController() { shutdown(); delete m_window; delete m_tutorial; delete m_packages; }
 
 PythonShellController* PythonShellController::create(QQmlEngine* engine, QJSEngine*) {
     auto* model = StructureModel::instance();
@@ -115,16 +134,42 @@ void PythonShellController::openWindow() {
 }
 
 void PythonShellController::start() {
-    if (m_process.state() != QProcess::NotRunning) return;
+    if (m_process.state() != QProcess::NotRunning || m_startRequested) return;
+    if (m_environment->busy()) {
+        setStatus(tr("Wait for the environment operation to finish, then Run again."));
+        if (m_running) finishRun(false);
+        return;
+    }
+    m_startRequested = true;
+    // A Run request can prepare its environment before the worker exists.
+    m_environment->setSessionRunning(false);
+    m_environment->ensure();
+    setStatus(tr("Preparing Python environment…"));
+}
+
+void PythonShellController::startPreparedWorker() {
     m_shuttingDown = false;
     m_ready = false;
     m_synced.clear();
     m_readBuffer.clear();
-    m_process.setProgram(m_program);
-    m_process.setArguments({"--python-shell-worker"});
+    m_process.setProgram(m_environment->python());
+    m_process.setArguments({"-I", "-u", m_environment->workerScript()});
+    m_process.setProcessEnvironment(m_environment->processEnvironment());
     m_process.setWorkingDirectory(m_directory);
     m_process.start();
-    setStatus(tr("Starting bundled Python…"));
+    setStatus(tr("Starting Python — %1…").arg(m_environment->name()));
+}
+
+void PythonShellController::openPackages() {
+    if (!m_packages) m_packages = new PythonPackagesWindow(this);
+    m_packages->show(); m_packages->raise(); m_packages->activateWindow();
+    if (!m_environment->busy()) m_environment->refresh();
+}
+
+void PythonShellController::openEnvironmentTerminal() {
+    if (!m_packages) m_packages = new PythonPackagesWindow(this);
+    m_packages->show(); m_packages->raise(); m_packages->activateWindow();
+    m_environment->openTerminal(m_directory);
 }
 
 void PythonShellController::openTutorial() {
@@ -273,14 +318,19 @@ void PythonShellController::flushFrames() {
 }
 
 void PythonShellController::finishRun(bool success) {
-    m_running = m_finishing = m_stopping = false;
     m_stopTimer.stop();
     m_frames.clear();
     m_flushTimer.stop();
-    if (m_model) m_model->setEditsLocked(false);
-    setStatus(success ? tr("Finished") : tr("Stopped or failed — last published geometry retained"));
-    emit runFinished(success);
+    // Rejected/unpublished Python edits do not change native document revisions.
+    // Force a restore from the last accepted geometry after failure or Stop, and
+    // queue it before signals can start another run. _sync preserves ASE aliases
+    // and calculators while replacing the registered objects' structure data.
+    if (!success) m_synced.clear();
     if (m_ready) syncWorkspace();
+    m_running = m_finishing = m_stopping = false;
+    if (m_model) m_model->setEditsLocked(false);
+    setStatus(success ? tr("Finished") : tr("Stopped or failed — unpublished structure edits discarded"));
+    emit runFinished(success);
 }
 
 void PythonShellController::stop() {
@@ -295,6 +345,7 @@ void PythonShellController::stop() {
 }
 
 void PythonShellController::terminateWorker() {
+    m_startRequested = false;
     m_stopTimer.stop();
     if (m_process.state() != QProcess::NotRunning) {
 #ifndef Q_OS_WIN
@@ -323,5 +374,7 @@ void PythonShellController::shutdown() {
     terminateWorker();
     if (m_window) m_window->hide();
     if (m_tutorial) m_tutorial->hide();
+    if (m_packages) m_packages->hide();
+    m_environment->cancel();
 }
 }

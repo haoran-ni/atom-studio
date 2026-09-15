@@ -36,6 +36,8 @@ enter <code>print(STRUCT_0)</code>, and click <b>Run</b>.</p>
 <li><a href="#files">Scripts, files, and the Python environment</a></li>
 <li><a href="#recovery">Stop, errors, restart, and restoring geometry</a></li>
 <li><a href="#troubleshooting">Troubleshooting and practical limits</a></li>
+<li><a href="#packages">Install packages and use the external terminal</a></li>
+<li><a href="#models">MACE, UMA, and Hugging Face authentication</a></li>
 </ol>
 
 <a name="first-run"></a>
@@ -209,15 +211,17 @@ write("relaxed.xyz", STRUCT_0)</pre>
 <p>You can also export the displayed working structure with <b>Files → Export
 Structures</b>. Native exports preserve geometry and position precision; they are
 not complete Python session checkpoints. Save your script separately.</p>
-<p>The shell uses ATOM-STUDIO's bundled Python, ASE, and NumPy. Packages in your
-system Python or Conda environment are not automatically available. Additional
-packages and external calculation engines are not installed by the shell; the
-application runtime remains read-only. An ASE interface to an external engine
+<p>The shell uses a writable environment created from ATOM-STUDIO's bundled Python.
+ASE, NumPy, and pip are available initially. Use <b>Code → Manage Packages</b> to add
+packages. System Python and Conda packages are not automatically imported. The
+application bundle and the Python used for native file imports remain read-only
+and separate from your shell package changes. An ASE interface to an external engine
 still needs that engine and its configuration.</p>
 <p>Enter Python code, not terminal commands. <code>input()</code> is unavailable;
-set parameters in the editor. The embedded session does not supply a standalone
-interpreter for <code>multiprocessing</code> spawn or Python subprocess commands
-launched through <code>sys.executable</code>.</p>
+set parameters in the editor. <code>sys.executable</code> is a real Python interpreter
+for this environment and can launch Python subprocesses. Multiprocessing requires
+importable functions and an appropriate main guard in a saved module; functions
+defined only in this editor are not importable modules.</p>
 
 <a name="recovery"></a>
 <h2>9. Stop, errors, restart, and restoring geometry</h2>
@@ -225,8 +229,9 @@ launched through <code>sys.executable</code>.</p>
 <li><b>Stop:</b> requests an interruption. If code cannot stop promptly, Python is
 restarted after two seconds. The viewport retains the last accepted geometry.</li>
 <li><b>Errors:</b> read the last lines of the traceback in Output. The app retains
-the last published geometry; Python edits made before an error can remain in
-memory even if they were not published. Correct them and run again, or restart.</li>
+the last accepted geometry and restores the registered <code>STRUCT_N</code> objects
+to that state, discarding unpublished structure edits. Stop also restores these
+objects. Ordinary Python variables and calculators persist unless Python restarts.</li>
 <li><b>Restart Python:</b> clears Python variables, imports, functions, and calculators,
 then reloads the current document geometry. It retains the editor text and does
 not undo published geometry changes.</li>
@@ -234,6 +239,17 @@ not undo published geometry changes.</li>
 restore the active document's original input with the current global replication
 factors. This replaces its working edits.</li>
 </ul>
+<p>Structure validation errors name the affected object, for example
+<code>ValueError: STRUCT_1: Positions must be finite and within 1e15 angstroms</code>.
+This means that object contains a NaN, an infinite coordinate, or a coordinate whose
+magnitude exceeds 1e15 Å. Before sending final updates, the shell validates every
+registered <code>STRUCT_N</code>, including inactive structures: ordinary ASE objects
+and NumPy arrays can change through aliases. These checks do not run calculators.
+If any structure fails validation, no final updates from that run are sent;
+previously accepted live frames are retained and restored into Python. Rejected
+coordinates therefore do not carry over into later runs. Validation occurs at
+<code>studio.update(...)</code> or at the end of a run; individual NumPy assignments
+are not intercepted.</p>
 <p>Changing sidebar replication factors also rebuilds periodic working structures
 from their originals, replacing Python edits. Use a separate document for
 experiments you want to compare. Published edits are not automatically saved to
@@ -272,6 +288,95 @@ through live connectivity updates until the working structure is reset.</p>
 <p>Large structures and expensive calculators take longer to compute, transfer,
 and render. Preview updates are bounded, and Output omits excessive text. Start
 with a small system and a modest update rate when checking a new script.</p>
+<p><a href="#contents">Back to contents</a></p>
+<a name="packages"></a>
+<h2>11. Install packages and use the external terminal</h2>
+<ol>
+<li>Open <b>Code → Manage Packages</b>. The default environment is prepared automatically, without a separate Python installation.</li>
+<li>Enter a PyPI package name and optionally an exact version. Click <b>Install / Upgrade</b> and wait for completion. Leave the version empty for pip to select the newest compatible release.</li>
+<li>Read the installation output if something fails. <b>Check Dependencies</b> checks installed package requirements. <b>Refresh</b> reloads the package list after terminal changes.</li>
+<li>Return to the interactive shell and run your import. Installing packages from this window ends the idle Python session, so the next Run starts with fresh imports. Geometry and editor text are retained.</li>
+</ol>
+<p>Packages marked <b>Bundled (read-only)</b> are inherited from the app. You can install
+a different version in your environment without modifying the app. <b>Uninstall Selected</b>
+removes only a local installation; a bundled version may become visible again afterward.</p>
+<p>Use <b>New…</b> to create named environments, for example <code>mace</code> and
+<code>uma</code>, when packages need different dependency versions. Select the environment
+before running code. Switching clears Python variables and calculators, retains loaded
+structures, and synchronizes them into the new session.</p>
+<p><b>Code → Open Environment Terminal</b> opens a new session in your external terminal
+with the same environment already activated. On macOS, the default application for
+<code>.command</code> files is used; <b>Choose Terminal…</b> can select another terminal.
+This is an ordinary terminal, independent of ATOM-STUDIO.</p>
+<p>Example <b>terminal commands</b> (do not paste these into the Python editor):</p>
+<pre class="terminal">python -m pip install mace-torch
+python -m pip install "some-package==1.2.3"
+python -m pip install -r requirements.txt
+python -m pip list
+python -m pip check</pre>
+<p>Advanced users can install local wheels, packages from source, and custom package
+indexes using standard pip commands. Source builds may require external compilers or
+libraries. Download sizes and device support depend on the selected package. Stop
+calculations before modifying dependencies in a terminal, then click <b>Restart Python</b>
+in the interactive shell. Exporting a variable in a terminal does not update the already
+running app; configure calculator settings in your script when needed.</p>
+<p><b>Cancel Operation</b> stops the installer. An error or cancellation may leave partial
+changes. Review the output, retry, check dependencies, or create a fresh environment.
+Closing the package window lets the operation continue; quitting the app stops it.</p>
+<p>Environments persist in your user application-data folder, separated by Python
+version and architecture. Keep the installed app in place while using its terminal;
+launch the app again after moving it to repair environment links. The app's native
+file reader continues using its own isolated bundled packages.</p>
+
+<a name="models"></a>
+<h2>12. MACE, UMA, and Hugging Face authentication</h2>
+<h3>MACE relaxation of STRUCT_0</h3>
+<p>Select the <b>MACE</b> shortcut in Manage Packages, then Install. It selects
+<code>mace-torch</code>, the interatomic-potential package. The following example uses
+a small MACE-MP materials model on CPU. The first call downloads its weights; choose
+a model appropriate for your system before scientific use.</p>
+<pre>from mace.calculators import mace_mp
+from ase.optimize import BFGS
+
+atoms = STRUCT_0
+studio.show(atoms)
+atoms.calc = mace_mp(model="small", device="cpu", default_dtype="float64")
+optimizer = BFGS(atoms, logfile="-")
+optimizer.attach(studio.update, interval=1, atoms=atoms)
+converged = optimizer.run(fmax=0.05, steps=50)
+print("Converged:", converged)
+print("Energy (eV):", atoms.get_potential_energy())</pre>
+<h3>UMA authentication</h3>
+<ol>
+<li>Install <code>fairchem-core</code> using the UMA / FAIRChem shortcut. A separate environment is useful because its dependencies can differ from MACE's.</li>
+<li>Sign in on the Hugging Face website and request access to <code>facebook/UMA</code>. The user's account must have model access; having a token alone is insufficient.</li>
+<li>Open the environment terminal and run <code>hf auth login</code>. Complete authentication there, then restart the interactive Python shell.</li>
+</ol>
+<p>Hugging Face saves credentials locally. The terminal and interactive shell share
+<code>HF_HOME</code> and any configured <code>HF_TOKEN_PATH</code>/<code>HF_HUB_CACHE</code>.
+Do not paste tokens into saved Python scripts. An existing saved login at that location
+can be reused. Model access and downloads are handled by Hugging Face and FAIRChem.</p>
+<h3>UMA relaxation of STRUCT_0</h3>
+<p>This example selects the materials task <code>omat</code>. Use the task appropriate
+to your structure; molecular tasks may also require charge and spin metadata. Model
+names and device support depend on the installed FAIRChem release. CPU is shown for
+a small initial test; do not assume every model supports Apple GPU or CUDA on every platform.</p>
+<pre>from fairchem.core import FAIRChemCalculator, pretrained_mlip
+from ase.optimize import BFGS
+
+predictor = pretrained_mlip.get_predict_unit("uma-s-1p1", device="cpu")
+atoms = STRUCT_0
+studio.show(atoms)
+atoms.calc = FAIRChemCalculator(predictor, task_name="omat")
+optimizer = BFGS(atoms, logfile="-")
+optimizer.attach(studio.update, interval=1, atoms=atoms)
+converged = optimizer.run(fmax=0.05, steps=50)
+print("Converged:", converged)
+print("Energy (eV):", atoms.get_potential_energy())</pre>
+<p>A 401/403 or gated-repository error usually calls for checking the account's model
+access, saved login, and credential directory. <code>ModuleNotFoundError</code> calls
+for checking the selected environment and installation output. Packages may upgrade
+ASE within the shell environment without changing the app's native file reader.</p>
 <p><a href="#contents">Back to contents</a></p>
 </body>
 </html>
