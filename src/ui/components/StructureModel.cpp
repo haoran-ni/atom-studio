@@ -36,6 +36,14 @@ void replaceWorkingCopy(StructureDocument& document, std::shared_ptr<data::Struc
     document.appliedColorScheme = -1;
     document.appliedBondRadius = -1;
     document.detectedBondScale = std::numeric_limits<float>::quiet_NaN();
+    document.deletedBonds.clear();
+}
+
+StructureDocument::BondIdentity bondIdentity(const data::Structure& structure, const data::Bond& bond) {
+    auto first = structure.atomId(bond.atomIndex1), second = structure.atomId(bond.atomIndex2);
+    int x = bond.imageX, y = bond.imageY, z = bond.imageZ;
+    if (first > second) { std::swap(first, second); x = -x; y = -y; z = -z; }
+    return {first, second, x, y, z};
 }
 
 data::ElementColorScheme colorSchemeFromIndex(int index) {
@@ -213,19 +221,20 @@ void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
     addStructure(std::move(structure));
 }
 
-void StructureModel::addStructure(std::shared_ptr<data::Structure> structure) {
-    if (!structure) return;
+qint64 StructureModel::addStructure(std::shared_ptr<data::Structure> structure, bool replicate) {
+    if (!structure) return -1;
     auto document = std::make_shared<StructureDocument>();
     document->id = m_nextId;
     auto raw = structure->clone();
     raw->setName("STRUCT_" + std::to_string(document->id) + "_RAW");
-    document->current = workingCopy(*raw, document->id, m_replication);
-    if (!document->current) return;
+    document->current = workingCopy(*raw, document->id, replicate ? m_replication : std::array<int, 3>{1, 1, 1});
+    if (!document->current) return -1;
     document->raw = std::move(raw);
     m_documents.push_back(std::move(document));
     ++m_nextId;
     emit structuresChanged();
     setActiveIndex(structureCount() - 1);
+    return m_documents.back()->id;
 }
 
 void StructureModel::setActiveIndex(int index) {
@@ -237,6 +246,7 @@ void StructureModel::setActiveIndex(int index) {
     if (index == m_activeIndex) return;
     const bool firstStructure = m_activeIndex < 0;
     cancelBondDetection();
+    m_liveFramePending = false;
     m_activeIndex = index;
     m_active = m_documents[index];
     if (m_active->elements.isEmpty()) updateElementList();
@@ -261,6 +271,77 @@ void StructureModel::nameCurrentStructure() {
         m_active->current->setName("STRUCT_" + std::to_string(activeId()) + "_CURRENT");
 }
 
+std::shared_ptr<StructureDocument> StructureModel::document(qint64 id) const {
+    for (const auto& entry : m_documents) if (entry->id == id) return entry;
+    return {};
+}
+
+void StructureModel::setEditsLocked(bool locked) {
+    if (m_editsLocked == locked) return;
+    m_editsLocked = locked;
+    emit editsLockedChanged();
+}
+
+bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
+                                        std::shared_ptr<data::Structure> structure) {
+    auto entry = document(id);
+    if (!entry || entry->revision != revision || !structure || m_switchingLocked) return false;
+    const auto previous = entry->current;
+    // IDs survive ASE slicing and reordering. Newly inserted atoms keep defaults.
+    std::unordered_map<int64_t, size_t> indices;
+    for (size_t i = 0; i < previous->atomCount(); ++i) indices[previous->atomId(i)] = i;
+    structure->updateColorsFromElements(colorSchemeFromIndex(m_colorScheme));
+    for (size_t i = 0; i < structure->atomCount(); ++i) {
+        const auto found = indices.find(structure->atomId(i));
+        if (found == indices.end()) continue;
+        const size_t old = found->second;
+        if (previous->atomicNumber(old) != structure->atomicNumber(i)) continue;
+        structure->radii()[i] = previous->radii()[old];
+        structure->colorsR()[i] = previous->colorsR()[old];
+        structure->colorsG()[i] = previous->colorsG()[old];
+        structure->colorsB()[i] = previous->colorsB()[old];
+        structure->setColorOverride(i, previous->colorOverridden(old));
+        structure->setAtomSelected(i, previous->atomSelected(old));
+    }
+    std::unordered_map<int64_t, size_t> newIndices;
+    for (size_t i = 0; i < structure->atomCount(); ++i) newIndices[structure->atomId(i)] = i;
+    const auto& oldBonds = previous->bonds();
+    auto& bonds = structure->bonds();
+    for (size_t i = 0; i < oldBonds.bondCount(); ++i) {
+        const auto& bond = oldBonds.bond(i);
+        auto first = newIndices.find(previous->atomId(bond.atomIndex1));
+        auto second = newIndices.find(previous->atomId(bond.atomIndex2));
+        if (first == newIndices.end() || second == newIndices.end()) continue;
+        const auto index = bonds.addBond(first->second, second->second,
+                                        bond.imageX, bond.imageY, bond.imageZ, bond.order);
+        const bool swapped = first->second > second->second;
+        bonds.setRadius(index, oldBonds.radius(i), oldBonds.radiusOverridden(i));
+        bonds.setStartColor(index, swapped ? oldBonds.endColor(i) : oldBonds.startColor(i),
+                            swapped ? oldBonds.endColorOverridden(i) : oldBonds.startColorOverridden(i));
+        bonds.setEndColor(index, swapped ? oldBonds.startColor(i) : oldBonds.endColor(i),
+                          swapped ? oldBonds.startColorOverridden(i) : oldBonds.endColorOverridden(i));
+        bonds.setSelected(index, oldBonds.selected(i));
+    }
+    structure->setSourcePath(previous->sourcePath());
+    structure->setName("STRUCT_" + std::to_string(id) + "_CURRENT");
+    entry->current = std::move(structure);
+    entry->elements.clear();
+    entry->detectedBondScale = std::numeric_limits<float>::quiet_NaN();
+    entry->appliedColorScheme = m_colorScheme;
+    ++entry->revision;
+    if (entry == m_active) {
+        cancelBondDetection();
+        updateElementList();
+        m_liveFramePending = true;
+        emit structureChanged();
+        emit selectionChanged();
+        emit structureEdited(entry->current);
+        ensureBonds(m_requestedBondScale);
+    }
+    emit documentGeometryChanged(id);
+    return true;
+}
+
 void StructureModel::applySharedAppearance(int colorScheme, float bondRadius) {
     m_colorScheme = colorScheme;
     m_bondRadius = bondRadius;
@@ -280,6 +361,7 @@ void StructureModel::applySharedAppearance(int colorScheme, float bondRadius) {
 }
 
 void StructureModel::resetToOriginal() {
+    if (m_editsLocked || m_switchingLocked) return;
     if (!m_active->raw) return;
     auto current = workingCopy(*m_active->raw, activeId(), m_replication);
     if (!current) return;
@@ -289,10 +371,13 @@ void StructureModel::resetToOriginal() {
     updateElementList();
     emit structureChanged();
     emitSelectionResetSignals();
+    ++m_active->revision;
+    emit documentGeometryChanged(activeId());
     emit structureUpdated(m_active->current);
 }
 
 void StructureModel::replicateCell(int nx, int ny, int nz) {
+    if (m_editsLocked || m_switchingLocked) return;
     if (!hasReplicableStructures()) return;
     if (nx < 1 || ny < 1 || nz < 1 || nx > 99 || ny > 99 || nz > 99) return;
     const std::array<int, 3> factors{nx, ny, nz};
@@ -310,17 +395,24 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
 
     cancelBondDetection();
     for (size_t i = 0; i < m_documents.size(); ++i) {
-        if (replicated[i]) replaceWorkingCopy(*m_documents[i], std::move(replicated[i]));
+        if (replicated[i]) {
+            replaceWorkingCopy(*m_documents[i], std::move(replicated[i]));
+            ++m_documents[i]->revision;
+            emit documentGeometryChanged(m_documents[i]->id);
+        }
     }
     setReplicationFactors(nx, ny, nz);
     updateElementList();
     emit structureChanged();
     emitSelectionResetSignals();
     // Notify the single viewport once, after the entire collection is updated.
+    ++m_active->revision;
+    emit documentGeometryChanged(activeId());
     emit structureUpdated(m_active->current);
 }
 
 void StructureModel::unwrapMolecules() {
+    if (m_editsLocked || m_switchingLocked) return;
     if (!m_active->current || !m_active->current->hasLattice()) return;
     if (m_active->current->bonds().empty()) return;
 
@@ -329,6 +421,8 @@ void StructureModel::unwrapMolecules() {
     m_active->detectedBondScale = std::numeric_limits<float>::quiet_NaN();
     clearSelection();
     emit structureChanged();
+    ++m_active->revision;
+    emit documentGeometryChanged(activeId());
     emit structureUpdated(m_active->current);
 }
 
@@ -516,10 +610,16 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
 }
 
 bool StructureModel::deleteSelectedObjects() {
+    if (m_editsLocked || m_switchingLocked) return false;
     if (!m_active->current || !selectionEnabled() || !m_active->current->hasSelection()) return false;
 
     auto editedStructure = m_active->current->clone();
     if (!editedStructure->deleteSelectedObjects()) return false;
+
+    const auto& previousBonds = m_active->current->bonds();
+    for (size_t i = 0; i < previousBonds.bondCount(); ++i)
+        if (previousBonds.selected(i))
+            m_active->deletedBonds.insert(bondIdentity(*m_active->current, previousBonds.bond(i)));
 
     cancelBondDetection();
     m_active->current = std::move(editedStructure);
@@ -531,6 +631,8 @@ bool StructureModel::deleteSelectedObjects() {
     emit structureChanged();
     emit selectionChanged();
     emit structureStyleChanged();
+    ++m_active->revision;
+    emit documentGeometryChanged(activeId());
     emit structureEdited(m_active->current);
     if (needsBonds) ensureBonds(m_requestedBondScale);
     return true;
@@ -538,6 +640,7 @@ bool StructureModel::deleteSelectedObjects() {
 
 void StructureModel::clear() {
     cancelBondDetection();
+    m_liveFramePending = false;
     m_documents.clear();
     m_active = std::make_shared<StructureDocument>();
     m_activeIndex = -1;
@@ -605,6 +708,9 @@ void StructureModel::onBondsReady() {
     const auto result = m_bondWatcher->result();
     if (result.revision == m_bondRevision && result.source == m_active->current && result.bonds) {
         auto& bonds = *result.bonds;
+        for (size_t i = bonds.bondCount(); i-- > 0;)
+            if (m_active->deletedBonds.contains(bondIdentity(*m_active->current, bonds.bond(i))))
+                bonds.removeBond(i);
         bonds.setAllRadii(m_bondRadius);
         // Restore surviving per-bond edits after an explicit cutoff change.
         using Key = std::tuple<uint32_t, uint32_t, int, int, int>;

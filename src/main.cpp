@@ -8,14 +8,33 @@
 
 #include "core/Application.h"
 #include "python/PythonRuntime.h"
+#include <cstdlib>
+#include <cstdio>
+#include <string>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 int main(int argc, char* argv[])
 {
+    const bool shellWorker = argc == 2 && std::string(argv[1]) == "--python-shell-worker";
+#ifndef _WIN32
+    if (shellWorker && setpgid(0, 0) != 0) {
+        std::perror("Could not isolate Python worker process group");
+        return 1;
+    }
+#endif
     // Initialize Python interpreter BEFORE Qt
     // This ensures Python is ready for ASE file reading
     if (!atom::python::PythonRuntime::instance().initialize()) {
         qCritical() << "Failed to initialize Python runtime";
         return -1;
+    }
+    if (shellWorker) {
+        const int result = atom::python::runInteractiveShellWorker();
+        // The worker owns daemon I/O and user-created threads. Process exit is
+        // intentional; never finalize Python underneath a running thread.
+        std::_Exit(result);
     }
 
 #ifdef Q_OS_MACOS
@@ -60,17 +79,13 @@ int main(int argc, char* argv[])
     qInfo() << "Starting ATOM-STUDIO v" << app.applicationVersion();
     qInfo() << "Qt version:" << qVersion();
 
-    // Create and initialize the application
-    atom::Application atomApp;
-
-    if (!atomApp.initialize()) {
-        qCritical() << "Failed to initialize application";
-        atom::python::PythonRuntime::instance().finalize();
-        return -1;
+    int result = -1;
+    {
+        // Destroy controllers and join file-I/O workers before finalizing Python.
+        atom::Application atomApp;
+        if (atomApp.initialize()) result = app.exec();
+        else qCritical() << "Failed to initialize application";
     }
-
-    // Run the event loop
-    int result = app.exec();
 
     // Finalize Python interpreter after Qt event loop ends
     atom::python::PythonRuntime::instance().finalize();

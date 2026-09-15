@@ -33,6 +33,7 @@ class StructureModel : public QObject {
     QML_SINGLETON
 
     Q_PROPERTY(int structureCount READ structureCount NOTIFY structuresChanged)
+    Q_PROPERTY(bool editsLocked READ editsLocked NOTIFY editsLockedChanged)
     Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeStructureChanged)
     Q_PROPERTY(qint64 activeId READ activeId NOTIFY activeStructureChanged)
     Q_PROPERTY(bool switchingLocked READ switchingLocked WRITE setSwitchingLocked NOTIFY switchingLockedChanged)
@@ -73,7 +74,14 @@ public:
     int activeIndex() const { return m_activeIndex; }
     qint64 activeId() const { return m_active->id; }
     bool switchingLocked() const { return m_switchingLocked; }
-    void addStructure(std::shared_ptr<data::Structure> structure);
+    qint64 addStructure(std::shared_ptr<data::Structure> structure, bool replicate = true);
+    const std::vector<std::shared_ptr<StructureDocument>>& documents() const { return m_documents; }
+    std::shared_ptr<StructureDocument> document(qint64 id) const;
+    bool editsLocked() const { return m_editsLocked; }
+    void setEditsLocked(bool locked);
+    bool liveFramePending() const { return m_liveFramePending; }
+    void finishLiveFrame() { m_liveFramePending = false; }
+    bool applyShellStructure(qint64 id, quint64 revision, std::shared_ptr<data::Structure> structure);
     Q_INVOKABLE void setActiveIndex(int index);
     void setSwitchingLocked(bool locked);
     void applySharedAppearance(int colorScheme, float bondRadius);
@@ -123,6 +131,8 @@ public slots:
     void notifyBondsUpdated();
 
 signals:
+    void editsLockedChanged();
+    void documentGeometryChanged(qint64 id);
     void structuresChanged();
     void activeStructureChanged();
     void switchingLockedChanged();
@@ -154,6 +164,8 @@ private:
     qint64 m_nextId = 0;
     int m_activeIndex = -1;
     bool m_switchingLocked = false;
+    bool m_editsLocked = false;
+    bool m_liveFramePending = false;
     int m_deferredIndex = -1;
 
     struct BondResult {

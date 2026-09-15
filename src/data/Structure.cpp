@@ -213,6 +213,11 @@ std::unique_ptr<Structure> Structure::clone() const {
     s->m_posX          = m_posX;
     s->m_posY          = m_posY;
     s->m_posZ          = m_posZ;
+    s->m_precisePositions = m_precisePositions;
+    s->m_atomIds = m_atomIds;
+    s->m_nextAtomId = m_nextAtomId;
+    s->m_asePayload = m_asePayload;
+    s->m_aseEdits = m_aseEdits;
     s->m_atomicNumbers = m_atomicNumbers;
     s->m_symbols       = m_symbols;
 
@@ -244,6 +249,8 @@ std::unique_ptr<Structure> Structure::clone() const {
 }
 
 void Structure::reserve(size_t count) {
+    m_precisePositions.reserve(count);
+    m_atomIds.reserve(count);
     m_posX.reserve(count);
     m_posY.reserve(count);
     m_posZ.reserve(count);
@@ -258,6 +265,9 @@ void Structure::reserve(size_t count) {
 }
 
 void Structure::resize(size_t count) {
+    m_precisePositions.resize(count);
+    while (m_atomIds.size() < count) m_atomIds.push_back(m_nextAtomId++);
+    m_atomIds.resize(count);
     m_posX.resize(count, 0.0f);
     m_posY.resize(count, 0.0f);
     m_posZ.resize(count, 0.0f);
@@ -273,6 +283,10 @@ void Structure::resize(size_t count) {
 }
 
 void Structure::clear() {
+    m_precisePositions.clear();
+    m_atomIds.clear();
+    m_asePayload.clear();
+    m_aseEdits.clear();
     m_posX.clear();
     m_posY.clear();
     m_posZ.clear();
@@ -304,6 +318,9 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber) {
 
 size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::string_view symbol) {
     size_t index = m_atomCount++;
+
+    m_precisePositions.push_back({x, y, z});
+    m_atomIds.push_back(m_nextAtomId++);
 
     m_posX.push_back(x);
     m_posY.push_back(y);
@@ -475,6 +492,14 @@ bool Structure::deleteSelectedObjects() {
         }
     }
 
+    if (keptAtomCount != oldAtomCount && !m_asePayload.empty()) {
+        ASEMetadataEdit edit;
+        for (size_t i = 0; i < oldAtomCount; ++i)
+            if (!removedAtoms[i]) edit.indices.push_back(i);
+        m_aseEdits.push_back(std::move(edit));
+    }
+    compactAtomVector(m_precisePositions, removedAtoms, keptAtomCount);
+    compactAtomVector(m_atomIds, removedAtoms, keptAtomCount);
     compactAtomVector(m_posX, removedAtoms, keptAtomCount);
     compactAtomVector(m_posY, removedAtoms, keptAtomCount);
     compactAtomVector(m_posZ, removedAtoms, keptAtomCount);
@@ -554,6 +579,26 @@ void Structure::setPosition(size_t index, float x, float y, float z) {
     m_posX[index] = x;
     m_posY[index] = y;
     m_posZ[index] = z;
+    m_precisePositions[index] = {x, y, z};
+}
+
+void Structure::setPrecisePosition(size_t index, double x, double y, double z) {
+    setPosition(index, static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+    m_precisePositions[index] = {x, y, z};
+}
+
+std::array<double, 3> Structure::precisePosition(size_t index) const {
+    auto value = m_precisePositions.at(index);
+    const auto rendered = position(index);
+    for (int axis = 0; axis < 3; ++axis)
+        if (static_cast<float>(value[axis]) != rendered[axis]) value[axis] = rendered[axis];
+    return value;
+}
+
+void Structure::inheritASEMetadata(const Structure& source, ASEMetadataEdit edit) {
+    m_asePayload = source.m_asePayload;
+    m_aseEdits = source.m_aseEdits;
+    if (!m_asePayload.empty()) m_aseEdits.push_back(std::move(edit));
 }
 
 void Structure::setAtomicNumber(size_t index, int atomicNumber) {

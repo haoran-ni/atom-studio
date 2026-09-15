@@ -11,6 +11,7 @@ A high-performance desktop application for visualization of atomic structures.
 - PNG image export with optional transparent background and axes
 - Ray-traced images retain accumulated samples when changing background color or opacity, including transparent PNG export
 - Export the current edited structure as FHI-aims `.in`, CIF, POSCAR, or extended XYZ
+- Persistent interactive Python/ASE shell with live structure updates and relaxation examples
 - Real-time ray tracing renderer (planned)
 - GPU and CPU optimized
 - Supports various atomic structure file formats
@@ -52,6 +53,80 @@ is ready, avoiding a blank viewport during preparation. Ray tracing starts again
 from zero on each switch. Structure export saves the active working copy;
 image capture briefly defers structure switching
 until the requested image has been saved.
+
+## Interactive Python
+
+Open **Code → Tutorial** for the built-in, searchable guide, including copyable
+examples for editing loaded structures and visualizing relaxation. It opens in
+a separate text window and is available offline.
+
+Open **Code → Open Interactive Shell** to write and run Python alongside the
+viewport. The nonmodal window contains an editor, output/tracebacks, a list of
+loaded structures, a working-directory chooser, and a live-update rate setting.
+Use **Run** or **Command/Ctrl+Enter**. Closing and reopening the window preserves
+the editor and Python session; **Restart Python** clears variables and calculators
+while retaining the current document geometry.
+
+Each document's current working geometry is an ordinary ASE `Atoms` object named
+`STRUCT_0`, `STRUCT_1`, and so on. Names use stable session IDs, not slider indices.
+Imports, deletions, resets, and replication synchronize into the shell while it
+is idle. Imports and variables persist between runs. Successful runs automatically
+publish changed registered structures, including assignments such as
+`STRUCT_0 = STRUCT_0[[2, 0, 1]]`.
+
+```python
+STRUCT_0.positions[:, 2] += 0.5
+```
+
+For intermediate updates during relaxation or a custom loop, call
+`studio.update(atoms)`. For example, with a loaded copper structure:
+
+```python
+from ase.calculators.emt import EMT
+from ase.optimize import BFGS
+
+STRUCT_0.calc = EMT()
+optimizer = BFGS(STRUCT_0, logfile="-")
+optimizer.attach(studio.update, interval=1, atoms=STRUCT_0)
+optimizer.run(fmax=0.05, steps=200)
+```
+
+The **Live relaxation demo** example creates its own copper structure. Use a
+calculator appropriate for your material. ASE's bundled calculators are available;
+external calculation engines and additional Python packages are not installed by
+the shell. The signed application runtime remains read-only. Scripts and calculator
+files use the selected working directory; `input()` is not supported.
+The embedded session does not provide a standalone Python executable for
+`multiprocessing` spawn or subprocess commands launched through `sys.executable`.
+
+- `studio.add(atoms)` creates a document, prints its new `STRUCT_N` name, and returns
+  the registered ASE object. Its supplied geometry is used directly, without applying
+  the sidebar replication factors a second time.
+- `studio.show(atoms)` selects its document in the viewport.
+- `studio.original(N)` returns an independent copy of the original input.
+- `studio.update(atoms)` publishes a snapshot without evaluating a calculator.
+
+Code runs in a separate process using the same bundled Python runtime. **Stop**
+interrupts execution; if it cannot stop promptly, the process is restarted after
+two seconds. A forced restart loses Python variables, while the app retains the
+last accepted geometry. Errors also retain the last published geometry; unpublished
+Python edits remain in the session until corrected, published, or restarted.
+Geometry editing controls are disabled during execution. Camera and appearance
+controls remain available, and updating an inactive structure does not select it.
+
+Live previews are bounded by the selected update rate and renderer throughput;
+intermediate steps may be skipped and the final successful state is always applied.
+Image capture temporarily defers incoming updates. Ray tracing restarts when geometry
+changes. Original documents remain unchanged. Changing sidebar replication factors
+still rebuilds periodic working copies from the original input, replacing Python edits.
+
+ASE snapshots retain double-precision positions, standard serializable constraints,
+custom arrays, and typed metadata. Rendering uses float coordinates. Atom identities
+preserve per-atom appearance and selection through ASE slicing/reordering; new atoms
+receive default appearance. Native structure exports preserve position precision but
+remain geometry-only exports, not full ASE session checkpoints.
+Explicitly deleted bonds stay deleted when live updates recompute connectivity;
+resetting the working structure clears those deletions.
 
 ## Unit Cell Replication
 

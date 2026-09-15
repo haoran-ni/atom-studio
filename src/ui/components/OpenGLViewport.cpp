@@ -449,6 +449,7 @@ void OpenGLViewport::activateStructure(std::shared_ptr<data::Structure> structur
 }
 
 void OpenGLViewport::setEditedStructure(std::shared_ptr<data::Structure> structure) {
+    ++m_requestedFrameToken;
     m_structure = structure;
     setHoverStatus(QString());
     m_needsStructureUpdate = true;
@@ -866,6 +867,10 @@ void OpenGLViewport::setRotationConstraint(int constraint) {
 }
 
 void OpenGLViewport::notifyFramePresented(qulonglong token) {
+    if (token >= m_requestedFrameToken) {
+        if (auto* model = StructureModel::instance(); model && model->structure() == m_structure)
+            model->finishLiveFrame();
+    }
     if (token <= m_frameToken) return;
     m_frameToken = token;
     emit frameTokenChanged();

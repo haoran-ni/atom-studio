@@ -1,6 +1,7 @@
 #import <Metal/Metal.h>
 #include "components/MetalViewport.h"
 #include "components/StructureModel.h"
+#include "components/PythonShellController.h"
 #include "common/Camera.h"
 #include "Structure.h"
 #include <QGuiApplication>
@@ -149,6 +150,41 @@ int main(int argc, char** argv) {
             }
             if (!visibleTransition(*viewport, window)) return 1;
             if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
+        }
+        // Drive actual bundled Python previews through the model and Metal, in
+        // both raster and RT. Presentation acknowledgements must allow a stream
+        // to progress while the camera stays fixed and final RT converges.
+        if (argc > 1) {
+            atom::ui::PythonShellController shell(&model, QString::fromLocal8Bit(argv[1]));
+            QString pythonErrors;
+            QObject::connect(&shell, &atom::ui::PythonShellController::output,
+                [&](const QString& text, bool error) { if (error) pythonErrors += text; });
+            bool finished = false, succeeded = false;
+            QObject::connect(&shell, &atom::ui::PythonShellController::runFinished,
+                [&](bool success) { finished = true; succeeded = success; });
+            for (int mode : {0, 1}) {
+                viewport->setRendererMode(mode);
+                if (!frame(*viewport)) return 1;
+                const auto camera = viewport->camera();
+                int presentations = 0;
+                const auto presentation = QObject::connect(viewport, &atom::ui::MetalViewport::frameTokenChanged,
+                    [&] { ++presentations; });
+                finished = false;
+                shell.run(QString("import time\nfor step in range(8):\n    STRUCT_%1.positions[0, 0] = step * 0.04\n    studio.update(STRUCT_%1)\n    time.sleep(0.15)\n").arg(model.activeId()));
+                if (!waitFor([&] { return finished; }, 20000) || !succeeded || presentations < 3) {
+                    std::cerr << "Python to Metal stream stalled: " << pythonErrors.toStdString() << '\n';
+                    return 1;
+                }
+                QObject::disconnect(presentation);
+                if (!frame(*viewport) || model.liveFramePending() ||
+                    std::abs(model.structure()->precisePosition(0)[0] - .28) > 1e-12 ||
+                    viewport->camera().viewMatrix() != camera.viewMatrix() ||
+                    viewport->camera().projectionMatrix() != camera.projectionMatrix()) {
+                    std::cerr << "Live preview changed camera or lost final geometry\n"; return 1;
+                }
+                if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
+            }
+            shell.shutdown();
         }
         // Switch faster than preparation/GPU completion; final empty document wins.
         auto empty = std::make_shared<atom::data::Structure>();

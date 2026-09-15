@@ -10,6 +10,8 @@ add_library(atom-io STATIC
     StructureFileWriter.h
     AsyncStructureExporter.cpp
     AsyncStructureExporter.h
+    StructureSnapshot.cpp
+    StructureSnapshot.h
 )
 
 target_include_directories(atom-io PUBLIC

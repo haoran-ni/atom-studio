@@ -12,6 +12,7 @@
 #endif
 #include "../ui/components/FileController.h"
 #include "../ui/components/StructureModel.h"
+#include "../ui/components/PythonShellController.h"
 
 namespace atom {
 
@@ -83,6 +84,8 @@ void Application::registerQmlTypes()
         ui::FileController::create);
     qmlRegisterSingletonType<ui::StructureModel>("AtomStudio", 1, 0, "StructureModel",
         ui::StructureModel::create);
+    qmlRegisterSingletonType<ui::PythonShellController>("AtomStudio", 1, 0, "PythonShellController",
+        ui::PythonShellController::create);
 }
 
 } // namespace atom

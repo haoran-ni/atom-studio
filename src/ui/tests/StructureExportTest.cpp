@@ -23,6 +23,7 @@ std::shared_ptr<data::Structure> makeStructure(bool withLattice, bool periodic) 
     structure->addAtom(1.7f, 2.4f, 0.5f, 6);
     structure->addAtom(3.2f, 0.4f, 2.6f, 1);
     structure->addAtom(0.3f, 3.1f, 1.7f, 6);
+    structure->setPrecisePosition(2, 3.23456789012345, 0.45678901234567, 2.67890123456789);
     auto& cell = structure->lattice();
     cell.defined = withLattice;
     cell.matrix = {{{4.5, 0.75, -0.2}, {0.3, 5.25, 0.4}, {-0.15, 0.65, 6.5}}};
@@ -33,7 +34,7 @@ std::shared_ptr<data::Structure> makeStructure(bool withLattice, bool periodic) 
 QJsonObject describe(const data::Structure& structure) {
     QJsonArray positions, numbers, cell, pbc;
     for (size_t i = 0; i < structure.atomCount(); ++i) {
-        const auto p = structure.position(i);
+        const auto p = structure.precisePosition(i);
         positions.append(QJsonArray{p[0], p[1], p[2]});
         numbers.append(structure.atomicNumber(i));
     }

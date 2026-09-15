@@ -174,12 +174,12 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
     for (int iz = 0; iz < nz; ++iz) {
         for (int iy = 0; iy < ny; ++iy) {
             for (int ix = 0; ix < nx; ++ix) {
-                const float dx = static_cast<float>(ix * a[0] + iy * b[0] + iz * c[0]);
-                const float dy = static_cast<float>(ix * a[1] + iy * b[1] + iz * c[1]);
-                const float dz = static_cast<float>(ix * a[2] + iy * b[2] + iz * c[2]);
+                const double dx = ix * a[0] + iy * b[0] + iz * c[0];
+                const double dy = ix * a[1] + iy * b[1] + iz * c[1];
+                const double dz = ix * a[2] + iy * b[2] + iz * c[2];
 
                 for (size_t at = 0; at < srcCount; ++at) {
-                    const auto pos = src.position(at);
+                    const auto pos = src.precisePosition(at);
                     const size_t idx = s->addAtom(
                         pos[0] + dx,
                         pos[1] + dy,
@@ -187,6 +187,7 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
                         src.atomicNumber(at),
                         src.symbol(at)
                     );
+                    s->setPrecisePosition(idx, pos[0] + dx, pos[1] + dy, pos[2] + dz);
 
                     // Override rendering properties with source values
                     s->radii()[idx]   = src.radii()[at];
@@ -239,6 +240,10 @@ std::unique_ptr<Structure> replicateCell(const Structure& src, int nx, int ny, i
     // Metadata
     s->setSourcePath(src.sourcePath());
     s->setName(src.name());
+    ASEMetadataEdit metadataEdit;
+    metadataEdit.isRepeat = true;
+    metadataEdit.repeat = {nx, ny, nz};
+    s->inheritASEMetadata(src, std::move(metadataEdit));
     for (const auto& [key, val] : src.info()) s->setInfo(key, val);
 
     // Bonds are intentionally left empty — caller should trigger re-detection.
@@ -261,10 +266,8 @@ void unwrapMolecules(Structure& s) {
     std::vector<std::array<double, 3>> wrappedFrac(n);
     std::vector<std::array<int, 3>> atomWrap(n, {0, 0, 0});
     for (size_t i = 0; i < n; ++i) {
-        auto frac = lat.cartesianToFractional(
-            s.positionsX()[i],
-            s.positionsY()[i],
-            s.positionsZ()[i]);
+        const auto position = s.precisePosition(i);
+        auto frac = lat.cartesianToFractional(position[0], position[1], position[2]);
 
         wrappedFrac[i] = frac;
         for (size_t axis = 0; axis < 3; ++axis) {
@@ -409,10 +412,7 @@ void unwrapMolecules(Structure& s) {
         const double fy = wrappedFrac[idx][1] + offset[idx][1];
         const double fz = wrappedFrac[idx][2] + offset[idx][2];
         const auto cart = lat.fractionalToCartesian(fx, fy, fz);
-        s.setPosition(idx,
-                      static_cast<float>(cart[0]),
-                      static_cast<float>(cart[1]),
-                      static_cast<float>(cart[2]));
+        s.setPrecisePosition(idx, cart[0], cart[1], cart[2]);
     }
 }
 

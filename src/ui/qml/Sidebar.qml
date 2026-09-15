@@ -5,6 +5,8 @@ import AtomStudio 1.0
 
 Rectangle {
     id: sidebar
+    signal openInteractiveShell()
+    signal openShellTutorial()
 
     property var viewport: null
     property string maxRTSamplesErrorMessage: ""
@@ -610,6 +612,40 @@ Rectangle {
                 }
 
                 SidebarSection {
+                    id: codeSection
+                    objectName: "codeSection"
+                    title: qsTr("Code")
+                    iconSource: "qrc:/icons/code.svg"
+                    Layout.fillWidth: true
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openInteractiveShellButton"
+                                        text: qsTr("Open Interactive Shell")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openInteractiveShell()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "shellTutorialButton"
+                                        text: qsTr("Tutorial")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openShellTutorial()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
                     id: structureInfoSection
                     title: qsTr("Info")
                     iconSource: "qrc:/icons/info.svg"
@@ -703,7 +739,7 @@ Rectangle {
                                                 id: replicateControls
                                                 width: parent.width
                                                 spacing: 6
-                                                enabled: StructureModel.hasReplicableStructures
+                                                enabled: StructureModel.hasReplicableStructures && !StructureModel.editsLocked
                                                 opacity: enabled ? 1.0 : 0.4
 
                                                 RowLayout {
@@ -786,7 +822,7 @@ Rectangle {
                                             id: unwrapButton
                                             text: qsTr("Unwrap Molecules")
                                             width: parent.width
-                                            enabled: StructureModel.hasUnitCell && StructureModel.hasBonds
+                                            enabled: StructureModel.hasUnitCell && StructureModel.hasBonds && !StructureModel.editsLocked
                                             opacity: enabled ? 1.0 : 0.4
                                             onClicked: StructureModel.unwrapMolecules()
                                         }
@@ -816,7 +852,7 @@ Rectangle {
                                     SidebarButton {
                                         text: qsTr("Reset to Original")
                                         Layout.fillWidth: true
-                                        enabled: StructureModel.hasStructure
+                                        enabled: StructureModel.hasStructure && !StructureModel.editsLocked
                                         onClicked: {
                                             StructureModel.resetToOriginal()
                                         }
@@ -924,7 +960,7 @@ Rectangle {
                                         text: qsTr("Reset selected objects")
                                         Layout.fillWidth: true
                                         enabled: StructureModel.hasStructure
-                                                 && StructureModel.selectionEnabled
+                                                 && StructureModel.selectionEnabled && !StructureModel.editsLocked
                                                  && (StructureModel.selectedAtomCount > 0
                                                      || StructureModel.selectedBondCount > 0)
                                         onClicked: {
@@ -943,7 +979,7 @@ Rectangle {
                                         text: qsTr("Delete selected objects")
                                         Layout.fillWidth: true
                                         enabled: StructureModel.hasStructure
-                                                 && StructureModel.selectionEnabled
+                                                 && StructureModel.selectionEnabled && !StructureModel.editsLocked
                                                  && (StructureModel.selectedAtomCount > 0
                                                      || StructureModel.selectedBondCount > 0)
                                         onClicked: StructureModel.deleteSelectedObjects()

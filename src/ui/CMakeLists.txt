@@ -10,6 +10,12 @@ set(UI_SHARED_SOURCES
     components/StructureModel.cpp
     components/StructureModel.h
     components/StructureDocument.h
+    components/PythonShellController.cpp
+    components/PythonShellController.h
+    components/InteractiveShellWindow.cpp
+    components/InteractiveShellWindow.h
+    components/InteractiveShellTutorialWindow.cpp
+    components/InteractiveShellTutorialWindow.h
     components/ViewportSelection.cpp
     components/ViewportSelection.h
 )
@@ -92,6 +98,10 @@ endif()
 
 # Exercise structure export and QML controls without an embedded Python runtime.
 if(BUILD_TESTING)
+    add_executable(atom-ui-python-shell-test tests/PythonShellTest.cpp)
+    target_link_libraries(atom-ui-python-shell-test PRIVATE atom-ui)
+    add_test(NAME atom-ui-python-shell COMMAND atom-ui-python-shell-test $<TARGET_FILE:atom-studio> -platform offscreen)
+    set_tests_properties(atom-ui-python-shell PROPERTIES TIMEOUT 90)
     add_executable(atom-ui-multiple-structures-test tests/MultipleStructuresTest.cpp)
     target_link_libraries(atom-ui-multiple-structures-test PRIVATE atom-ui)
     add_test(NAME atom-ui-multiple-structures COMMAND atom-ui-multiple-structures-test -platform offscreen)
@@ -99,7 +109,7 @@ if(BUILD_TESTING)
     if(APPLE)
         add_executable(atom-ui-metal-viewport-test tests/MetalViewportTest.mm)
         target_link_libraries(atom-ui-metal-viewport-test PRIVATE atom-ui)
-        add_test(NAME atom-ui-metal-viewport COMMAND atom-ui-metal-viewport-test)
+        add_test(NAME atom-ui-metal-viewport COMMAND atom-ui-metal-viewport-test $<TARGET_FILE:atom-studio>)
         set_tests_properties(atom-ui-metal-viewport PROPERTIES
             SKIP_RETURN_CODE 77 TIMEOUT 90 ENVIRONMENT "MTL_DEBUG_LAYER=1")
     endif()

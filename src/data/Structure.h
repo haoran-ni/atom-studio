@@ -3,6 +3,7 @@
 #include "BondList.h"
 #include "ElementData.h"
 #include <array>
+#include <cstdint>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -13,6 +14,14 @@
 #include <vector>
 
 namespace atom::data {
+
+// Deferred ASE metadata edits. Replayed in Python without bringing Python/GIL
+// ownership into the data model. Repeat follows the application's z/y/x order.
+struct ASEMetadataEdit {
+    std::vector<size_t> indices;
+    std::array<int, 3> repeat{1, 1, 1};
+    bool isRepeat = false;
+};
 
 /**
  * @brief Lattice/unit cell for periodic structures
@@ -239,6 +248,16 @@ public:
     Color color(size_t index) const;
 
     void setPosition(size_t index, float x, float y, float z);
+    // Keep scientific precision alongside the GPU-oriented float coordinates.
+    // Legacy edits through float accessors are detected by precisePosition().
+    void setPrecisePosition(size_t index, double x, double y, double z);
+    std::array<double, 3> precisePosition(size_t index) const;
+    int64_t atomId(size_t index) const { return m_atomIds.at(index); }
+    void setAtomId(size_t index, int64_t id) { m_atomIds.at(index) = id; if (id >= m_nextAtomId) m_nextAtomId = id + 1; }
+    const std::string& asePayload() const { return m_asePayload; }
+    void setASEPayload(std::string payload) { m_asePayload = std::move(payload); m_aseEdits.clear(); }
+    const std::vector<ASEMetadataEdit>& aseEdits() const { return m_aseEdits; }
+    void inheritASEMetadata(const Structure& source, ASEMetadataEdit edit);
     void setAtomicNumber(size_t index, int atomicNumber);
 
     // ========== Lattice ==========
@@ -317,6 +336,11 @@ private:
     std::vector<float> m_posX;
     std::vector<float> m_posY;
     std::vector<float> m_posZ;
+    std::vector<std::array<double, 3>> m_precisePositions;
+    std::vector<int64_t> m_atomIds;
+    int64_t m_nextAtomId = 1;
+    std::string m_asePayload;
+    std::vector<ASEMetadataEdit> m_aseEdits;
     std::vector<int> m_atomicNumbers;
     std::vector<std::string> m_symbols;
 

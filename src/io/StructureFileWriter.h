@@ -22,7 +22,7 @@ const StructureFileType* structureFileType(const QString& id);
 // Independent geometry snapshot: no bonds, rendering buffers, or mutable model
 // references are retained while a background export is running.
 struct StructureExportData {
-    std::vector<std::array<float, 3>> positions;
+    std::vector<std::array<double, 3>> positions;
     std::vector<int> atomicNumbers;
     data::Lattice lattice;
 

@@ -1,0 +1,5 @@
+#pragma once
+namespace atom::python {
+inline constexpr const char* bridgeSource = R"ATOMPY(@ATOM_BRIDGE_SOURCE@)ATOMPY";
+inline constexpr const char* shellSource = R"ATOMPY(@ATOM_SHELL_SOURCE@)ATOMPY";
+}

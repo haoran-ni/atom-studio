@@ -7,6 +7,7 @@
 struct _ts;  // PyThreadState
 
 namespace atom::python {
+int runInteractiveShellWorker();
 
 /**
  * @brief Manages Python interpreter lifecycle

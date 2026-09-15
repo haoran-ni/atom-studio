@@ -85,6 +85,8 @@ ApplicationWindow {
             // Properties sidebar (right)
             Sidebar {
                 id: sidebar
+                onOpenInteractiveShell: PythonShellController.openWindow()
+                onOpenShellTutorial: PythonShellController.openTutorial()
                 viewport: viewportPanel.viewport
                 SplitView.preferredWidth: 320
                 SplitView.minimumWidth: 200

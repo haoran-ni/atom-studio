@@ -33,7 +33,7 @@ StructureExportData StructureExportData::fromStructure(const data::Structure& st
     result.positions.reserve(count);
     result.atomicNumbers.reserve(count);
     for (size_t i = 0; i < count; ++i) {
-        result.positions.push_back(structure.position(i));
+        result.positions.push_back(structure.precisePosition(i));
         result.atomicNumbers.push_back(structure.atomicNumber(i));
     }
     return result;
@@ -51,7 +51,7 @@ QString validate(const StructureExportData& structure, StructureFileFormat forma
         if (number < 0 || number >= data::ElementData::MAX_ELEMENTS) {
             return QObject::tr("Atom %1 has an unsupported atomic type.").arg(i + 1);
         }
-        for (float coordinate : structure.positions[i]) {
+        for (double coordinate : structure.positions[i]) {
             if (!std::isfinite(coordinate)) {
                 return QObject::tr("Atom %1 has a non-finite position.").arg(i + 1);
             }

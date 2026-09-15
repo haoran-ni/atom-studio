@@ -1,5 +1,8 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
+    <qresource prefix="/help">
+        <file alias="interactive-shell.html">help/interactive-shell.html</file>
+    </qresource>
     <qresource prefix="/qml">
         <file alias="Main.qml">../src/ui/qml/Main.qml</file>
         <file alias="Sidebar.qml">../src/ui/qml/Sidebar.qml</file>
@@ -17,6 +20,7 @@
         <file alias="InfoOverlayBox.qml">../src/ui/qml/InfoOverlayBox.qml</file>
     </qresource>
     <qresource prefix="/icons">
+        <file alias="code.svg">icons/code.svg</file>
         <file alias="color-ring.svg">icons/color-ring.svg</file>
         <file alias="close.svg">icons/close.svg</file>
         <file alias="plus.svg">icons/plus.svg</file>

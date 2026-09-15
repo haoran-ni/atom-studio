@@ -115,6 +115,35 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
 - Preserve unwrapped positions. CIF uses explicit P1 sites; POSCAR groups atoms by element; extended XYZ preserves lattice and PBC metadata.
 - When no lattice is defined, POSCAR must report an error; the other formats must omit lattice records without inventing a cell.
 
+### Interactive Python
+- `PythonShellController` owns a persistent process started with the app's own
+  `--python-shell-worker` entry point, using the same bundled runtime. The worker
+  entry point runs before Qt GUI initialization. No external interpreter or
+  modification of the signed bundle is needed.
+- Keep editor/window code in `InteractiveShellWindow`, transport in
+  `PythonShellController` / `StructureSnapshot`, and ASE session behavior in
+  `src/python/shell/`. The sidebar owns only the Code section and open action.
+- `STRUCT_N` is an ordinary ASE Atoms object for a stable document ID. Synchronize
+  native geometry edits while idle; preserve persistent variables and calculator
+  objects between runs. Originals remain immutable. `studio.add` uses its supplied
+  geometry directly; sidebar replication still rebuilds from raw input.
+- Use `ASEStructureBridge` for calculation-free conversion. Preserve serializable
+  ASE metadata and double-precision scientific positions; rendering continues to
+  use float arrays. `precisePosition()` recognizes legacy float-coordinate edits.
+  Clone/delete/replicate operations must carry precision and metadata edit history.
+- Python and render threads never share mutable arrays. Validate independent
+  snapshots, reject stale run/document revisions, and commit only on the UI thread.
+  Conflicting geometry edits are locked while a run is active. Image capture defers
+  frame application. Inactive documents are updated without selecting them.
+- Coalesce previews, apply an active preview only after the prior frame has been
+  presented, and always apply the final successful state. Never refit the camera
+  for simulation frames. Preserve appearance by stable atom IDs and surviving bonds.
+- Stop cooperatively, then restart the process if blocked. Retain the last published
+  geometry after errors/stops; bound console output. On shutdown, stop shell and file
+  workers before finalizing the main embedded interpreter.
+- Tests cover bridge precision/metadata and real bundled-process execution,
+  persistent sessions, multiple structures, EMT relaxation, streaming and Stop.
+
 ## Source Tree
 
 ```
