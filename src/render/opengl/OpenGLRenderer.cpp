@@ -146,12 +146,7 @@ void OpenGLRenderer::render(const Camera& camera, const RenderSettings& settings
     if (settings.showRotationCenter || settings.showViewportAxes) {
         glClear(GL_DEPTH_BUFFER_BIT);
         if (settings.showRotationCenter) {
-            const float len = camera.viewScale() * 0.03f;
-            m_gizmoRenderer.render(camera, settings,
-                                   settings.rotationCenterX,
-                                   settings.rotationCenterY,
-                                   settings.rotationCenterZ,
-                                   len);
+            m_gizmoRenderer.render(camera, settings, m_width, m_height);
         }
     }
 

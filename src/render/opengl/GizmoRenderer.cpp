@@ -3,11 +3,11 @@
 #include "CylinderMesh.h"
 #include "ShaderManager.h"
 #include "../common/Camera.h"
+#include "../common/GizmoOverlay.h"
 #include "../common/RenderSettings.h"
 
 #include <QOpenGLShaderProgram>
 
-#include <algorithm>
 #include <array>
 #include <vector>
 #include <QVector3D>
@@ -19,7 +19,6 @@ namespace {
 
 constexpr int kGizmoCylinderSegments = 16;
 constexpr int kGizmoAxisSegmentCount = 6;
-constexpr float kGizmoRadiusToLength = 0.05f;
 
 } // namespace
 
@@ -115,14 +114,17 @@ void GizmoRenderer::createCylinderGeometry(int segments) {
 }
 
 void GizmoRenderer::render(const Camera& camera, const RenderSettings& settings,
-                           float cx, float cy, float cz, float axisLength) {
-    if (!m_initialized || m_cylinderIndexCount == 0) return;
+                           int viewportWidth, int viewportHeight) {
+    if (!m_initialized || m_cylinderIndexCount == 0 ||
+        viewportWidth <= 0 || viewportHeight <= 0) return;
 
     QOpenGLShaderProgram* shader = m_shaderManager->viewportAxesShader();
     if (!shader) return;
 
-    const float len = axisLength;
-    const float radius = std::max(len * kGizmoRadiusToLength, 0.001f);
+    const auto overlay = makeGizmoOverlay(camera, viewportWidth, viewportHeight,
+                                         settings.viewportAxesPixelRatio);
+    const float len = overlay.axisLength;
+    constexpr float cx = 0.0f, cy = 0.0f, cz = 0.0f;
 
     std::array<float, kGizmoAxisSegmentCount * 3> starts{};
     std::array<float, kGizmoAxisSegmentCount * 3> ends{};
@@ -159,9 +161,9 @@ void GizmoRenderer::render(const Camera& camera, const RenderSettings& settings,
     }
 
     shader->bind();
-    shader->setUniformValue("uViewMatrix", camera.viewMatrix());
-    shader->setUniformValue("uProjectionMatrix", camera.projectionMatrix());
-    shader->setUniformValue("uBondRadius", radius);
+    shader->setUniformValue("uViewMatrix", overlay.viewMatrix);
+    shader->setUniformValue("uProjectionMatrix", overlay.projectionMatrix);
+    shader->setUniformValue("uBondRadius", overlay.radius);
 
     m_cylinderVAO.bind();
     m_instanceStartBuffer.bind();

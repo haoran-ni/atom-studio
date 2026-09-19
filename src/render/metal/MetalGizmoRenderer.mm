@@ -3,8 +3,9 @@
 #include "MetalShaderLibrary.h"
 #include "MetalTypes.h"
 #include "MetalUnitCellShared.h"
+#include "../common/GizmoOverlay.h"
+#include "../common/RenderSettings.h"
 #include <QDebug>
-#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -14,7 +15,16 @@ namespace {
 
 constexpr int kGizmoCylinderSegments = 16;
 constexpr int kGizmoAxisSegmentCount = 6;
-constexpr float kGizmoRadiusToLength = 0.05f;
+
+simd_float4x4 qMatToSimd(const QMatrix4x4& matrix) {
+    simd_float4x4 result;
+    const float* values = matrix.constData();
+    for (int column = 0; column < 4; ++column) {
+        result.columns[column] = simd_make_float4(values[column * 4], values[column * 4 + 1],
+                                                 values[column * 4 + 2], values[column * 4 + 3]);
+    }
+    return result;
+}
 
 } // namespace
 
@@ -79,12 +89,13 @@ void MetalGizmoRenderer::cleanup() {
     m_initialized = false;
 }
 
-void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
-                                float cx, float cy, float cz, float axisLength,
-                                bool depthTest)
+void MetalGizmoRenderer::render(void* encoderPtr, const Camera& camera,
+                                const RenderSettings& settings,
+                                int viewportWidth, int viewportHeight)
 {
     if (!m_initialized || !m_impl->cylinderVertexBuffer || !m_impl->cylinderIndexBuffer ||
-        m_impl->cylinderIndexCount == 0) {
+        m_impl->cylinderIndexCount == 0 || !encoderPtr ||
+        viewportWidth <= 0 || viewportHeight <= 0) {
         return;
     }
 
@@ -94,7 +105,10 @@ void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
     const simd_float4 colorX = { 1.0f, 0.25f, 0.25f, 1.0f };
     const simd_float4 colorY = { 0.25f, 1.0f, 0.25f, 1.0f };
     const simd_float4 colorZ = { 0.25f, 0.50f, 1.0f, 1.0f };
-    const float len = axisLength;
+    const auto overlay = makeGizmoOverlay(camera, viewportWidth, viewportHeight,
+                                         settings.viewportAxesPixelRatio);
+    const float len = overlay.axisLength;
+    constexpr float cx = 0.0f, cy = 0.0f, cz = 0.0f;
 
     std::array<BondInstance, kGizmoAxisSegmentCount> instances{};
     instances[0].start = simd_make_float3(cx, cy, cz);
@@ -122,8 +136,15 @@ void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
     instances[5].startColor = colorZ;
     instances[5].endColor = colorZ;
 
-    SceneUniforms gizmoUniforms = uniforms;
-    gizmoUniforms.bondRadius = std::max(len * kGizmoRadiusToLength, 0.001f);
+    QMatrix4x4 depthBias;
+    depthBias(2, 2) = 0.5f;
+    depthBias(2, 3) = 0.5f;
+    SceneUniforms gizmoUniforms{};
+    gizmoUniforms.viewMatrix = qMatToSimd(overlay.viewMatrix);
+    gizmoUniforms.projectionMatrix = qMatToSimd(depthBias * overlay.projectionMatrix);
+    gizmoUniforms.viewProjectionMatrix = simd_mul(gizmoUniforms.projectionMatrix,
+                                                 gizmoUniforms.viewMatrix);
+    gizmoUniforms.bondRadius = overlay.radius;
     // Keep gizmo colors flat/unchanged regardless of scene lighting settings.
     gizmoUniforms.ambient = 1.0f;
     gizmoUniforms.diffuse = 0.0f;
@@ -132,9 +153,8 @@ void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
 
     id<MTLRenderPipelineState> pipeline =
         (__bridge id<MTLRenderPipelineState>)m_shaderLibrary->solidCylinderPipeline();
-    id<MTLDepthStencilState> depthState = depthTest
-        ? (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthLessWriteState()
-        : (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthDisabledState();
+    id<MTLDepthStencilState> depthState =
+        (__bridge id<MTLDepthStencilState>)m_shaderLibrary->depthLessWriteState();
 
     [encoder setRenderPipelineState:pipeline];
     [encoder setDepthStencilState:depthState];
@@ -144,41 +164,13 @@ void MetalGizmoRenderer::render(void* encoderPtr, const SceneUniforms& uniforms,
     [encoder setFragmentBytes:&gizmoUniforms length:sizeof(SceneUniforms) atIndex:0];
     [encoder setVertexBuffer:m_impl->cylinderVertexBuffer offset:0 atIndex:1];
 
-    if (!depthTest) {
-        // Overlay mode ignores scene depth. Sort back-to-front in view space so the
-        // gizmo's own axis depth relationships still read correctly.
-        auto viewMidZ = [&uniforms](const BondInstance& inst) {
-            const simd_float3 mid = 0.5f * (inst.start + inst.end);
-            const simd_float4 viewPos = simd_mul(
-                uniforms.viewMatrix,
-                simd_make_float4(mid.x, mid.y, mid.z, 1.0f));
-            return viewPos.z;
-        };
-
-        std::sort(instances.begin(), instances.end(),
-                  [&viewMidZ](const BondInstance& a, const BondInstance& b) {
-                      // OpenGL-style view space: more negative z is farther away.
-                      return viewMidZ(a) < viewMidZ(b);
-                  });
-
-        for (const BondInstance& inst : instances) {
-            [encoder setVertexBytes:&inst length:sizeof(BondInstance) atIndex:2];
-            [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                                indexCount:m_impl->cylinderIndexCount
-                                 indexType:MTLIndexTypeUInt32
-                               indexBuffer:m_impl->cylinderIndexBuffer
-                         indexBufferOffset:0
-                             instanceCount:1];
-        }
-    } else {
-        [encoder setVertexBytes:instances.data() length:sizeof(instances) atIndex:2];
-        [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
-                            indexCount:m_impl->cylinderIndexCount
-                             indexType:MTLIndexTypeUInt32
-                           indexBuffer:m_impl->cylinderIndexBuffer
-                     indexBufferOffset:0
-                         instanceCount:kGizmoAxisSegmentCount];
-    }
+    [encoder setVertexBytes:instances.data() length:sizeof(instances) atIndex:2];
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                        indexCount:m_impl->cylinderIndexCount
+                         indexType:MTLIndexTypeUInt32
+                       indexBuffer:m_impl->cylinderIndexBuffer
+                 indexBufferOffset:0
+                     instanceCount:kGizmoAxisSegmentCount];
 }
 
 } // namespace atom::render::metal

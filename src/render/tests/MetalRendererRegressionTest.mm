@@ -3,6 +3,7 @@
 #include "metal/MetalRayTracingRenderer.h"
 #include "Structure.h"
 #include "BondList.h"
+#include "GizmoRenderingCheck.h"
 #import <Metal/Metal.h>
 #include <QElapsedTimer>
 #include <QImage>
@@ -181,6 +182,26 @@ int main() {
         if (!check(device.currentAllocatedSize < firstAllocation + 16*1024*1024,
                    "Repeated resize leaked Metal targets")) return 1;
         rt.resize(size,size); raster.resize(size,size);
+        {
+            render::Camera gizmoCamera;
+            render::RenderSettings gizmoSettings;
+            // Test RT's empty-scene overlay and its accumulated display path.
+            data::Structure hiddenScene;
+            hiddenScene.addAtom(0, 0, 0, 6);
+            for (const data::Structure* scene : {static_cast<const data::Structure*>(nullptr),
+                                               static_cast<const data::Structure*>(&hiddenScene)}) {
+                raster.setStructure(scene);
+                rt.setStructure(scene);
+                if (!checkGizmoRendering(gizmoCamera, gizmoSettings, [&]() {
+                        return draw(raster, gizmoCamera, gizmoSettings, queue);
+                    }) || !checkGizmoRendering(gizmoCamera, gizmoSettings, [&]() {
+                        return scene ? converge(rt, gizmoCamera, gizmoSettings, queue)
+                                     : draw(rt, gizmoCamera, gizmoSettings, queue);
+                    })) return 1;
+            }
+            raster.setStructure(nullptr);
+            rt.setStructure(nullptr);
+        }
         render::Camera camera;
         camera.setPresetView(render::ViewDirection::PlusZ);
         camera.setProjection(false); camera.setOrthoScale(3); camera.setAspectRatio(1);

@@ -59,7 +59,7 @@ public:
     void setOrientation(const QQuaternion& q);
     float distance() const { return m_distance; }
     float perspectiveDistance() const { return m_perspectiveDistance; }
-    // Scene-scale reference used for size-in-world overlays (e.g. gizmos).
+    // Scene-scale reference for world-space sizing.
     // Returns m_distance in perspective (tracks zoom) and m_orthoScale in
     // orthographic (distance is fixed; orthoScale tracks zoom instead).
     float viewScale() const { return m_perspective ? m_distance : m_orthoScale; }

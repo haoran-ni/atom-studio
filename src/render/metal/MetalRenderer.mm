@@ -325,10 +325,8 @@ void MetalRenderer::render(const Camera& camera, const RenderSettings& settings)
             0.0, 1.0}];
 
         if (settings.showRotationCenter) {
-            float len = camera.viewScale() * 0.03f;
-            m_gizmoRenderer.render((__bridge void*)overlayEncoder, uniforms,
-                                   settings.rotationCenterX, settings.rotationCenterY,
-                                   settings.rotationCenterZ, len, /*depthTest=*/true);
+            m_gizmoRenderer.render((__bridge void*)overlayEncoder, camera, settings,
+                                   m_width, m_height);
         }
 
         if (settings.showViewportAxes) {

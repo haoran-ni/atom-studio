@@ -6,6 +6,7 @@
 #include "Structure.h"
 #include "BondList.h"
 #include "BackgroundCompositingCheck.h"
+#include "GizmoRenderingCheck.h"
 
 #include <QGuiApplication>
 #include <QImage>
@@ -124,6 +125,7 @@ bool checkRenderer(render::Renderer& renderer, QOpenGLFunctions& gl, bool rayTra
     }
     // GPU scene buffers can be released and reused for another structure.
     if (snapshot(&scene).pixelColor(atomPixel).alpha() != 255) return false;
+    if (!checkGizmoRendering(camera, settings, [&]() { return snapshot(&scene); })) return false;
     renderer.cleanup();
     return gl.glGetError() == GL_NO_ERROR;
 }

@@ -36,7 +36,7 @@ struct RenderSettings {
     float viewportAxesScreenX = 60.0f;   // center position in rendered pixels
     float viewportAxesScreenY = 60.0f;   // center position in rendered pixels (y-down)
     float viewportAxesScale = 1.0f;      // includes hover enlargement from UI
-    float viewportAxesPixelRatio = 1.0f; // renderer pixels per QML logical pixel for overlay sizing
+    float viewportAxesPixelRatio = 1.0f; // renderer pixels per QML logical pixel; also sizes the center gizmo
 
     // Lighting
     float ambientStrength = 0.35f;

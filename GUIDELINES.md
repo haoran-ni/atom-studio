@@ -201,6 +201,7 @@ resources/
 - **Ray tracing mode**: Procedural primitives or low-poly proxy geometry with normal reconstruction
 - **Ray-traced backgrounds**: Accumulate premultiplied foreground color and coverage independently of the background. Composite background color/opacity in the display pass; background edits and transparent export must preserve accumulated samples. Background changes still invalidate cached raster output.
 - **Projection modes**: Both perspective and orthographic projection are supported across all renderers. Sphere impostors, RT ray generation, and unit cell occlusion all branch on `isPerspective` at the shader level. The Camera class handles both projection matrices, and `RenderStateHash` includes projection state for RT accumulation reset.
+- **Center rotation gizmo**: Use the shared `GizmoOverlay` transform with fixed logical-pixel dimensions and device-pixel scaling in every backend and render mode. Only camera orientation affects the axes; the overlay stays centered and uses its own orthographic projection, independent of scene zoom, FOV, and clipping planes.
 
 ### Acceleration Structure Strategy (for trajectories)
 - TLAS rebuild per frame (typical for dynamic atoms)

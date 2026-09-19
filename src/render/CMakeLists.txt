@@ -11,6 +11,8 @@ set(RENDER_COMMON_SOURCES
     common/BVH.h
     common/Camera.cpp
     common/Camera.h
+    common/GizmoOverlay.cpp
+    common/GizmoOverlay.h
     common/Picking.cpp
     common/Picking.h
     common/PreparedGeometry.cpp
@@ -128,6 +130,9 @@ target_link_libraries(atom-render PUBLIC
 )
 
 if(BUILD_TESTING)
+    add_executable(atom-render-gizmo-overlay-test tests/GizmoOverlayTest.cpp)
+    target_link_libraries(atom-render-gizmo-overlay-test PRIVATE atom-render)
+    add_test(NAME atom-render-gizmo-overlay COMMAND atom-render-gizmo-overlay-test)
     add_executable(atom-render-prepared-geometry-test tests/PreparedGeometryTest.cpp)
     target_link_libraries(atom-render-prepared-geometry-test PRIVATE atom-render)
     add_test(NAME atom-render-prepared-geometry COMMAND atom-render-prepared-geometry-test)

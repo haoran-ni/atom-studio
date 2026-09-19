@@ -19,7 +19,7 @@ public:
     void cleanup();
 
     void render(const Camera& camera, const RenderSettings& settings,
-                float cx, float cy, float cz, float axisLength);
+                int viewportWidth, int viewportHeight);
 
 private:
     void createCylinderGeometry(int segments);

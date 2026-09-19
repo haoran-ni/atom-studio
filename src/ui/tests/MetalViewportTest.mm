@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QImage>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 #include <iostream>
 #include <functional>
@@ -28,6 +29,51 @@ bool waitFor(const std::function<bool()>& ready, int limit = 10000) {
 bool frame(atom::ui::MetalViewport& viewport) {
     const auto token = viewport.requestFrame();
     return waitFor([&] { return viewport.frameToken() >= token; });
+}
+bool checkCenterGizmo(atom::ui::MetalViewport& viewport, QQuickWindow& window) {
+    viewport.setBackgroundColor(Qt::black);
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(160, 160), QPointF(160, 160),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&viewport, &press);
+    for (int mode : {0, 1}) {
+        viewport.setRendererMode(mode);
+        if (!frame(viewport)) return false;
+        const QImage reference = window.grabWindow();
+        if (reference.isNull()) return false;
+        QRect bounds;
+        for (int y = 0; y < reference.height(); ++y)
+            for (int x = 0; x < reference.width(); ++x)
+                if (reference.pixelColor(x, y).value() > 128)
+                    bounds |= QRect(x, y, 1, 1);
+        const qreal dpr = window.devicePixelRatio();
+        if (std::abs(bounds.width() / dpr - 48) > 2 ||
+            std::abs(bounds.height() / dpr - 48) > 2) {
+            std::cerr << "Native viewport gizmo size is incorrect\n";
+            return false;
+        }
+        for (bool perspective : {true, false}) {
+            viewport.setIsPerspective(perspective);
+            for (float fov : {10.0f, 170.0f}) {
+                viewport.setFieldOfView(fov);
+                viewport.setCameraDistance(fov);
+                viewport.setOrthographicScale(fov);
+                if (!frame(viewport) || window.grabWindow() != reference) {
+                    std::cerr << "Native viewport gizmo changed with camera settings\n";
+                    return false;
+                }
+            }
+        }
+        const QString capture = qEnvironmentVariable("ATOM_GIZMO_TEST_CAPTURE");
+        if (!capture.isEmpty()) reference.save(capture + QString::number(mode) + ".png");
+    }
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(160, 160), QPointF(160, 160),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&viewport, &release);
+    viewport.resetCamera();
+    viewport.setIsPerspective(false);
+    viewport.setOrthographicScale(3);
+    viewport.setViewDirection(static_cast<int>(atom::render::ViewDirection::PlusZ));
+    return frame(viewport);
 }
 bool visibleTransition(atom::ui::MetalViewport& viewport, QQuickWindow& window) {
     const auto token = viewport.requestFrame();
@@ -65,6 +111,7 @@ int main(int argc, char** argv) {
         viewport->setViewDirection(static_cast<int>(atom::render::ViewDirection::PlusZ));
         window.show();
         if (!waitFor([&] { return window.isExposed(); })) return 1;
+        if (!checkCenterGizmo(*viewport, window)) return 1;
         for (int mode : {0,1,0,1}) {
             viewport->setRendererMode(mode);
             viewport->setBackgroundColor(QColor(20,50,100,64));

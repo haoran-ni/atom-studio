@@ -2,12 +2,16 @@
 
 #include <memory>
 
+namespace atom::render {
+class Camera;
+struct RenderSettings;
+}
+
 namespace atom::render::metal {
 
 class MetalShaderLibrary;
-struct SceneUniforms;
 
-/// Draws a 3-axis (X/Y/Z) cylinder gizmo at a given world-space position.
+/// Draws a fixed-size 3-axis cylinder gizmo at the viewport center.
 /// Used to visualize the camera rotation center during interaction.
 class MetalGizmoRenderer {
 public:
@@ -17,12 +21,9 @@ public:
     bool initialize(void* device, MetalShaderLibrary* shaderLibrary);
     void cleanup();
 
-    /// Render ±X (red), ±Y (green), ±Z (blue) cylinders through (cx, cy, cz)
-    /// with half-length axisLength.
-    /// @param depthTest  true = depth-tested (raster pass); false = always on top (RT display pass).
-    void render(void* encoder, const SceneUniforms& uniforms,
-                float cx, float cy, float cz, float axisLength,
-                bool depthTest = true);
+    /// Uses the overlay pass's fresh depth buffer for axis self-occlusion.
+    void render(void* encoder, const Camera& camera, const RenderSettings& settings,
+                int viewportWidth, int viewportHeight);
 
 private:
     struct Impl;

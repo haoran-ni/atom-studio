@@ -1238,12 +1238,7 @@ void RayTracingRenderer::renderDisplayPass(const Camera& camera) {
         glDepthFunc(GL_LESS);
         glDepthMask(GL_TRUE);
         if (m_settings.showRotationCenter) {
-            const float len = camera.viewScale() * 0.03f;
-            m_gizmoRenderer.render(camera, m_settings,
-                                   m_settings.rotationCenterX,
-                                   m_settings.rotationCenterY,
-                                   m_settings.rotationCenterZ,
-                                   len);
+            m_gizmoRenderer.render(camera, m_settings, m_width, m_height);
         }
     }
 

@@ -854,19 +854,8 @@ void MetalRayTracingRenderer::renderDisplayPass(const Camera& camera,
     }
 
     if (m_settings.showRotationCenter) {
-        // Gizmo now uses the bond/cylinder shader path, which needs view + projection.
-        QMatrix4x4 bias;
-        bias(2, 2) = 0.5f;
-        bias(2, 3) = 0.5f;
-        SceneUniforms gizmoUniforms{};
-        gizmoUniforms.viewMatrix = qMatToSimd(camera.viewMatrix());
-        gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
-        gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
-        gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
-        float len = camera.viewScale() * 0.03f;
-        m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
-                               m_settings.rotationCenterX, m_settings.rotationCenterY,
-                               m_settings.rotationCenterZ, len, /*depthTest=*/true);
+        m_gizmoRenderer.render((__bridge void*)encoder, camera, m_settings,
+                               m_width, m_height);
     }
 
     if (m_settings.showViewportAxes) {
@@ -935,18 +924,8 @@ void MetalRayTracingRenderer::renderUnitCellOverlay(const Camera& camera,
     }
 
     if (drawRotationCenter) {
-        QMatrix4x4 bias;
-        bias(2, 2) = 0.5f;
-        bias(2, 3) = 0.5f;
-        SceneUniforms gizmoUniforms{};
-        gizmoUniforms.viewMatrix = qMatToSimd(camera.viewMatrix());
-        gizmoUniforms.projectionMatrix = qMatToSimd(bias * camera.projectionMatrix());
-        gizmoUniforms.viewProjectionMatrix = qMatToSimd(bias * camera.viewProjectionMatrix());
-        gizmoUniforms.isPerspective = camera.isPerspective() ? 1 : 0;
-        float len = camera.viewScale() * 0.03f;
-        m_gizmoRenderer.render((__bridge void*)encoder, gizmoUniforms,
-                               m_settings.rotationCenterX, m_settings.rotationCenterY,
-                               m_settings.rotationCenterZ, len, /*depthTest=*/true);
+        m_gizmoRenderer.render((__bridge void*)encoder, camera, m_settings,
+                               m_width, m_height);
     }
 
     if (drawViewportAxes) {
