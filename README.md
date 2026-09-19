@@ -6,6 +6,10 @@
 
 <p align="center">Explore, edit, and visualize atomic structures on your desktop.</p>
 
+<p align="center">
+  <img src="resources/software_demo1.png" alt="ATOM-STUDIO software demo 1" width="33%"><img src="resources/software_demo2.png" alt="ATOM-STUDIO software demo 2" width="33%"><img src="resources/software_demo3.png" alt="ATOM-STUDIO software demo 3" width="33%">
+</p>
+
 ATOM-STUDIO brings interactive 3D visualization, ray-traced rendering, and Python/ASE
 scripting into one workspace. Inspect molecules and crystals, compare structures,
 watch a relaxation run, and export images or edited geometries.
