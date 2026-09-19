@@ -92,7 +92,7 @@ Rectangle {
         sidebar.viewport.enableShadows = false
         sidebar.viewport.aoSamples = 4
         sidebar.viewport.aoRadius = 3.0
-        sidebar.viewport.ambientStrength = 0.35
+        sidebar.viewport.ambientStrength = 0.50
         sidebar.viewport.diffuseStrength = 0.7
         sidebar.viewport.specularStrength = 0.05
         sidebar.viewport.shininess = 60
@@ -124,7 +124,7 @@ Rectangle {
 
         background: Rectangle {
             radius: 12
-            color: control.down ? "#343a4d" : sidebar.buttonFill
+            color: control.down ? Qt.darker(sidebar.buttonFill, 1.08) : sidebar.buttonFill
             opacity: control.enabled ? 1.0 : 0.55
         }
     }
@@ -372,6 +372,7 @@ Rectangle {
             color: sidebar.textMuted
             font.pixelSize: 13
             Layout.preferredWidth: parent.label.length > 0 ? 90 : 0
+            Layout.alignment: Qt.AlignTop
         }
 
         Label {
@@ -379,6 +380,7 @@ Rectangle {
             color: sidebar.textBody
             font.pixelSize: 13
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
             wrapMode: Text.WrapAnywhere
         }
     }
@@ -614,60 +616,6 @@ Rectangle {
                 }
 
                 SidebarSection {
-                    id: codeSection
-                    objectName: "codeSection"
-                    title: qsTr("Code")
-                    iconSource: "qrc:/icons/code.svg"
-                    Layout.fillWidth: true
-                    content: Component {
-                        ColumnLayout {
-                            spacing: 8
-                            SidebarBranchRow {
-                                content: Component {
-                                    SidebarButton {
-                                        objectName: "openInteractiveShellButton"
-                                        text: qsTr("Open Interactive Shell")
-                                        Layout.fillWidth: true
-                                        onClicked: sidebar.openInteractiveShell()
-                                    }
-                                }
-                            }
-                            SidebarBranchRow {
-                                content: Component {
-                                    SidebarButton {
-                                        objectName: "shellTutorialButton"
-                                        text: qsTr("Tutorial")
-                                        Layout.fillWidth: true
-                                        onClicked: sidebar.openShellTutorial()
-                                    }
-                                }
-                            }
-                            SidebarBranchRow {
-                                content: Component {
-                                    SidebarButton {
-                                        objectName: "openPythonPackagesButton"
-                                        text: qsTr("Manage Packages")
-                                        Layout.fillWidth: true
-                                        onClicked: sidebar.openPythonPackages()
-                                    }
-                                }
-                            }
-                            SidebarBranchRow {
-                                lastItem: true
-                                content: Component {
-                                    SidebarButton {
-                                        objectName: "openEnvironmentTerminalButton"
-                                        text: qsTr("Open Environment Terminal")
-                                        Layout.fillWidth: true
-                                        onClicked: sidebar.openEnvironmentTerminal()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                SidebarSection {
                     id: structureInfoSection
                     title: qsTr("Info")
                     iconSource: "qrc:/icons/info.svg"
@@ -686,42 +634,18 @@ Rectangle {
                             }
                             SidebarBranchRow {
                                 content: Component {
-                                    ColumnLayout {
-                                        spacing: 2
-                                        SidebarPropertyRow { label: qsTr("Atom Types:"); value: StructureModel.atomTypeCount.toString() }
-                                        Repeater {
-                                            model: StructureModel.elements
-                                            delegate: Label {
-                                                text: modelData
-                                                color: sidebar.textBody
-                                                font.pixelSize: 13
-                                                Layout.fillWidth: true
-                                                Layout.leftMargin: 100
-                                            }
-                                        }
+                                    SidebarPropertyRow {
+                                        label: qsTr("Atom Types:")
+                                        value: StructureModel.elements.join("\n")
                                     }
                                 }
                             }
                             SidebarBranchRow {
-                                content: Component { SidebarPropertyRow { label: qsTr("Bonds:"); value: StructureModel.bondCount.toString() } }
-                            }
-
-                            SidebarBranchRow {
                                 visible: StructureModel.hasUnitCell
                                 content: Component {
-                                    ColumnLayout {
-                                        spacing: 4
-                                        SidebarPropertyRow {
-                                            label: qsTr("Unit Cell:")
-                                            value: StructureModel.hasUnitCell ? "Yes" : "No"
-                                        }
-                                        Label {
-                                            text: StructureModel.cellParameters
-                                            color: sidebar.textBody
-                                            font.pixelSize: 13
-                                            Layout.fillWidth: true
-                                            Layout.leftMargin: 90
-                                        }
+                                    SidebarPropertyRow {
+                                        label: qsTr("Unit Cell:")
+                                        value: StructureModel.cellParameters
                                     }
                                 }
                             }
@@ -1021,20 +945,6 @@ Rectangle {
                     content: Component {
                         ColumnLayout {
                             spacing: 8
-
-                            SidebarBranchRow {
-                                content: Component {
-                                    ColumnLayout {
-                                        spacing: 5
-                                        Label { text: qsTr("Atom Style"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                        SidebarComboBox {
-                                            Layout.fillWidth: true
-                                            model: ["Sphere", "Ball & Stick", "CPK", "Wireframe"]
-                                            currentIndex: 0
-                                        }
-                                    }
-                                }
-                            }
 
                             SidebarBranchRow {
                                 content: Component {
@@ -1553,8 +1463,8 @@ Rectangle {
                                         to: 1
                                         stepSize: 0.01
                                         decimals: 2
-                                        defaultValue: 0.35
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.35
+                                        defaultValue: 0.50
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.ambientStrength : 0.50
                                         onValueApplied: function(newValue) {
                                             if (sidebar.viewport) {
                                                 sidebar.viewport.ambientStrength = newValue
@@ -1771,6 +1681,60 @@ Rectangle {
                                                 sidebar.viewport.backgroundColor = sidebar.defaultBackgroundColor
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SidebarSection {
+                    id: codeSection
+                    objectName: "codeSection"
+                    title: qsTr("Code")
+                    iconSource: "qrc:/icons/code.svg"
+                    Layout.fillWidth: true
+                    content: Component {
+                        ColumnLayout {
+                            spacing: 8
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openInteractiveShellButton"
+                                        text: qsTr("Open Interactive Shell")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openInteractiveShell()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "shellTutorialButton"
+                                        text: qsTr("Tutorial")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openShellTutorial()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openPythonPackagesButton"
+                                        text: qsTr("Manage Packages")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openPythonPackages()
+                                    }
+                                }
+                            }
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    SidebarButton {
+                                        objectName: "openEnvironmentTerminalButton"
+                                        text: qsTr("Open Environment Terminal")
+                                        Layout.fillWidth: true
+                                        onClicked: sidebar.openEnvironmentTerminal()
                                     }
                                 }
                             }

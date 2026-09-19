@@ -39,7 +39,7 @@ struct RenderSettings {
     float viewportAxesPixelRatio = 1.0f; // renderer pixels per QML logical pixel; also sizes the center gizmo
 
     // Lighting
-    float ambientStrength = 0.35f;
+    float ambientStrength = 0.50f;
     float diffuseStrength = 0.7f;
     float specularStrength = 0.05f;
     float shininess = 60.0f;

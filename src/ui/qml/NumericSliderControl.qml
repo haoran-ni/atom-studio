@@ -236,12 +236,11 @@ ColumnLayout {
                 height: 14
                 sourceSize: Qt.size(14, 14)
                 anchors.centerIn: parent
-                opacity: resetBtn.down ? 0.5 : 1.0
             }
 
             background: Rectangle {
                 radius: 7
-                color: resetBtn.down ? "#6e727d" : "#e2e3e8"
+                color: resetBtn.down ? Qt.darker("#e2e3e8", 1.08) : "#e2e3e8"
                 border.width: 1
                 border.color: "#c7c9d1"
             }

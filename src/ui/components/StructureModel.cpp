@@ -167,7 +167,7 @@ QString StructureModel::cellParameters() const {
     if (!hasUnitCell()) return QString();
 
     const auto& lattice = m_active->current->lattice();
-    return QString("a=%1 b=%2 c=%3\n\u03B1=%4\u00B0 \u03B2=%5\u00B0 \u03B3=%6\u00B0")
+    return QString("a = %1\nb = %2\nc = %3\n\u03B1 = %4\u00B0\n\u03B2 = %5\u00B0\n\u03B3 = %6\u00B0")
            .arg(lattice.a(), 0, 'f', 3)
            .arg(lattice.b(), 0, 'f', 3)
            .arg(lattice.c(), 0, 'f', 3)

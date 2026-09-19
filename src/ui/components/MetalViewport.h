@@ -242,7 +242,7 @@ private:
     bool m_enableShadows = false;
     int m_aoSamples = 4;
     float m_aoRadius = 3.0f;
-    float m_ambientStrength = 0.35f;
+    float m_ambientStrength = 0.50f;
     float m_diffuseStrength = 0.7f;
     float m_specularStrength = 0.05f;
     float m_shininess = 60.0f;
