@@ -1,4 +1,5 @@
 #include "StructureModel.h"
+#include "AtomPropertiesModel.h"
 #include "../../data/Structure.h"
 #include "../../data/BondList.h"
 #include "../../data/ElementData.h"
@@ -29,8 +30,21 @@ std::shared_ptr<data::Structure> workingCopy(const data::Structure& raw, qint64 
     return current;
 }
 
+void updateAtomDisplayIds(StructureDocument& document, bool reset = false) {
+    if (reset) {
+        document.atomDisplayIds.clear();
+        document.nextAtomDisplayId = 0;
+    }
+    document.atomDisplayIds.reserve(std::max(document.atomDisplayIds.size(), document.current->atomCount()));
+    for (size_t i = 0; i < document.current->atomCount(); ++i) {
+        const auto id = document.current->atomId(i);
+        if (!document.atomDisplayIds.contains(id)) document.atomDisplayIds[id] = document.nextAtomDisplayId++;
+    }
+}
+
 void replaceWorkingCopy(StructureDocument& document, std::shared_ptr<data::Structure> current) {
     document.current = std::move(current);
+    updateAtomDisplayIds(document, true);
     document.current->clearSelection();
     document.elements.clear();
     document.appliedColorScheme = -1;
@@ -83,12 +97,41 @@ void syncSelectedBondEndpointColorsFromSelectedAtoms(data::Structure& structure)
     }
 }
 
+void applySpeciesAppearance(data::Structure& structure, const StructureDocument& document) {
+    for (size_t i = 0; i < structure.atomCount(); ++i) {
+        const int number = structure.atomicNumber(i);
+        if (const auto it = document.speciesColors.find(number); it != document.speciesColors.end()) {
+            const auto color = colorFromQColor(it->second);
+            structure.colorsR()[i] = color.r;
+            structure.colorsG()[i] = color.g;
+            structure.colorsB()[i] = color.b;
+            structure.setColorOverride(i, true);
+        }
+        if (const auto it = document.speciesRadii.find(number); it != document.speciesRadii.end())
+            structure.radii()[i] = it->second;
+    }
+}
+
+void applySpeciesBondColors(data::Structure& structure, const StructureDocument& document) {
+    auto& bonds = structure.bonds();
+    for (size_t i = 0; i < bonds.bondCount(); ++i) {
+        const auto& bond = bonds.bond(i);
+        if (const auto it = document.speciesColors.find(structure.atomicNumber(bond.atomIndex1));
+            it != document.speciesColors.end())
+            bonds.setStartColor(i, colorFromQColor(it->second), true);
+        if (const auto it = document.speciesColors.find(structure.atomicNumber(bond.atomIndex2));
+            it != document.speciesColors.end())
+            bonds.setEndColor(i, colorFromQColor(it->second), true);
+    }
+}
+
 } // namespace
 
 StructureModel::StructureModel(QObject* parent)
     : QObject(parent)
 {
     s_instance = this;
+    m_atomProperties = new AtomPropertiesModel(this);
 }
 
 StructureModel::~StructureModel() {
@@ -230,6 +273,7 @@ qint64 StructureModel::addStructure(std::shared_ptr<data::Structure> structure, 
     raw->setName("STRUCT_" + std::to_string(document->id) + "_RAW");
     document->current = workingCopy(*raw, document->id, replicate ? m_replication : std::array<int, 3>{1, 1, 1});
     if (!document->current) return -1;
+    updateAtomDisplayIds(*document, true);
     document->raw = std::move(raw);
     m_documents.push_back(std::move(document));
     ++m_nextId;
@@ -295,6 +339,7 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
     for (size_t i = 0; i < previous->atomCount(); ++i) indices[previous->atomId(i)] = i;
     structure->updateColorsFromElements(colorSchemeFromIndex(m_colorScheme));
     structure->updateRadiiFromElements(1.0f, m_atomRadiusType == 1);
+    applySpeciesAppearance(*structure, *entry);
     for (size_t i = 0; i < structure->atomCount(); ++i) {
         const auto found = indices.find(structure->atomId(i));
         if (found == indices.end()) continue;
@@ -329,6 +374,7 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
     structure->setSourcePath(previous->sourcePath());
     structure->setName("STRUCT_" + std::to_string(id) + "_CURRENT");
     entry->current = std::move(structure);
+    updateAtomDisplayIds(*entry);
     entry->elements.clear();
     entry->detectedBondScale = std::numeric_limits<float>::quiet_NaN();
     entry->appliedColorScheme = m_colorScheme;
@@ -347,25 +393,77 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
 }
 
 void StructureModel::applyAtomRadiusType(StructureDocument& document) {
-    if (!document.current || document.appliedAtomRadiusType == m_atomRadiusType) return;
+    if (!document.current || (document.appliedAtomRadiusType == m_atomRadiusType && !document.resetSpeciesRadii)) return;
     auto& structure = *document.current;
     for (size_t i = 0; i < structure.atomCount(); ++i) {
         const int number = structure.atomicNumber(i);
         const float previous = data::ElementData::radiusForElement(number, document.appliedAtomRadiusType == 1);
         const float next = data::ElementData::radiusForElement(number, m_atomRadiusType == 1);
-        // Preserve per-atom scale overrides while changing the reference radius.
-        structure.radii()[i] *= next / previous;
+        if (document.speciesRadii.contains(number)) {
+            if (document.resetSpeciesRadii) structure.radii()[i] = next;
+        } else {
+            // Preserve selection scale overrides for species without an explicit radius.
+            structure.radii()[i] *= next / previous;
+        }
     }
+    if (document.resetSpeciesRadii) document.speciesRadii.clear();
+    document.resetSpeciesRadii = false;
     document.appliedAtomRadiusType = m_atomRadiusType;
 }
 
 void StructureModel::setAtomRadiusType(int type) {
     if (type < 0 || type > 1 || type == m_atomRadiusType || m_switchingLocked) return;
     m_atomRadiusType = type;
+    // Remember resets even if an inactive document skips an entire A -> B -> A cycle.
+    for (auto& document : m_documents)
+        if (!document->speciesRadii.empty()) document->resetSpeciesRadii = true;
     applyAtomRadiusType(*m_active);
     emit atomRadiusTypeChanged();
     // Repack spheres, picking bounds and BVHs, without redetecting covalent bonds.
     if (m_active->current) emit structureGeometryChanged();
+}
+
+QColor StructureModel::speciesDefaultColor(int number) const {
+    const auto color = data::ElementData::colorForElement(number, colorSchemeFromIndex(m_colorScheme));
+    return QColor::fromRgbF(color.r, color.g, color.b);
+}
+
+bool StructureModel::applySpeciesColor(int number, const QColor& color) {
+    if (!m_active->current || m_switchingLocked || m_editsLocked || !color.isValid()) return false;
+    auto& structure = *m_active->current;
+    bool found = false;
+    const auto target = colorFromQColor(color);
+    for (size_t i = 0; i < structure.atomCount(); ++i) {
+        if (structure.atomicNumber(i) != number) continue;
+        found = true;
+        structure.colorsR()[i] = target.r;
+        structure.colorsG()[i] = target.g;
+        structure.colorsB()[i] = target.b;
+        structure.setColorOverride(i, true);
+    }
+    if (!found) return false;
+    m_active->speciesColors[number] = QColor::fromRgbF(target.r, target.g, target.b);
+    applySpeciesBondColors(structure, *m_active);
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applySpeciesRadius(int number, double radius) {
+    if (!m_active->current || m_switchingLocked || m_editsLocked || !std::isfinite(radius) ||
+        radius <= 0 || radius > std::numeric_limits<float>::max()) return false;
+    const float value = static_cast<float>(radius);
+    if (value <= 0) return false;
+    auto& structure = *m_active->current;
+    bool found = false;
+    for (size_t i = 0; i < structure.atomCount(); ++i) {
+        if (structure.atomicNumber(i) != number) continue;
+        found = true;
+        structure.radii()[i] = value;
+    }
+    if (!found) return false;
+    m_active->speciesRadii[number] = value;
+    emit structureGeometryChanged();
+    return true;
 }
 
 void StructureModel::applySharedAppearance(int colorScheme, float bondRadius) {
@@ -392,6 +490,9 @@ void StructureModel::resetToOriginal() {
     auto current = workingCopy(*m_active->raw, activeId(), m_replication);
     if (!current) return;
     cancelBondDetection();
+    m_active->speciesColors.clear();
+    m_active->speciesRadii.clear();
+    m_active->resetSpeciesRadii = false;
     replaceWorkingCopy(*m_active, std::move(current));
     applyAtomRadiusType(*m_active);
     setSelectionModeInternal(0, false);
@@ -424,6 +525,7 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
     for (size_t i = 0; i < m_documents.size(); ++i) {
         if (replicated[i]) {
             replaceWorkingCopy(*m_documents[i], std::move(replicated[i]));
+            applySpeciesAppearance(*m_documents[i]->current, *m_documents[i]);
             ++m_documents[i]->revision;
             emit documentGeometryChanged(m_documents[i]->id);
         }
@@ -759,6 +861,7 @@ void StructureModel::onBondsReady() {
         }
         m_active->current->setBondList(result.bonds);
         m_active->current->updateBondColorsFromElements(colorSchemeFromIndex(m_colorScheme), true);
+        applySpeciesBondColors(*m_active->current, *m_active);
         m_active->detectedBondScale = result.scale;
         emit structureChanged();
         emit selectionChanged();

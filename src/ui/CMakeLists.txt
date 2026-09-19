@@ -10,6 +10,8 @@ set(UI_SHARED_SOURCES
     components/StructureModel.cpp
     components/StructureModel.h
     components/StructureDocument.h
+    components/AtomPropertiesModel.cpp
+    components/AtomPropertiesModel.h
     components/PythonShellController.cpp
     components/PythonShellController.h
     components/PythonEnvironmentManager.cpp

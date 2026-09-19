@@ -33,6 +33,19 @@ public:
         return m_model.structure()->radius(index);
     }
 
+    Q_INVOKABLE void loadSpecies(int count = 40) {
+        m_model.clear();
+        auto structure = std::make_shared<atom::data::Structure>();
+        for (int i = 0; i < count; ++i) structure->addAtom(i * 3, 0, 0, i % 2 == 0 ? 6 : 8);
+        m_model.addStructure(structure);
+        m_model.applySharedAppearance(0, .1f);
+    }
+
+    Q_INVOKABLE QColor atomColor(int index) const {
+        const auto color = m_model.structure()->color(index);
+        return QColor::fromRgbF(color.r, color.g, color.b);
+    }
+
     Q_INVOKABLE bool deleteFirstAtom() {
         m_model.setSelectionMode(1);
         m_model.toggleAtomSelection(0);

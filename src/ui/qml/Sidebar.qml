@@ -1001,7 +1001,6 @@ Rectangle {
                             }
 
                             SidebarBranchRow {
-                                lastItem: true
                                 content: Component {
                                     NumericSliderControl {
                                         title: qsTr("Atom Scale")
@@ -1017,6 +1016,12 @@ Rectangle {
                                             }
                                         }
                                     }
+                                }
+                            }
+                            SidebarBranchRow {
+                                lastItem: true
+                                content: Component {
+                                    PerAtomProperties { pickerPopup: sharedColorPicker }
                                 }
                             }
                         }

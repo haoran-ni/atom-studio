@@ -134,6 +134,22 @@ bool checkAtomRadii(atom::ui::StructureModel& model, atom::ui::MetalViewport& vi
             std::cerr << "Atom radii switch did not resize rendering/picking consistently\n";
             return false;
         }
+        if (!model.applySpeciesRadius(6, 1.2) || !model.applySpeciesColor(6, Qt::red) || !frame(viewport)) return false;
+        if (mode == 1 && !waitFor([&] { return viewport.sampleCount() == 8; })) return false;
+        const auto custom = window.grabWindow();
+        if (custom.isNull()) return false;
+        const auto center = custom.pixelColor(custom.width() / 2, custom.height() / 2);
+        int customWidth = 0;
+        for (int x = 0; x < custom.width(); ++x)
+            if (custom.pixelColor(x, custom.height() / 2).value() > 12) ++customWidth;
+        if (customWidth < widths[0] * 1.4 || customWidth > widths[0] * 1.8 ||
+            center.red() < 2 * center.green() || center.red() < 2 * center.blue()) {
+            std::cerr << "Species radius/color edit did not reach the native viewport\n";
+            return false;
+        }
+        model.setAtomRadiusType(1);
+        if (std::abs(model.structure()->radius(0) - 1.77f) > 1e-5f) return false;
+        model.applySpeciesColor(6, model.speciesDefaultColor(6));
     }
     model.clear();
     return true;

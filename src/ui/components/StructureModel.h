@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -34,6 +35,7 @@ class StructureModel : public QObject {
 
     Q_PROPERTY(int structureCount READ structureCount NOTIFY structuresChanged)
     Q_PROPERTY(int atomRadiusType READ atomRadiusType WRITE setAtomRadiusType NOTIFY atomRadiusTypeChanged)
+    Q_PROPERTY(QAbstractItemModel* atomProperties READ atomProperties CONSTANT)
     Q_PROPERTY(bool editsLocked READ editsLocked NOTIFY editsLockedChanged)
     Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeStructureChanged)
     Q_PROPERTY(qint64 activeId READ activeId NOTIFY activeStructureChanged)
@@ -88,6 +90,10 @@ public:
     void applySharedAppearance(int colorScheme, float bondRadius);
     int atomRadiusType() const { return m_atomRadiusType; }
     void setAtomRadiusType(int type);
+    QAbstractItemModel* atomProperties() const { return m_atomProperties; }
+    Q_INVOKABLE bool applySpeciesColor(int atomicNumber, const QColor& color);
+    Q_INVOKABLE bool applySpeciesRadius(int atomicNumber, double radius);
+    Q_INVOKABLE QColor speciesDefaultColor(int atomicNumber) const;
     void ensureBonds(float scale);
     bool isDetectingBonds() const { return m_bondRunning || m_bondPending; }
     bool hasStructure() const;
@@ -155,6 +161,7 @@ signals:
     void structureEdited(std::shared_ptr<data::Structure> structure);
 
 private:
+    QAbstractItemModel* m_atomProperties = nullptr;
     void applyAtomRadiusType(StructureDocument& document);
     void updateElementList();
     void setSelectionModeInternal(int mode, bool emitChange);

@@ -1,4 +1,5 @@
 #include "components/StructureModel.h"
+#include "components/AtomPropertiesModel.h"
 #include "components/FileController.h"
 #include "components/OpenGLViewport.h"
 #ifdef ATOM_HAS_METAL
@@ -163,6 +164,85 @@ void atomRadiusModes() {
     model.setSwitchingLocked(false);
     model.setAtomRadiusType(99);
     check(model.atomRadiusType() == 1, "Invalid radius type accepted");
+}
+
+void speciesProperties() {
+    ui::StructureModel model;
+    auto input = structure();
+    input->setAtomicNumber(2, 6);
+    // Internal IDs are opaque and may be nonsequential after Python imports.
+    input->setAtomId(0, 501);
+    input->setAtomId(1, 71);
+    input->setAtomId(2, 9002);
+    input->updateRadiiFromElements();
+    model.addStructure(input);
+    model.applySharedAppearance(0, .1f);
+    auto* rows = model.atomProperties();
+    using Roles = ui::AtomPropertiesModel;
+    auto value = [&](int row, int role) { return rows->data(rows->index(row, 0), role); };
+    auto close = [](double a, double b) { return std::abs(a - b) < 1e-5; };
+    check(rows->rowCount() == 3 && value(0, Roles::AtomIdentifier).toInt() == 0 &&
+          value(2, Roles::AtomIdentifier).toInt() == 2, "Original zero-based atom order");
+    check(value(0, Roles::SpeciesName).toString() == "Carbon (C)", "Species name");
+    check(model.applySpeciesRadius(6, 1.23) && model.applySpeciesColor(6, Qt::red), "Species edits");
+    for (int i : {0, 2}) {
+        check(close(value(i, Roles::AtomRadius).toDouble(), 1.23), "Species radius row did not update");
+        check(value(i, Roles::AtomColor).value<QColor>() == QColor(Qt::red), "Species color row did not update");
+    }
+    check(close(model.structure()->radius(1), .66), "Other species radius changed");
+    check(close(model.originalStructure()->radius(0), .76) && model.originalStructure()->color(0).r != 1,
+          "Species edits changed raw input");
+    check(!model.applySpeciesRadius(6, 0) && !model.applySpeciesRadius(6, -1) &&
+          !model.applySpeciesRadius(6, std::numeric_limits<double>::infinity()) &&
+          !model.applySpeciesRadius(6, std::numeric_limits<double>::quiet_NaN()) &&
+          !model.applySpeciesRadius(118, 1), "Invalid radius accepted");
+    model.ensureBonds(1.1f);
+    check(waitFor([&] { return !model.isDetectingBonds(); }), "Species bond detection");
+    check(model.structure()->bonds().startColor(0).r == 1, "New bonds lost species color");
+    model.applySharedAppearance(1, .1f);
+    check(value(0, Roles::AtomColor).value<QColor>() == QColor(Qt::red), "Shared colors erased species edit");
+    model.addStructure(input);
+    check(close(model.structure()->radius(0), .76), "Species edit leaked to another document");
+    model.setAtomRadiusType(1);
+    model.setAtomRadiusType(0);
+    model.setActiveIndex(0);
+    check(close(model.structure()->radius(0), .76), "Inactive A-B-A did not clear custom radii");
+    check(value(0, Roles::AtomColor).value<QColor>() == QColor(Qt::red), "Radius reset erased colors");
+    model.applySpeciesRadius(6, 1.23);
+    model.setAtomRadiusType(1);
+    check(close(value(0, Roles::AtomRadius).toDouble(), 1.77), "Radius scheme did not reset custom value");
+    model.applySpeciesRadius(6, 1.23);
+    model.replicateCell(2, 1, 1);
+    check(rows->rowCount() == 6 && close(value(3, Roles::AtomRadius).toDouble(), 1.23) &&
+          value(3, Roles::AtomColor).value<QColor>() == QColor(Qt::red), "Replication lost species edits");
+    model.setSelectionMode(1);
+    model.toggleAtomSelection(1);
+    model.deleteSelectedObjects();
+    check(rows->rowCount() == 5 && value(1, Roles::AtomIdentifier).toInt() == 2,
+          "Deletion renumbered original IDs");
+    const auto current = model.structure();
+    auto reordered = std::make_shared<data::Structure>();
+    for (size_t i = current->atomCount(); i-- > 0;) {
+        auto j = reordered->addAtom(0, float(i), 0, current->atomicNumber(i));
+        reordered->setAtomId(j, current->atomId(i));
+    }
+    reordered->addAtom(0, 10, 0, 6);
+    check(model.applyShellStructure(model.activeId(), model.document(model.activeId())->revision, reordered), "Reordered shell update");
+    check(value(0, Roles::AtomIdentifier).toInt() == 0 && value(1, Roles::AtomIdentifier).toInt() == 2,
+          "Shell reorder changed original list ordering");
+    check(close(value(5, Roles::AtomRadius).toDouble(), 1.23) &&
+          value(5, Roles::AtomColor).value<QColor>() == QColor(Qt::red), "New shell atoms lost species edits");
+    model.setSwitchingLocked(true);
+    check(!model.applySpeciesRadius(6, 2) && !model.applySpeciesColor(6, Qt::blue), "Capture lock ignored");
+    model.setSwitchingLocked(false);
+    model.setEditsLocked(true);
+    check(!model.applySpeciesRadius(6, 2) && !model.applySpeciesColor(6, Qt::blue), "Shell lock ignored");
+    model.setEditsLocked(false);
+    model.resetToOriginal();
+    check(close(value(0, Roles::AtomRadius).toDouble(), 1.77) &&
+          value(0, Roles::AtomColor).value<QColor>() != QColor(Qt::red), "Reset retained species edits");
+    model.clear();
+    check(rows->rowCount() == 0, "Cleared structure left stale atom rows");
 }
 
 void globalReplication() {
@@ -343,6 +423,7 @@ int main(int argc, char** argv) {
     try {
         documents();
         atomRadiusModes();
+        speciesProperties();
         globalReplication();
         pendingBondEdits();
         imports();
