@@ -29,6 +29,10 @@ public:
         return m_model.structure()->lattice().matrix[axis][component];
     }
 
+    Q_INVOKABLE double atomRadius(int index) const {
+        return m_model.structure()->radius(index);
+    }
+
     Q_INVOKABLE bool deleteFirstAtom() {
         m_model.setSelectionMode(1);
         m_model.toggleAtomSelection(0);

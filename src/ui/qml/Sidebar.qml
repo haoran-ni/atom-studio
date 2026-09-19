@@ -938,6 +938,7 @@ Rectangle {
 
                 SidebarSection {
                     id: atomsSection
+                    objectName: "atomsSection"
                     title: qsTr("Atoms")
                     iconSource: "qrc:/icons/atom.svg"
                     Layout.fillWidth: true
@@ -945,6 +946,25 @@ Rectangle {
                     content: Component {
                         ColumnLayout {
                             spacing: 8
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColumnLayout {
+                                        spacing: 5
+                                        Label { text: qsTr("Atom radii"); color: sidebar.textStrong; font.pixelSize: 13; font.weight: Font.DemiBold }
+                                        SidebarComboBox {
+                                            objectName: "atomRadiiComboBox"
+                                            Layout.fillWidth: true
+                                            model: [qsTr("Covalent radii"), qsTr("Alvarez vdw radii")]
+                                            currentIndex: StructureModel.atomRadiusType
+                                            enabled: !StructureModel.switchingLocked
+                                            onActivated: function(index) {
+                                                StructureModel.atomRadiusType = index
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             SidebarBranchRow {
                                 content: Component {

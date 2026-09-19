@@ -34,6 +34,7 @@ void replaceWorkingCopy(StructureDocument& document, std::shared_ptr<data::Struc
     document.current->clearSelection();
     document.elements.clear();
     document.appliedColorScheme = -1;
+    document.appliedAtomRadiusType = 0;
     document.appliedBondRadius = -1;
     document.detectedBondScale = std::numeric_limits<float>::quiet_NaN();
     document.deletedBonds.clear();
@@ -249,6 +250,7 @@ void StructureModel::setActiveIndex(int index) {
     m_liveFramePending = false;
     m_activeIndex = index;
     m_active = m_documents[index];
+    applyAtomRadiusType(*m_active);
     if (m_active->elements.isEmpty()) updateElementList();
     emit activeStructureChanged();
     emit structureChanged();
@@ -286,11 +288,13 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
                                         std::shared_ptr<data::Structure> structure) {
     auto entry = document(id);
     if (!entry || entry->revision != revision || !structure || m_switchingLocked) return false;
+    applyAtomRadiusType(*entry);
     const auto previous = entry->current;
     // IDs survive ASE slicing and reordering. Newly inserted atoms keep defaults.
     std::unordered_map<int64_t, size_t> indices;
     for (size_t i = 0; i < previous->atomCount(); ++i) indices[previous->atomId(i)] = i;
     structure->updateColorsFromElements(colorSchemeFromIndex(m_colorScheme));
+    structure->updateRadiiFromElements(1.0f, m_atomRadiusType == 1);
     for (size_t i = 0; i < structure->atomCount(); ++i) {
         const auto found = indices.find(structure->atomId(i));
         if (found == indices.end()) continue;
@@ -342,6 +346,28 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
     return true;
 }
 
+void StructureModel::applyAtomRadiusType(StructureDocument& document) {
+    if (!document.current || document.appliedAtomRadiusType == m_atomRadiusType) return;
+    auto& structure = *document.current;
+    for (size_t i = 0; i < structure.atomCount(); ++i) {
+        const int number = structure.atomicNumber(i);
+        const float previous = data::ElementData::radiusForElement(number, document.appliedAtomRadiusType == 1);
+        const float next = data::ElementData::radiusForElement(number, m_atomRadiusType == 1);
+        // Preserve per-atom scale overrides while changing the reference radius.
+        structure.radii()[i] *= next / previous;
+    }
+    document.appliedAtomRadiusType = m_atomRadiusType;
+}
+
+void StructureModel::setAtomRadiusType(int type) {
+    if (type < 0 || type > 1 || type == m_atomRadiusType || m_switchingLocked) return;
+    m_atomRadiusType = type;
+    applyAtomRadiusType(*m_active);
+    emit atomRadiusTypeChanged();
+    // Repack spheres, picking bounds and BVHs, without redetecting covalent bonds.
+    if (m_active->current) emit structureGeometryChanged();
+}
+
 void StructureModel::applySharedAppearance(int colorScheme, float bondRadius) {
     m_colorScheme = colorScheme;
     m_bondRadius = bondRadius;
@@ -367,6 +393,7 @@ void StructureModel::resetToOriginal() {
     if (!current) return;
     cancelBondDetection();
     replaceWorkingCopy(*m_active, std::move(current));
+    applyAtomRadiusType(*m_active);
     setSelectionModeInternal(0, false);
     updateElementList();
     emit structureChanged();
@@ -402,6 +429,7 @@ void StructureModel::replicateCell(int nx, int ny, int nz) {
         }
     }
     setReplicationFactors(nx, ny, nz);
+    applyAtomRadiusType(*m_active);
     updateElementList();
     emit structureChanged();
     emitSelectionResetSignals();
@@ -490,7 +518,7 @@ bool StructureModel::applyAtomScaleToSelection(float scale, float globalAtomScal
     const auto& selectedAtoms = m_active->current->atomSelectionMask();
     for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
-        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false) * scale / safeGlobalScale;
+        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], m_atomRadiusType == 1) * scale / safeGlobalScale;
     }
 
     // Radii feed BVH bounds — geometry, not just appearance.
@@ -575,7 +603,7 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
 
     for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
-        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], false);
+        radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], m_atomRadiusType == 1);
         m_active->current->setColorOverride(i, false);
         const auto color = data::ElementData::colorForElement(atomicNumbers[i], scheme);
         cr[i] = color.r;

@@ -4,6 +4,8 @@
 #include "components/PythonShellController.h"
 #include <QTemporaryDir>
 #include "common/Camera.h"
+#include "common/Picking.h"
+#include "common/RenderSettings.h"
 #include "Structure.h"
 #include <QGuiApplication>
 #include <QQuickWindow>
@@ -94,6 +96,48 @@ bool visibleTransition(atom::ui::MetalViewport& viewport, QQuickWindow& window) 
     std::cerr << "Visible structure transition stalled\n";
     return false;
 }
+
+bool checkAtomRadii(atom::ui::StructureModel& model, atom::ui::MetalViewport& viewport,
+                    QQuickWindow& window) {
+    auto carbon = std::make_shared<atom::data::Structure>();
+    carbon->addAtom(0, 0, 0, 6);
+    model.setStructure(carbon);
+    viewport.setBackgroundColor(Qt::black);
+    viewport.setOrthographicScale(4);
+    const auto camera = viewport.camera();
+    atom::render::RenderSettings settings;
+    settings.showBonds = false;
+    for (int mode : {0, 1}) {
+        viewport.setRendererMode(mode);
+        int widths[2]{};
+        int hits[2]{};
+        for (int type : {0, 1, 0}) {
+            model.setAtomRadiusType(type);
+            if (!frame(viewport)) return false;
+            if (mode == 1 && !waitFor([&] { return viewport.sampleCount() == 8; })) return false;
+            const auto image = window.grabWindow();
+            if (image.isNull()) return false;
+            int width = 0;
+            for (int x = 0; x < image.width(); ++x)
+                if (image.pixelColor(x, image.height() / 2).value() > 12) ++width;
+            widths[type] = width;
+            int hitCount = 0;
+            for (int x = 0; x < 320; ++x)
+                if (atom::render::pickStructureObject(model.structure().get(), viewport.camera(),
+                                                     settings, x, 160, 320, 320).hit()) ++hitCount;
+            hits[type] = hitCount;
+        }
+        if (widths[0] <= 0 || widths[1] < widths[0] * 2 || widths[1] > widths[0] * 2.7 ||
+            hits[0] <= 0 || hits[1] < hits[0] * 2 ||
+            viewport.camera().viewMatrix() != camera.viewMatrix() ||
+            viewport.camera().projectionMatrix() != camera.projectionMatrix()) {
+            std::cerr << "Atom radii switch did not resize rendering/picking consistently\n";
+            return false;
+        }
+    }
+    model.clear();
+    return true;
+}
 }
 int main(int argc, char** argv) {
     @autoreleasepool {
@@ -133,6 +177,7 @@ int main(int argc, char** argv) {
                 std::cerr << "Viewport PNG export lost transparent background\n"; return 1;
             }
         }
+        if (!checkAtomRadii(model, *viewport, window)) return 1;
         // Replace geometry faster than the background preparation can complete.
         // The final empty edit must supersede every in-progress nonempty scene.
         for (int i=0; i<10; ++i) {

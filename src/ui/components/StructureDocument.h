@@ -20,6 +20,7 @@ struct StructureDocument {
     QStringList elements;
     int selectionMode = 0;
     int appliedColorScheme = -1;
+    int appliedAtomRadiusType = 0; // Incoming structures use covalent radii.
     float appliedBondRadius = -1;
     float detectedBondScale = std::numeric_limits<float>::quiet_NaN();
 };

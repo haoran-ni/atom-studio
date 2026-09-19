@@ -33,6 +33,7 @@ class StructureModel : public QObject {
     QML_SINGLETON
 
     Q_PROPERTY(int structureCount READ structureCount NOTIFY structuresChanged)
+    Q_PROPERTY(int atomRadiusType READ atomRadiusType WRITE setAtomRadiusType NOTIFY atomRadiusTypeChanged)
     Q_PROPERTY(bool editsLocked READ editsLocked NOTIFY editsLockedChanged)
     Q_PROPERTY(int activeIndex READ activeIndex WRITE setActiveIndex NOTIFY activeStructureChanged)
     Q_PROPERTY(qint64 activeId READ activeId NOTIFY activeStructureChanged)
@@ -85,6 +86,8 @@ public:
     Q_INVOKABLE void setActiveIndex(int index);
     void setSwitchingLocked(bool locked);
     void applySharedAppearance(int colorScheme, float bondRadius);
+    int atomRadiusType() const { return m_atomRadiusType; }
+    void setAtomRadiusType(int type);
     void ensureBonds(float scale);
     bool isDetectingBonds() const { return m_bondRunning || m_bondPending; }
     bool hasStructure() const;
@@ -131,6 +134,7 @@ public slots:
     void notifyBondsUpdated();
 
 signals:
+    void atomRadiusTypeChanged();
     void editsLockedChanged();
     void documentGeometryChanged(qint64 id);
     void structuresChanged();
@@ -151,6 +155,7 @@ signals:
     void structureEdited(std::shared_ptr<data::Structure> structure);
 
 private:
+    void applyAtomRadiusType(StructureDocument& document);
     void updateElementList();
     void setSelectionModeInternal(int mode, bool emitChange);
     bool setComponentSelection(const data::ConnectedSelection& component, bool selected);
@@ -181,6 +186,7 @@ private:
     bool m_bondPending = false;
     float m_requestedBondScale = 1.1f;
     int m_colorScheme = 0;
+    int m_atomRadiusType = 0; // 0 = covalent, 1 = Alvarez vdW (with legacy fallbacks).
     float m_bondRadius = 0.1f;
     void cancelBondDetection();
     void launchBondDetection();

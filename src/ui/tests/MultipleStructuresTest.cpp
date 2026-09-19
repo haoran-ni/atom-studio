@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <functional>
+#include <cmath>
 
 using namespace atom;
 namespace {
@@ -103,6 +104,66 @@ void documents() {
     check(model.activeId() == 3, "IDs must never be reused within a session");
 }
 
+
+void atomRadiusModes() {
+    ui::StructureModel model;
+    auto close = [](float a, float b) { return std::abs(a - b) < 1e-5f; };
+    model.setAtomRadiusType(1); // Also works before importing anything.
+    model.addStructure(structure());
+    check(close(model.structure()->radius(0), 1.77f), "New import must use Alvarez radii");
+    check(close(model.originalStructure()->radius(0), .76f), "Radius mode modified raw input");
+    model.ensureBonds(1.1f);
+    check(waitFor([&] { return !model.isDetectingBonds(); }) && model.bondCount() == 1,
+          "Alvarez visualization must retain covalent bond detection");
+    model.setSelectionMode(1);
+    model.toggleAtomSelection(0);
+    model.applyAtomScaleToSelection(1.5f, 2.0f);
+    check(close(model.structure()->radius(0) * 2, 1.77f * 1.5f), "Selected scaling used wrong radius type");
+    int geometryChanges = 0;
+    QObject::connect(&model, &ui::StructureModel::structureGeometryChanged, [&] { ++geometryChanges; });
+    model.setAtomRadiusType(0);
+    check(close(model.structure()->radius(0), .76f * .75f) && geometryChanges == 1,
+          "Switch must preserve atom scale and invalidate viewport geometry");
+    model.setAtomRadiusType(1);
+    check(close(model.structure()->radius(0), 1.77f * .75f) && model.bondCount() == 1,
+          "Round trip changed scale or bonds");
+    model.resetSelectedObjects(.1f, 0);
+    check(close(model.structure()->radius(0), 1.77f), "Selected reset lost Alvarez radius");
+    model.addStructure(structure(20));
+    model.setAtomRadiusType(0);
+    check(close(model.documents()[0]->current->radius(0), 1.77f), "Inactive radius work must stay lazy");
+    model.setActiveIndex(0);
+    check(close(model.structure()->radius(0), .76f), "Activation did not apply pending radius type");
+    model.setAtomRadiusType(1);
+    model.resetToOriginal();
+    check(close(model.structure()->radius(0), 1.77f), "Reset lost radius type");
+    model.replicateCell(2, 1, 1);
+    check(model.atomCount() == 6 && close(model.structure()->radius(3), 1.77f), "Replication lost radius type");
+    model.setActiveIndex(1);
+    check(close(model.structure()->radius(0), 1.77f), "Inactive replication lost radius type");
+    model.setSelectionMode(1);
+    model.toggleAtomSelection(0);
+    model.applyAtomScaleToSelection(1.5f, 1);
+    const auto id = model.activeId();
+    const auto entry = model.document(id);
+    auto incoming = entry->current->clone();
+    incoming->addAtom(0, 0, 8, 6);
+    incoming->updateRadiiFromElements(1, false); // ASE bridge delivers covalent defaults.
+    model.setActiveIndex(0);
+    model.setAtomRadiusType(0); // Leave the shell target with a pending mode change.
+    check(model.applyShellStructure(id, entry->revision, std::move(incoming)), "Inactive shell update failed");
+    model.setAtomRadiusType(1);
+    model.setActiveIndex(1);
+    check(close(model.structure()->radius(0), 1.77f * 1.5f) &&
+          close(model.structure()->radius(model.atomCount() - 1), 1.77f),
+          "Shell updates must preserve scaling and style new atoms in the current mode");
+    model.setSwitchingLocked(true);
+    model.setAtomRadiusType(0);
+    check(model.atomRadiusType() == 1, "Image capture must lock radius changes");
+    model.setSwitchingLocked(false);
+    model.setAtomRadiusType(99);
+    check(model.atomRadiusType() == 1, "Invalid radius type accepted");
+}
 
 void globalReplication() {
     ui::StructureModel model;
@@ -281,6 +342,7 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     try {
         documents();
+        atomRadiusModes();
         globalReplication();
         pendingBondEdits();
         imports();
