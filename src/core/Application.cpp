@@ -67,7 +67,7 @@ void Application::setupQmlContext()
     QQmlContext* context = m_engine->rootContext();
 
     // Expose application version to QML
-    context->setContextProperty("appVersion", QStringLiteral("0.1.0"));
+    context->setContextProperty("appVersion", QCoreApplication::applicationVersion());
     context->setContextProperty("appName", QStringLiteral("ATOM-STUDIO"));
 
     // Future: expose more application state/controllers here

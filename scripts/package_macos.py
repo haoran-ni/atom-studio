@@ -117,11 +117,17 @@ def sign_app(app: Path, binaries: list[Path]) -> None:
     run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
 
 
-def smoke_test(executable: Path, directory: Path) -> None:
+def smoke_test(executable: Path, directory: Path, *, headless: bool = False) -> None:
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith(("PYTHON", "DYLD_", "QT_", "QML"))
                    and key not in {"__PYVENV_LAUNCHER__", "VIRTUAL_ENV"}}
     environment.update(PATH="/usr/bin:/bin:/usr/sbin:/sbin", QML_DISABLE_DISK_CACHE="1")
+    if headless:
+        # Hosted runners may have no Metal device or desktop session. Still
+        # load bundled Python, Qt plugins and QML; native rendering is checked
+        # separately by CTest and on a real Mac before release.
+        environment.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+        print("Startup check uses Qt software rendering; it does not validate GPU rendering.", flush=True)
     print("Opening the packaged app briefly to verify Python, Qt and QML startup...", flush=True)
     process = subprocess.Popen([str(executable)], cwd=directory, env=environment,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -202,7 +208,7 @@ def package(args: argparse.Namespace) -> Path:
         info_path.write_bytes(plistlib.dumps(info))
         binaries = audit_and_relocate(app, executable, args.architecture, args.minimum_macos)
         sign_app(app, binaries)
-        smoke_test(executable, temporary)
+        smoke_test(executable, temporary, headless=args.headless_smoke_test)
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
         (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
         (stage / "INSTALL.txt").write_text(
@@ -241,6 +247,8 @@ def main() -> None:
     parser.add_argument("--plugin-dir", action="append", default=[], type=Path)
     parser.add_argument("--architecture", required=True, choices=("arm64", "x86_64"))
     parser.add_argument("--minimum-macos", required=True)
+    parser.add_argument("--headless-smoke-test", action="store_true",
+                        help="Check Python/Qt/QML startup using software rendering without a desktop (CI)")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("Packaging requires macOS")

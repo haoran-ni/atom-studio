@@ -92,6 +92,10 @@ add_executable(${PROJECT_NAME}
     ${APP_BUNDLE_SOURCES}
 )
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ATOM_STUDIO_VERSION="${PROJECT_VERSION}"
+)
+
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     atom-core

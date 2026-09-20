@@ -97,7 +97,8 @@ class PackagingTests(unittest.TestCase):
         image.write_bytes(b"previous successful build")
         args = Namespace(app=self.app, output_dir=output, macdeployqt=deploy,
                          qml_dir=self.root, qml_import_dir=self.root, library_dir=self.root,
-                         plugin_dir=[], architecture="arm64", minimum_macos="14.0")
+                         plugin_dir=[], architecture="arm64", minimum_macos="14.0",
+                         headless_smoke_test=False)
         with patch("package_macos.load_commands", return_value=([], [str(self.root)], False)):
             with self.assertRaisesRegex(RuntimeError, "Qt deployment failed"):
                 package(args)

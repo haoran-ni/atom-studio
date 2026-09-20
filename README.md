@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml/badge.svg?branch=main&amp;event=push" alt="macOS Build &amp; Tests"></a>
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
+  <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml/badge.svg?event=push" alt="Build and Release"></a>
 </p>
 
 <p align="center">
@@ -42,6 +43,39 @@ still needs validation on those platforms.
 
 ## Install on macOS
 
+Download the DMG from the [latest release](https://github.com/haoran-ni/atom-studio/releases/latest)
+or the repository's **Releases** section. Published installers are for
+**Apple Silicon (M1 or newer)**; check the release notes for the exact minimum
+macOS version. If no release is available yet, use the source-build option below.
+
+1. Open `ATOM-STUDIO-<version>-macOS-arm64.dmg`.
+2. Drag **ATOM-STUDIO** into **Applications**, then eject the disk image.
+3. Open the app from Applications.
+
+The app includes Python, ASE, NumPy, and Qt. You do not need Homebrew, Python,
+Conda, or a copy of this repository to use the downloaded app.
+
+The app is locally signed and **not notarized by Apple**. If macOS blocks it,
+attempt to open it first, then go to **System Settings → Privacy & Security →
+Open Anyway** if you trust the download. See [Apple's instructions](https://support.apple.com/en-us/102445).
+
+<details>
+<summary>Verify the download (optional)</summary>
+
+Download the matching `.dmg.sha256` file into the same folder as the DMG. In
+Terminal, change to that folder and run this command, replacing `<version>`
+with the release version:
+
+```bash
+shasum -a 256 -c ATOM-STUDIO-<version>-macOS-arm64.dmg.sha256
+```
+
+An `OK` result confirms that the download matches the published checksum.
+
+</details>
+
+### Build your own installer
+
 **Requires macOS 14 or newer**, internet access for missing dependencies, and
 several GB of free disk space. Apple Silicon is the primary build target;
 native Intel builds are attempted but may require additional dependency setup.
@@ -61,9 +95,7 @@ its dependencies. Follow any Apple Command Line Tools or Homebrew installer
 prompts; an administrator password may be requested. Run as your normal user,
 **without `sudo`**. No paid Apple Developer account is needed.
 
-The installed app includes Python, ASE, NumPy, and Qt, so it needs no separate
-Python or Conda installation. After copying it to Applications, you can remove
-the source checkout.
+After copying the built app to Applications, you can remove the source checkout.
 
 <details>
 <summary>Build options and troubleshooting</summary>
@@ -172,7 +204,7 @@ ctest --test-dir build --output-on-failure
 For a Release build, use `--preset=release` and replace `build` with
 `build-release` in subsequent commands. To bundle Qt for that build, run
 `cmake --build build-release --target deploy`. To create a complete installable
-disk image, use the [macOS installation script](#install-on-macos).
+disk image, use the [macOS installation script](#build-your-own-installer).
 
 </details>
 
@@ -235,5 +267,7 @@ GitHub Actions builds and tests on macOS and runs CodeQL analysis for C++ and
 Python. The build job summary lists passed, failed, and skipped tests; a passing
 badge does not mean GPU tests ran when the runner lacks graphics support.
 
-See [GUIDELINES.md](GUIDELINES.md) for architecture and contribution conventions,
+See [AGENTS.md](AGENTS.md) for architecture and contribution conventions,
 and [CMakePresets.json](CMakePresets.json) for the available build configurations.
+For tag-based DMG publishing and manual packaging runs, see
+[Publishing a macOS release](docs/RELEASING.md).

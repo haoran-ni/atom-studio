@@ -1,0 +1,180 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+  # Manual runs build downloadable artifacts without publishing a release.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and package macOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up build
+        uses: ./.github/actions/setup-macos-build
+
+      - name: Check release version and architecture
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$(uname -m)" == arm64 ]] || { echo 'This release requires an Apple Silicon runner.' >&2; exit 1; }
+          version=$(out/ci/venv/bin/python -I -c \
+            'import plistlib; print(plistlib.load(open("out/ci/build/bin/atom-studio.app/Contents/Info.plist", "rb"))["CFBundleShortVersionString"])')
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Expected a MAJOR.MINOR.PATCH project version, got: $version" >&2
+            exit 1
+          }
+          if [[ "$EVENT_NAME" == push && "$RELEASE_TAG" != "v$version" ]]; then
+            echo "Tag $RELEASE_TAG must match the CMake project version v$version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minimum_macos=$(sw_vers -productVersion)" >> "$GITHUB_OUTPUT"
+
+      - name: Build application, bundled Python, and tests
+        run: cmake --build out/ci/build --parallel 3 2>&1 | tee out/ci/build.log
+
+      - name: Run tests
+        id: tests
+        run: |
+          ctest --test-dir out/ci/build --output-on-failure --no-tests=error \
+            --timeout 180 --output-junit "$PWD/out/ci/ctest-results.xml" \
+            2>&1 | tee out/ci/ctest.log
+
+      - name: Summarize test results and skips
+        if: always() && steps.tests.outcome != 'skipped'
+        run: |
+          out/ci/venv/bin/python -I scripts/summarize_ctest.py \
+            out/ci/ctest-results.xml out/ci/test-summary.md
+          cat out/ci/test-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package and verify disk image
+        env:
+          MINIMUM_MACOS: ${{ steps.metadata.outputs.minimum_macos }}
+        run: |
+          brew_prefix=$(brew --prefix)
+          out/ci/venv/bin/python -I scripts/package_macos.py \
+            --app out/ci/build/bin/atom-studio.app --output-dir out/release \
+            --macdeployqt "$brew_prefix/opt/qtbase/bin/macdeployqt" \
+            --qml-dir src/ui/qml \
+            --qml-import-dir "$brew_prefix/opt/qtdeclarative/share/qt/qml" \
+            --library-dir "$brew_prefix/lib" \
+            --plugin-dir "$brew_prefix/opt/qtbase/share/qt/plugins" \
+            --plugin-dir "$brew_prefix/opt/qtsvg/share/qt/plugins" \
+            --architecture arm64 --minimum-macos "$MINIMUM_MACOS" --headless-smoke-test \
+            2>&1 | tee out/ci/package.log
+
+      - name: Prepare release notes and verify checksum
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          MINIMUM_MACOS: ${{ steps.metadata.outputs.minimum_macos }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cd out/release
+          shasum -a 256 -c "ATOM-STUDIO-$VERSION-macOS-arm64.dmg.sha256"
+          cat > release-notes.md <<EOF
+          ## Download and install
+
+          Download **ATOM-STUDIO-$VERSION-macOS-arm64.dmg** from the assets below.
+          Requires **Apple Silicon (M1 or newer)** and **macOS $MINIMUM_MACOS or newer**.
+          Python, ASE, NumPy, and Qt are included; no separate installation is needed.
+
+          1. Open the DMG and drag **ATOM-STUDIO** into **Applications**.
+          2. Eject the DMG and open ATOM-STUDIO from Applications.
+          3. This app is locally signed and **not notarized by Apple**. If macOS blocks it,
+             attempt to open it first, then choose **System Settings → Privacy & Security → Open Anyway**
+             if you trust this download. See [Apple's instructions](https://support.apple.com/en-us/102445).
+
+          ## Verify the download (optional)
+
+          Download the matching .sha256 file into the same folder as the DMG, then run:
+
+          \`\`\`bash
+          shasum -a 256 -c ATOM-STUDIO-$VERSION-macOS-arm64.dmg.sha256
+          \`\`\`
+
+          The result should say **OK**. This checks that the download matches the published file.
+
+          [Build and packaging logs]($RUN_URL)
+
+          The packaged-app startup check uses Qt software rendering on CI.
+          See the test results below for native graphics coverage and skips.
+
+          EOF
+          cat ../ci/test-summary.md >> release-notes.md
+
+      - name: Upload disk image, checksum, and release notes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-release
+          path: |
+            out/release/*.dmg
+            out/release/*.dmg.sha256
+            out/release/release-notes.md
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload build and packaging diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-release-diagnostics
+          path: |
+            out/ci/*.log
+            out/ci/*.txt
+            out/ci/*.md
+            out/ci/ctest-results.xml
+            out/ci/build/Testing/Temporary/
+            out/ci/build/CMakeFiles/CMakeConfigureLog.yaml
+            out/release/*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Download the tested release files from this run
+        run: gh run download "$RUN_ID" --name macos-release --dir release
+
+      - name: Verify and publish release assets
+        working-directory: release
+        run: |
+          dmg="ATOM-STUDIO-${RELEASE_TAG#v}-macOS-arm64.dmg"
+          sha256sum --check "$dmg.sha256"
+          # gh creates a draft, uploads both assets, then publishes it. Existing
+          # releases fail instead of silently replacing a published download.
+          gh release create "$RELEASE_TAG" "$dmg" "$dmg.sha256" \
+            --verify-tag --title "ATOM-STUDIO $RELEASE_TAG" \
+            --notes-file release-notes.md

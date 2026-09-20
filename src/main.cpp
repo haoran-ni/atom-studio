@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
 
     // Set application metadata
     app.setApplicationName("ATOM-STUDIO");
-    app.setApplicationVersion("0.1.0");
+    app.setApplicationVersion(ATOM_STUDIO_VERSION);
     app.setOrganizationName("ATOM-STUDIO");
     app.setOrganizationDomain("atomstudio.app");
     app.setWindowIcon(QIcon(":/branding/app-logo.png"));
