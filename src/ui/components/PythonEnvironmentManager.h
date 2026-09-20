@@ -29,9 +29,6 @@ public:
     void uninstall(const QString& package);
     void check();
     void cancel();
-    void openTerminal(const QString& directory);
-    QString terminalPreference() const;
-    void setTerminalPreference(const QString& value);
 signals:
     void stateChanged();
     void output(const QString& text);
@@ -42,10 +39,8 @@ signals:
 private:
     void request(const QString& action, const QStringList& arguments = {});
     void readOutput();
-    void terminalReady(const QString& directory);
     void reportError(const QString& text);
     QString m_bundle, m_root, m_name, m_status, m_action;
-    QString m_terminalDirectory;
     QProcess m_process;
     QByteArray m_buffer;
     QJsonArray m_packages;

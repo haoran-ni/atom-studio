@@ -2,6 +2,8 @@
 <RCC version="1.0">
     <qresource prefix="/help">
         <file alias="interactive-shell.html">help/interactive-shell.html</file>
+        <file alias="python-environments.html">help/python-environments.html</file>
+        <file alias="python-troubleshooting.html">help/python-troubleshooting.html</file>
     </qresource>
     <qresource prefix="/qml">
         <file alias="Main.qml">../src/ui/qml/Main.qml</file>

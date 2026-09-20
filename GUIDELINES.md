@@ -121,7 +121,7 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
 ### Interactive Python
 - `PythonShellController` owns a persistent process using a user-owned venv created
   from the bundled Qt-free `PythonLauncher`. `PythonEnvironmentManager` handles
-  preparation, package operations and external terminal launching; keep package UI
+  preparation and package operations; keep package UI
   in `PythonPackagesWindow`. Native file imports retain the isolated embedded runtime.
   The old `--python-shell-worker` entry remains available for embedded diagnostics.
 - User packages belong outside the signed bundle. Venvs may inherit bundled packages
@@ -129,9 +129,11 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
   storage by Python version/architecture and repair launcher links after app moves.
   Use real subprocesses for pip, argument lists rather than shell interpolation, and
   serialize environment changes. Stop the idle worker before changing its dependencies.
-- External terminals and the shell must use the same venv and Hugging Face credential
-  paths. Do not embed tokens into terminal scripts or logs. Open a new external terminal
-  session with safely quoted paths; never inject commands into an existing session.
+- Users activate managed environments manually in their own terminals. Keep the Tutorial
+  activation, environment-switching, and path instructions aligned with the runtime.
+  Explain how to match Hugging Face credential/cache paths without exposing tokens.
+  Only app-managed named environments are supported; activating an external venv or
+  Conda environment does not select it for the app.
 - Keep editor/window code in `InteractiveShellWindow`, transport in
   `PythonShellController` / `StructureSnapshot`, and ASE session behavior in
   `src/python/shell/`. The sidebar owns only the Code section and open action.

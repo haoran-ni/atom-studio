@@ -2,7 +2,6 @@
 #include "PythonShellController.h"
 #include "PythonEnvironmentManager.h"
 #include <QComboBox>
-#include <QFileDialog>
 #include <QFontDatabase>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -33,8 +32,7 @@ PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
     environmentRow->addWidget(new QLabel(tr("Environment")));
     auto* environments = new QComboBox; environments->setObjectName("pythonEnvironments");
     auto* create = new QPushButton(tr("New…"));
-    auto* terminal = new QPushButton(tr("Open Environment Terminal")); terminal->setObjectName("openEnvironmentTerminal");
-    environmentRow->addWidget(environments, 1); environmentRow->addWidget(create); environmentRow->addWidget(terminal);
+    environmentRow->addWidget(environments, 1); environmentRow->addWidget(create);
     layout->addLayout(environmentRow);
     auto* path = new QLabel; path->setWordWrap(true); path->setTextInteractionFlags(Qt::TextSelectableByMouse);
     path->setObjectName("pythonEnvironmentPath"); layout->addWidget(path);
@@ -49,7 +47,7 @@ PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
     auto* mace = new QPushButton(tr("MACE")); auto* uma = new QPushButton(tr("UMA / FAIRChem"));
     presetsRow->addWidget(mace); presetsRow->addWidget(uma); presetsRow->addStretch(); layout->addLayout(presetsRow);
     auto* note = new QLabel(tr("MACE installs mace-torch; UMA installs fairchem-core. Model files are downloaded separately.\n"
-        "For UMA, obtain model access on Hugging Face, then run hf auth login in the environment terminal. See Tutorial for examples."));
+        "For UMA, obtain model access on Hugging Face, then activate this environment in your terminal and run hf auth login. See Tutorial for examples."));
     note->setWordWrap(true); layout->addWidget(note);
     auto* table = new QTableWidget(0, 3); table->setObjectName("pythonPackages");
     table->setHorizontalHeaderLabels({tr("Package"), tr("Version"), tr("Location")});
@@ -69,16 +67,12 @@ PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
     layout->addWidget(log, 1);
     auto* status = new QLabel; status->setObjectName("pythonPackageStatus"); status->setWordWrap(true); layout->addWidget(status);
     auto* footer = new QHBoxLayout;
-    auto* chooseTerminal = new QPushButton(tr("Choose Terminal…")); auto* defaultTerminal = new QPushButton(tr("Use Default Terminal"));
     auto* tutorial = new QPushButton(tr("Tutorial"));
-    footer->addWidget(chooseTerminal); footer->addWidget(defaultTerminal); footer->addStretch(); footer->addWidget(tutorial);
+    footer->addStretch(); footer->addWidget(tutorial);
     layout->addLayout(footer);
-#ifdef Q_OS_WIN
-    chooseTerminal->hide(); defaultTerminal->hide();
-#endif
     const auto update = [=] {
         const bool idle = !manager->busy() && !manager->sessionRunning();
-        for (auto* button : {create, terminal, install, check, mace, uma}) button->setEnabled(idle);
+        for (auto* button : {create, install, check, mace, uma}) button->setEnabled(idle);
         refresh->setEnabled(!manager->busy()); cancel->setEnabled(manager->busy());
         environments->setEnabled(idle); package->setEnabled(idle); version->setEnabled(idle);
         const QSignalBlocker blocker(environments);
@@ -99,7 +93,6 @@ PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
         }
         const int row = table->currentRow();
         remove->setEnabled(idle && row >= 0 && table->item(row, 2)->data(Qt::UserRole).toBool());
-        chooseTerminal->setToolTip(manager->terminalPreference());
     };
     connect(manager, &PythonEnvironmentManager::stateChanged, this, update);
     connect(table, &QTableWidget::itemSelectionChanged, this, [=] {
@@ -122,19 +115,7 @@ PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
     connect(refresh, &QPushButton::clicked, manager, &PythonEnvironmentManager::refresh);
     connect(check, &QPushButton::clicked, manager, &PythonEnvironmentManager::check);
     connect(cancel, &QPushButton::clicked, manager, &PythonEnvironmentManager::cancel);
-    connect(terminal, &QPushButton::clicked, shell, &PythonShellController::openEnvironmentTerminal);
     connect(tutorial, &QPushButton::clicked, shell, &PythonShellController::openTutorial);
-    connect(chooseTerminal, &QPushButton::clicked, this, [=, this] {
-        const auto terminalPath = QFileDialog::getOpenFileName(this, tr("Choose Terminal Application"),
-#ifdef Q_OS_MACOS
-            "/Applications", tr("Applications (*.app)")
-#else
-            "/usr/bin", tr("Executables (*)")
-#endif
-        );
-        if (!terminalPath.isEmpty()) { manager->setTerminalPreference(terminalPath); update(); }
-    });
-    connect(defaultTerminal, &QPushButton::clicked, this, [=] { manager->setTerminalPreference({}); update(); });
     auto* style = QStyleFactory::create("Fusion"); style->setParent(this);
     auto palette = style->standardPalette();
     for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {

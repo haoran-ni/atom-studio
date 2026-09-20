@@ -119,13 +119,11 @@ InteractiveShellWindow::InteractiveShellWindow(PythonShellController* controller
     auto* environmentName = new QLabel;
     environmentName->setObjectName("shellEnvironmentName");
     auto* packages = new QPushButton(tr("Manage Packages"));
-    auto* environmentTerminal = new QPushButton(tr("Open Environment Terminal"));
-    environmentRow->addWidget(environmentName, 1); environmentRow->addWidget(packages); environmentRow->addWidget(environmentTerminal);
+    environmentRow->addWidget(environmentName, 1); environmentRow->addWidget(packages);
     layout->addLayout(environmentRow);
     const auto updateEnvironment = [=] { environmentName->setText(tr("Environment: %1").arg(controller->environment()->name())); };
     connect(controller->environment(), &PythonEnvironmentManager::stateChanged, this, updateEnvironment);
     connect(packages, &QPushButton::clicked, controller, &PythonShellController::openPackages);
-    connect(environmentTerminal, &QPushButton::clicked, controller, &PythonShellController::openEnvironmentTerminal);
     updateEnvironment();
     m_structures = new QTableWidget(0, 4);
     m_structures->setObjectName("shellStructures");

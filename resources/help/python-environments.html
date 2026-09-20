@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Environment management</title></head>
+<body>
+<h3>Install packages or switch environments</h3>
+<p>Open <b class="control">Code → Manage Packages</b>. Enter a package name and click
+<b class="control">Install / Upgrade</b>. The <b class="control">MACE</b> and <b class="control">UMA / FAIRChem</b> shortcuts select <code>mace-torch</code>
+and <code>fairchem-core</code>. Packages marked <b class="control">Bundled (read-only)</b> come with the app.</p>
+<p>Use <b class="control">New…</b> to create a separate package set, then choose it from the
+<b class="control">Environment</b> dropdown. Switching or installing clears Python variables and
+calculators; loaded geometry and editor text are retained.</p>
+<p><b>External Conda / venv environments cannot be selected directly.</b>
+Create an app-managed environment and install compatible project requirements into it.
+Launching the app from an activated terminal does not change its Python interpreter.</p>
+<h3>Use the environment in your own terminal</h3>
+<p>Copy the environment path shown in <b class="control">Manage Packages</b> after preparation finishes.
+Replace the example path below with it. These commands belong in your terminal,
+not the app's Python editor.</p>
+<p><b>macOS / Linux · zsh or bash</b></p>
+<pre>source "/path/to/environment/bin/activate"
+unset PYTHONHOME PYTHONPATH __PYVENV_LAUNCHER__</pre>
+<p>For fish, use <code>source "/path/to/environment/bin/activate.fish"</code>.</p>
+<p><b>Windows · PowerShell</b></p>
+<pre>&amp; "C:\path\to\environment\Scripts\Activate.ps1"</pre>
+<p>If activation is blocked, use Command Prompt:</p>
+<pre>call "C:\path\to\environment\Scripts\activate.bat"</pre>
+<p>Then verify the interpreter and use pip:</p>
+<pre>python -c "import sys; print(sys.executable)"
+python -m pip install PACKAGE
+python -m pip check</pre>
+<p>Stop calculations before changing packages externally. Afterward, click
+<b class="control">Restart Python</b> in the shell and <b class="control">Refresh</b> in <b class="control">Manage Packages</b>.
+Run <code>deactivate</code> to leave the environment. A terminal shares the installed
+packages, but does not have the app's live <code>STRUCT_N</code> or <code>studio</code> objects.</p>
+<h3>Helpful paths</h3>
+<p>Run this <b>in the app's Python shell</b>:</p>
+<pre>import sys
+from pathlib import Path
+
+print("Environment:", sys.prefix)
+print("Python:", sys.executable)
+print("Bundled runtime:", sys.base_prefix)
+print("Working directory:", Path.cwd())</pre>
+<p><b class="control">Manage Packages</b> shows the writable environment folder.
+<b class="control">Working directory…</b> chooses where relative output files are saved.
+The bundled runtime is read-only. If you move the app, reopen <b class="control">Manage Packages</b>
+to repair its environment links.</p>
+<h3>Hugging Face login for UMA</h3>
+<p>Install <code>fairchem-core</code> and obtain access to the model on Hugging Face.
+To find the app's credential and cache paths, run this in the Python shell:</p>
+<pre>from huggingface_hub import constants
+print(constants.HF_HOME)
+print(constants.HF_TOKEN_PATH)
+print(constants.HF_HUB_CACHE)</pre>
+<p>In your activated terminal, set <code>HF_HOME</code>, <code>HF_TOKEN_PATH</code>,
+and <code>HF_HUB_CACHE</code> to those printed paths, then run <code>hf auth login</code>.
+For example, zsh/bash uses <code>export HF_HOME="/printed/path"</code>;
+PowerShell uses <code>$env:HF_HOME = "C:\printed\path"</code>.</p>
+<p>Restart the app's Python shell after login. Activation alone does not align
+cache paths. Keep tokens out of saved scripts.</p>
+</body></html>

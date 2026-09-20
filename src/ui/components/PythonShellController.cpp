@@ -166,12 +166,6 @@ void PythonShellController::openPackages() {
     if (!m_environment->busy()) m_environment->refresh();
 }
 
-void PythonShellController::openEnvironmentTerminal() {
-    if (!m_packages) m_packages = new PythonPackagesWindow(this);
-    m_packages->show(); m_packages->raise(); m_packages->activateWindow();
-    m_environment->openTerminal(m_directory);
-}
-
 void PythonShellController::openTutorial() {
     if (!m_tutorial) m_tutorial = new InteractiveShellTutorialWindow;
     m_tutorial->show();

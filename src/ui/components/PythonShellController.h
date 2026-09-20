@@ -33,7 +33,6 @@ public:
     Q_INVOKABLE void openWindow();
     Q_INVOKABLE void openTutorial();
     Q_INVOKABLE void openPackages();
-    Q_INVOKABLE void openEnvironmentTerminal();
     PythonEnvironmentManager* environment() const { return m_environment; }
     void start();
     void run(const QString& code);

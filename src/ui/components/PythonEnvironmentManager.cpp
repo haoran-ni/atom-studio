@@ -1,17 +1,13 @@
 #include "PythonEnvironmentManager.h"
 #include <QCoreApplication>
-#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QSysInfo>
-#include <QUrl>
-#include <utility>
 #ifndef Q_OS_WIN
 #include <signal.h>
 #include <unistd.h>
@@ -21,17 +17,6 @@
 #endif
 
 namespace atom::ui {
-namespace {
-QString quote(QString value) { return "'" + value.replace("'", "'\\''") + "'"; }
-void writeFile(const QString& path, const QString& text, bool executable = false) {
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(text.toUtf8()) < 0 || !file.commit())
-        throw std::runtime_error(QString("Cannot write %1: %2").arg(path, file.errorString()).toStdString());
-    QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | (executable ? QFile::ExeOwner : QFile::Permissions{}));
-}
-}
-
 PythonEnvironmentManager::PythonEnvironmentManager(const QString& appProgram, QObject* parent, QString root)
     : QObject(parent), m_environment(QProcessEnvironment::systemEnvironment()) {
     const auto appDirectory = QFileInfo(appProgram).absolutePath();
@@ -45,8 +30,7 @@ PythonEnvironmentManager::PythonEnvironmentManager(const QString& appProgram, QO
     m_persistSelection = root.isEmpty();
     m_name = m_persistSelection ? QSettings().value("python/environment", "default").toString() : "default";
     if (!QRegularExpression("^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$").match(m_name).hasMatch()) m_name = "default";
-    // Keep credential locations identical even if the terminal's startup files
-    // use a different HF_HOME. Never write HF_TOKEN into generated scripts.
+    // Give the Python worker a consistent default credential/cache location.
     if (!m_environment.contains("HF_HOME")) {
         const QString cache = m_environment.value("XDG_CACHE_HOME", QDir::homePath() + "/.cache");
         m_environment.insert("HF_HOME", cache + "/huggingface");
@@ -70,7 +54,7 @@ PythonEnvironmentManager::PythonEnvironmentManager(const QString& appProgram, QO
     connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
             reportError(tr("Could not start bundled Python: %1").arg(m_process.errorString()));
-            m_terminalDirectory.clear(); emit failed();
+            emit failed();
         }
     });
     connect(&m_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
@@ -86,8 +70,6 @@ PythonEnvironmentManager::PythonEnvironmentManager(const QString& appProgram, QO
             emit stateChanged();
             if (success && m_action == "ensure") emit prepared();
             if (!success) emit failed();
-            const auto directory = std::exchange(m_terminalDirectory, {});
-            if (success && !directory.isEmpty()) terminalReady(directory);
         });
 }
 
@@ -148,7 +130,7 @@ void PythonEnvironmentManager::install(const QString& package, const QString& ve
     const auto name = package.trimmed(); const auto ver = version.trimmed();
     if (!QRegularExpression("^[A-Za-z0-9][A-Za-z0-9_.-]*(\\[[A-Za-z0-9_,.-]+\\])?$").match(name).hasMatch()
         || (!ver.isEmpty() && !QRegularExpression("^[A-Za-z0-9][A-Za-z0-9_.+!-]*$").match(ver).hasMatch())) {
-        reportError(tr("Enter a PyPI package name and an optional exact version. Use the environment terminal for other pip options.")); return;
+        reportError(tr("Enter a PyPI package name and an optional exact version. For other pip options, activate this environment in your terminal; see Tutorial.")); return;
     }
     request("install", {name + (ver.isEmpty() ? QString{} : "==" + ver)});
 }
@@ -181,75 +163,5 @@ void PythonEnvironmentManager::cancel() {
     if (m_job) TerminateJobObject(m_job, 1);
 #endif
     m_process.kill();
-}
-QString PythonEnvironmentManager::terminalPreference() const { return QSettings().value("python/terminal").toString(); }
-void PythonEnvironmentManager::setTerminalPreference(const QString& value) { QSettings().setValue("python/terminal", value); }
-void PythonEnvironmentManager::openTerminal(const QString& directory) {
-    if (busy() || m_sessionRunning) { reportError(tr("Wait until Python and package operations are idle before opening the environment terminal.")); return; }
-    m_terminalDirectory = directory.isEmpty() ? QDir::homePath() : directory;
-    ensure();
-}
-void PythonEnvironmentManager::terminalReady(const QString& directory) {
-    try {
-        const auto launchDirectory = path() + "/.terminal";
-#ifdef Q_OS_WIN
-        const auto script = launchDirectory + "/activate.cmd";
-        const auto batchValue = [](QString value) {
-            if (value.contains('"') || value.contains('\r') || value.contains('\n')) throw std::runtime_error("Invalid terminal setting");
-            return value.replace("%", "%%");
-        };
-        QString commands = "@echo off\r\ncall \"" + batchValue(QDir::toNativeSeparators(path() + "/Scripts/activate.bat"))
-            + "\"\r\ncd /d \"" + batchValue(QDir::toNativeSeparators(directory)) + "\"\r\n";
-        for (const auto& key : {QString("HF_HOME"), QString("HF_TOKEN_PATH"), QString("HF_HUB_CACHE")})
-            if (m_environment.contains(key)) commands += "set \"" + key + '=' + batchValue(m_environment.value(key)) + "\"\r\n";
-        commands += "set PYTHONHOME=\r\nset PYTHONPATH=\r\n";
-        writeFile(script, commands);
-        if (!QProcess::startDetached("cmd.exe", {"/V:OFF", "/K", script})) throw std::runtime_error("Cannot open Windows terminal");
-#else
-        QString activate = ". " + quote(path() + "/bin/activate") + "\n";
-        for (const auto& key : {QString("HF_HOME"), QString("HF_TOKEN_PATH"), QString("HF_HUB_CACHE")})
-            if (m_environment.contains(key)) activate += "export " + key + '=' + quote(m_environment.value(key)) + "\n";
-        activate += "unset PYTHONHOME PYTHONPATH __PYVENV_LAUNCHER__\ncd " + quote(directory)
-            + "\nprintf '%s\\n' " + quote("ATOM-STUDIO environment: " + path())
-            + " " + quote("Install packages: python -m pip install PACKAGE")
-            + " " + quote("Hugging Face login: hf auth login")
-            + " " + quote("Restart the interactive Python shell after package changes.") + "\n";
-        QString shell = m_environment.value("SHELL", "/bin/bash");
-        QString command;
-        if (QFileInfo(shell).fileName() == "zsh") {
-            const QString original = m_environment.value("ZDOTDIR", QDir::homePath());
-            writeFile(launchDirectory + "/.zshrc", "export ZDOTDIR=" + quote(original)
-                + "\n[[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n" + activate);
-            command = "export ZDOTDIR=" + quote(launchDirectory) + "\nexec " + quote(shell) + " -i\n";
-        } else if (QFileInfo(shell).fileName() == "fish") {
-            QString fish = "source " + quote(path() + "/bin/activate.fish") + "; cd " + quote(directory);
-            for (const auto& key : {QString("HF_HOME"), QString("HF_TOKEN_PATH"), QString("HF_HUB_CACHE")})
-                if (m_environment.contains(key)) fish += "; set -gx " + key + ' ' + quote(m_environment.value(key));
-            command = "exec " + quote(shell) + " -i -C " + quote(fish) + "\n";
-        } else {
-            writeFile(launchDirectory + "/bashrc", "[ -f ~/.bashrc ] && . ~/.bashrc\n" + activate);
-            command = "exec /bin/bash --rcfile " + quote(launchDirectory + "/bashrc") + " -i\n";
-        }
-        const auto script = launchDirectory + "/ATOM-STUDIO.command";
-        writeFile(script, "#!/bin/sh\n" + command, true);
-#ifdef Q_OS_MACOS
-        const auto preference = terminalPreference();
-        if (preference.isEmpty()) {
-            if (!QDesktopServices::openUrl(QUrl::fromLocalFile(script))) throw std::runtime_error("Cannot open the default terminal. Choose a terminal application in Manage Packages.");
-        } else if (!QProcess::startDetached("/usr/bin/open", {"-a", preference, script}))
-            throw std::runtime_error("Cannot open the selected terminal");
-#else
-        QString terminal = terminalPreference();
-        if (terminal.isEmpty())
-            for (const auto& candidate : {"x-terminal-emulator", "gnome-terminal", "konsole", "xterm"}) {
-                terminal = QStandardPaths::findExecutable(candidate); if (!terminal.isEmpty()) break;
-            }
-        if (terminal.isEmpty()) throw std::runtime_error("Choose a terminal executable in Manage Packages.");
-        const auto flag = QFileInfo(terminal).fileName() == "gnome-terminal" ? "--" : "-e";
-        if (!QProcess::startDetached(terminal, {flag, script})) throw std::runtime_error("Cannot open the selected terminal");
-#endif
-#endif
-        m_status = tr("Opened external terminal for %1").arg(m_name); emit stateChanged();
-    } catch (const std::exception& error) { reportError(QString::fromUtf8(error.what())); }
 }
 }

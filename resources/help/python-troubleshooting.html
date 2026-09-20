@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Trouble shooting</title></head>
+<body>
+<h3>STRUCT_0 is not defined</h3>
+<p>Load a structure and use the exact <code>STRUCT_N</code> name shown in the shell's
+structure list. IDs need not be consecutive. These variables exist only in the app's shell.</p>
+<h3>The viewport is not updating</h3>
+<p>Select the structure with <code>studio.show(atoms)</code>. During a long run,
+call <code>studio.update(atoms)</code> or attach it to the optimizer as shown in
+section 1. Without that call, changes appear when the run finishes successfully.
+An already relaxed structure may barely move.</p>
+<h3>A package or model will not load</h3>
+<p>For <code>ModuleNotFoundError</code>, check the selected environment in
+<b class="control">Manage Packages</b>, install the missing package, and click <b class="control">Restart Python</b>.
+Use <b class="control">Check Dependencies</b> for package conflicts. For a 401/403 model-download error,
+check model access, login, and the Hugging Face paths in section 2.</p>
+<h3>The calculator or structure is rejected</h3>
+<p>Energy and force calculations need an attached calculator that supports your material.
+For structure errors, read the named <code>STRUCT_N</code> in <b class="control">Output</b>; positions must
+be finite and per-atom arrays must match the atom count. Use <code>studio.add(atoms)</code>
+to register a new object before calling <code>studio.update</code>.</p>
+<h3>Stop, restart, or restore</h3>
+<p><b class="control">Stop</b> keeps the last accepted geometry; a blocked worker is restarted.
+Errors discard unpublished structure edits.</p>
+<p><b class="control">Restart Python</b> clears variables and calculators while retaining current
+geometry and editor text. <b class="control">Structure → Reset to Original</b> restores the active
+structure from its original input using the current replication settings.</p>
+</body></html>

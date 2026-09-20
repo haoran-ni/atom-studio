@@ -1,382 +1,60 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Interactive Shell Tutorial</title>
-<style>
-body { color: #22242a; background-color: #ffffff; }
-h1 { font-size: 24pt; margin-bottom: 8px; }
-h2 { font-size: 17pt; margin-top: 28px; margin-bottom: 12px; }
-h3 { font-size: 13pt; margin-top: 18px; }
-p, li { line-height: 145%; }
-pre { background-color: #f1f2f5; font-size: 11pt; margin-top: 12px; margin-bottom: 16px; white-space: pre; }
-a { color: #23577b; }
-th { background-color: #e8e9ed; text-align: left; }
-td, th { padding: 8px; }
-</style>
-</head>
+<html lang="en"><head><meta charset="utf-8"><title>Usage of interactive python shell</title></head>
 <body>
-<a name="contents"></a>
-<h1>Interactive Shell Tutorial</h1>
-<p>Use Python and ASE to inspect, edit, and relax the structures in your viewport.
-This guide starts with an already loaded <code>STRUCT_0</code>. Each code block is
-an example to copy into the shell editor and run; explanatory text is not Python code.</p>
-<p><b>Quick start:</b> load a structure, open <b>Code → Open Interactive Shell</b>,
-enter <code>print(STRUCT_0)</code>, and click <b>Run</b>.</p>
-
-<h3>Contents</h3>
-<ol>
-<li><a href="#first-run">Open the shell and run code</a></li>
-<li><a href="#structures">Understand STRUCT_N and the Python session</a></li>
-<li><a href="#edit">Inspect and edit a loaded structure</a></li>
-<li><a href="#live">Show intermediate changes in the viewport</a></li>
-<li><a href="#relax">Relax STRUCT_0 with live visualization</a></li>
-<li><a href="#new">Create structures and work on copies</a></li>
-<li><a href="#reference">The studio helper reference</a></li>
-<li><a href="#files">Scripts, files, and the Python environment</a></li>
-<li><a href="#recovery">Stop, errors, restart, and restoring geometry</a></li>
-<li><a href="#troubleshooting">Troubleshooting and practical limits</a></li>
-<li><a href="#packages">Install packages and use the external terminal</a></li>
-<li><a href="#models">MACE, UMA, and Hugging Face authentication</a></li>
-</ol>
-
-<a name="first-run"></a>
-<h2>1. Open the shell and run code</h2>
-<ol>
-<li>Load a structure using <b>Files → Import Structures</b>, or drop its file onto the viewport.</li>
-<li>Expand <b>Code</b> and click <b>Open Interactive Shell</b>. You can move this separate window beside the viewport.</li>
-<li>Check the structure list at the top of the shell. It shows each Python variable, source filename, atom count, and which structure is visible.</li>
-<li>Enter the following code in the editor and click <b>Run</b>, or press <b>Command+Enter</b> on macOS / <b>Ctrl+Enter</b> on Windows and Linux.</li>
-</ol>
-<pre>print(STRUCT_0)
-print("Atoms:", len(STRUCT_0))
-print("Formula:", STRUCT_0.get_chemical_formula())</pre>
-<p><b>Run executes the entire editor</b>, including any previously inserted examples.
-Replace the editor contents when you want to run a different standalone example.
-Use <code>print(...)</code> to see values in <b>Output</b>; a bare expression does not
-automatically display its result. Indent Python blocks consistently; Tab inserts four spaces.</p>
-<p>The <b>Insert example…</b> menu appends a sample to the editor. <b>Clear output</b>
-clears displayed text without changing the code, structures, or Python variables.</p>
-
-<a name="structures"></a>
-<h2>2. Understand STRUCT_N and the Python session</h2>
-<p>Each loaded document has an ordinary ASE <code>Atoms</code> object named
-<code>STRUCT_N</code>, where N is its stable session ID. For example,
-<code>STRUCT_0</code> and <code>STRUCT_1</code> refer to separate documents. Switching
-the viewport does not rename them. Always use the variable shown in the structure list.</p>
-<pre>atoms = STRUCT_0
-studio.show(atoms)
-print(atoms.positions)</pre>
-<p><code>atoms = STRUCT_0</code> creates an alias: edits through either name affect the
-same object. <code>STRUCT_0.copy()</code> creates an independent object; use
-<code>studio.add</code> to give that copy its own document and viewport representation.</p>
-<p>Python variables, imports, functions, and attached calculators persist between
-runs. Closing the shell window hides it; reopening keeps your editor and session.
-Quitting the application ends the session. Save scripts and structures you need to keep.</p>
-<p>Imports and native geometry edits synchronize into the shell while it is idle.
-During execution, conflicting geometry editing controls are disabled. Camera and
-appearance controls remain available. The <code>np</code>, <code>ase</code>,
-<code>Atoms</code>, and <code>studio</code> names are provided when a session starts.</p>
-
-<a name="edit"></a>
-<h2>3. Inspect and edit a loaded structure</h2>
-<p>ASE positions and cell lengths use ångströms. Arrays use zero-based atom indices,
-so atom <code>0</code> is the first atom.</p>
-<pre>atoms = STRUCT_0
-print("First five positions:", atoms.positions[:5])
-print("Cell:", atoms.cell)
-print("Periodic directions:", atoms.pbc)
-
-# Translate every atom by 0.2 Å along z.
-atoms.positions[:, 2] += 0.2</pre>
-<p>A successful run automatically publishes changed registered structures to the
-app. Running this block again translates the atoms another 0.2 Å. Geometry updates
-preserve the camera view rather than refitting it each time.</p>
-<p>You can also use ASE methods such as <code>atoms.rotate(10, "z")</code> or
-<code>atoms.set_cell(...)</code>. ASE constraints are supported; methods such as
-<code>set_positions</code> can respect constraints, while direct writes to the
-<code>positions</code> array bypass them.</p>
-<p>To replace a registered object with a sliced, reordered, or repeated version,
-assign it back to its <code>STRUCT_N</code> name. For example:</p>
-<pre># Keep all atoms, in reverse order.
-STRUCT_0 = STRUCT_0[::-1]</pre>
-<p>After rebinding <code>STRUCT_0</code>, assign <code>atoms = STRUCT_0</code> again if
-you need that alias. Existing aliases still refer to the previous Python object.</p>
-
-<a name="live"></a>
-<h2>4. Show intermediate changes in the viewport</h2>
-<p>For loops and simulations, call <code>studio.update(atoms)</code> to publish
-intermediate geometry. It does not calculate forces or energy. Select the document
-with <code>studio.show(atoms)</code> when you want to watch it.</p>
-<pre>from time import sleep
-
-atoms = STRUCT_0
-studio.show(atoms)
-for step in range(20):
-    atoms.positions[:, 2] += 0.02
-    studio.update(atoms)
-    sleep(0.1)</pre>
-<p>This moves the structure a total of 0.4 Å along z. The short pause makes the
-motion easy to observe. <b>Live updates/s</b> sets the maximum preview rate from 1 to 30;
-set it before running. Rendering speed can limit the actual rate, and intermediate
-steps may be skipped. The final successful state is still applied.</p>
-<p>Updating a structure that is not visible keeps its geometry current without
-switching the viewport. Image capture briefly defers updates. Ray tracing restarts
-its accumulation when geometry changes and settles again after the run finishes.</p>
-
-<a name="relax"></a>
-<h2>5. Relax STRUCT_0 with live visualization</h2>
-<p>Relaxation requires an ASE calculator that supplies forces for your material.
-The following example reuses an attached calculator; if none exists, it uses
-ASE's <b>EMT</b> calculator. EMT is suitable for a quick copper demonstration, but
-is not a general-purpose model for every element or material. Replace it with an
-appropriate calculator for your scientific calculation.</p>
-<p>This example changes the loaded <code>STRUCT_0</code> directly. It relaxes atom
-positions while keeping the unit cell fixed and respecting existing ASE constraints.</p>
-<pre>from time import sleep
-from ase.calculators.emt import EMT
-from ase.optimize import BFGS
-
-atoms = STRUCT_0
-studio.show(atoms)
-if atoms.calc is None:
-    atoms.calc = EMT()  # Choose a calculator for your material.
-
-def update_view():
-    studio.update(atoms)
-    sleep(0.15)  # Optional: make intermediate motion visible.
-
-optimizer = BFGS(atoms, logfile="-")
-optimizer.attach(update_view, interval=1)
-converged = optimizer.run(fmax=0.05, steps=100)
-
-print("Converged:", converged)
-print(f"Final energy: {atoms.get_potential_energy():.6f} eV")</pre>
-<p><code>fmax=0.05</code> requests a maximum force below 0.05 eV/Å;
-<code>steps=100</code> limits the optimization steps. Reaching that limit does not
-guarantee convergence: check the printed result and final <code>fmax</code> in Output.
-<code>logfile="-"</code> sends the optimizer log to Output.</p>
-<p>For full speed, remove <code>sleep(0.15)</code>, or attach the update helper directly:</p>
-<pre>optimizer.attach(studio.update, interval=1, atoms=atoms)</pre>
-<p>Use this attachment <b>instead of</b> the <code>update_view</code> attachment.
-If the input is already relaxed, the optimizer may finish immediately with little
-visible motion. Try the separate <b>Live relaxation demo</b> from the example menu
-to visualize a deliberately displaced copper crystal.</p>
-
-<a name="new"></a>
-<h2>6. Create structures and work on copies</h2>
-<p><code>studio.add(atoms)</code> creates a new document, prints its assigned
-<code>STRUCT_N</code> name, and returns the registered object. The supplied geometry
-is used directly, without applying sidebar replication a second time.</p>
-<pre># Experiment on a separate copy of a loaded structure.
-trial = studio.add(STRUCT_0.copy())
-studio.show(trial)
-trial.positions[:, 2] += 0.5</pre>
-<p>ASE copies do not carry an attached calculator. Attach a calculator to the copy
-before evaluating energy or forces. Creating a new structure with ASE also works:</p>
-<pre>from ase.build import bulk
-
-copper = studio.add(bulk("Cu", cubic=True) * (2, 2, 2))
-studio.show(copper)</pre>
-<p>Each run of these examples adds another document. A Python variable alone does
-not add a document: register newly created objects before calling
-<code>studio.update</code> or <code>studio.show</code>.</p>
-
-<a name="reference"></a>
-<h2>7. The studio helper reference</h2>
-<table border="1" cellspacing="0" cellpadding="8" width="100%">
-<tr><th>Helper</th><th>Purpose</th></tr>
-<tr><td><code>studio.update(atoms)</code></td><td>Publish a registered object's geometry during a run. No calculator evaluation.</td></tr>
-<tr><td><code>studio.show(atoms)</code></td><td>Select its document in the viewport. Does not reset camera scale.</td></tr>
-<tr><td><code>studio.add(atoms)</code></td><td>Create a document and return its registered ASE object.</td></tr>
-<tr><td><code>studio.original(N)</code></td><td>Return an independent copy of document N's original input.</td></tr>
+<p>Load a structure, then open <b class="control">Code → Open Interactive Shell</b>.
+Enter Python in the editor and click <b class="control">Run</b> or press <b class="control">Command/Ctrl+Enter</b>.
+<b class="control">Run</b> executes the whole editor; replace the previous example before trying another.</p>
+<h3>Already available</h3>
+<table cellspacing="0" cellpadding="5" width="100%">
+<tr><td><code>np</code></td><td>NumPy — arrays and numerical operations.</td></tr>
+<tr><td><code>ase</code> / <code>Atoms</code></td><td>ASE and its atomic-structure class.</td></tr>
+<tr><td><code>STRUCT_N</code></td><td>Your loaded structures as ASE Atoms objects.</td></tr>
+<tr><td><code>studio</code></td><td>Helpers for updating and selecting viewport structures.</td></tr>
 </table>
-<p>The original input is immutable. For a separate view of the original of document 0:</p>
-<pre>original_copy = studio.add(studio.original(0))
-studio.show(original_copy)</pre>
-<p>The original is the input before working edits and sidebar replication.
-Use <code>studio.original(0)</code> to access it in Python; the app's internal
-<code>STRUCT_0_RAW</code> / <code>STRUCT_0_CURRENT</code> labels are not shell variables.</p>
-
-<a name="files"></a>
-<h2>8. Scripts, files, and the Python environment</h2>
-<p><b>Save .py</b> saves the editor contents. <b>Open .py</b> appends a file's code to
-the editor so existing text is retained; review the combined script before running.</p>
-<p>Select <b>Working directory…</b> before a run. Relative file paths, optimizer
-logs, and calculator output use that folder unless your script changes directory.</p>
-<pre>from ase.io import write
-
-# Writes into the selected working directory.
-write("relaxed.xyz", STRUCT_0)</pre>
-<p>You can also export the displayed working structure with <b>Files → Export
-Structures</b>. Native exports preserve geometry and position precision; they are
-not complete Python session checkpoints. Save your script separately.</p>
-<p>The shell uses a writable environment created from ATOM-STUDIO's bundled Python.
-ASE, NumPy, and pip are available initially. Use <b>Code → Manage Packages</b> to add
-packages. System Python and Conda packages are not automatically imported. The
-application bundle and the Python used for native file imports remain read-only
-and separate from your shell package changes. An ASE interface to an external engine
-still needs that engine and its configuration.</p>
-<p>Enter Python code, not terminal commands. <code>input()</code> is unavailable;
-set parameters in the editor. <code>sys.executable</code> is a real Python interpreter
-for this environment and can launch Python subprocesses. Multiprocessing requires
-importable functions and an appropriate main guard in a saved module; functions
-defined only in this editor are not importable modules.</p>
-
-<a name="recovery"></a>
-<h2>9. Stop, errors, restart, and restoring geometry</h2>
-<ul>
-<li><b>Stop:</b> requests an interruption. If code cannot stop promptly, Python is
-restarted after two seconds. The viewport retains the last accepted geometry.</li>
-<li><b>Errors:</b> read the last lines of the traceback in Output. The app retains
-the last accepted geometry and restores the registered <code>STRUCT_N</code> objects
-to that state, discarding unpublished structure edits. Stop also restores these
-objects. Ordinary Python variables and calculators persist unless Python restarts.</li>
-<li><b>Restart Python:</b> clears Python variables, imports, functions, and calculators,
-then reloads the current document geometry. It retains the editor text and does
-not undo published geometry changes.</li>
-<li><b>Reset to Original:</b> use this under Structure while the shell is idle to
-restore the active document's original input with the current global replication
-factors. This replaces its working edits.</li>
-</ul>
-<p>Structure validation errors name the affected object, for example
-<code>ValueError: STRUCT_1: Positions must be finite and within 1e15 angstroms</code>.
-This means that object contains a NaN, an infinite coordinate, or a coordinate whose
-magnitude exceeds 1e15 Å. Before sending final updates, the shell validates every
-registered <code>STRUCT_N</code>, including inactive structures: ordinary ASE objects
-and NumPy arrays can change through aliases. These checks do not run calculators.
-If any structure fails validation, no final updates from that run are sent;
-previously accepted live frames are retained and restored into Python. Rejected
-coordinates therefore do not carry over into later runs. Validation occurs at
-<code>studio.update(...)</code> or at the end of a run; individual NumPy assignments
-are not intercepted.</p>
-<p>Changing sidebar replication factors also rebuilds periodic working structures
-from their originals, replacing Python edits. Use a separate document for
-experiments you want to compare. Published edits are not automatically saved to
-the imported source file.</p>
-
-<a name="troubleshooting"></a>
-<h2>10. Troubleshooting and practical limits</h2>
-<h3>“STRUCT_0 is not defined”</h3>
-<p>Import a structure and check the shell's structure list. Use the displayed
-<code>STRUCT_N</code> name; IDs are stable and need not be consecutive.</p>
-<h3>No motion appears during a calculation</h3>
-<p>Select the right document with <code>studio.show</code>. Call
-<code>studio.update</code> inside the loop or attach it to the optimizer. Without
-intermediate updates, changes appear after successful completion. A fast run,
-small displacements, or an already relaxed structure can also produce little
-visible motion.</p>
-<h3>“Atoms object has no calculator” or an unsupported element error</h3>
-<p>Attach a suitable calculator before asking for energy or forces. Imported geometry
-does not automatically acquire a computational model. EMT supports only a limited
-set of elements; choose another calculator when necessary.</p>
-<h3>“Use the Atoms object named STRUCT_N”</h3>
-<p>You passed an unregistered object or an outdated alias. Use the current
-<code>STRUCT_N</code> object, or register an independent copy with
-<code>studio.add</code>.</p>
-<h3>Updates fail after changing arrays or metadata</h3>
-<p>Positions and cell entries must be finite; array lengths must match the atom
-count. ASE metadata and constraints must be serializable. Read the traceback,
-correct the object, and rerun. Restart restores Python's objects from the last
-accepted document geometry.</p>
-<h3>What is preserved during conversion?</h3>
-<p>Snapshots retain double-precision positions, serializable ASE constraints,
-custom arrays, and typed metadata. Rendering uses float coordinates. Existing
-atom identities preserve selection and appearance through slicing and reordering;
-new atoms receive default appearance. Explicitly deleted bonds remain deleted
-through live connectivity updates until the working structure is reset.</p>
-<p>Large structures and expensive calculators take longer to compute, transfer,
-and render. Preview updates are bounded, and Output omits excessive text. Start
-with a small system and a modest update rate when checking a new script.</p>
-<p><a href="#contents">Back to contents</a></p>
-<a name="packages"></a>
-<h2>11. Install packages and use the external terminal</h2>
-<ol>
-<li>Open <b>Code → Manage Packages</b>. The default environment is prepared automatically, without a separate Python installation.</li>
-<li>Enter a PyPI package name and optionally an exact version. Click <b>Install / Upgrade</b> and wait for completion. Leave the version empty for pip to select the newest compatible release.</li>
-<li>Read the installation output if something fails. <b>Check Dependencies</b> checks installed package requirements. <b>Refresh</b> reloads the package list after terminal changes.</li>
-<li>Return to the interactive shell and run your import. Installing packages from this window ends the idle Python session, so the next Run starts with fresh imports. Geometry and editor text are retained.</li>
-</ol>
-<p>Packages marked <b>Bundled (read-only)</b> are inherited from the app. You can install
-a different version in your environment without modifying the app. <b>Uninstall Selected</b>
-removes only a local installation; a bundled version may become visible again afterward.</p>
-<p>Use <b>New…</b> to create named environments, for example <code>mace</code> and
-<code>uma</code>, when packages need different dependency versions. Select the environment
-before running code. Switching clears Python variables and calculators, retains loaded
-structures, and synchronizes them into the new session.</p>
-<p><b>Code → Open Environment Terminal</b> opens a new session in your external terminal
-with the same environment already activated. On macOS, the default application for
-<code>.command</code> files is used; <b>Choose Terminal…</b> can select another terminal.
-This is an ordinary terminal, independent of ATOM-STUDIO.</p>
-<p>Example <b>terminal commands</b> (do not paste these into the Python editor):</p>
-<pre class="terminal">python -m pip install mace-torch
-python -m pip install "some-package==1.2.3"
-python -m pip install -r requirements.txt
-python -m pip list
-python -m pip check</pre>
-<p>Advanced users can install local wheels, packages from source, and custom package
-indexes using standard pip commands. Source builds may require external compilers or
-libraries. Download sizes and device support depend on the selected package. Stop
-calculations before modifying dependencies in a terminal, then click <b>Restart Python</b>
-in the interactive shell. Exporting a variable in a terminal does not update the already
-running app; configure calculator settings in your script when needed.</p>
-<p><b>Cancel Operation</b> stops the installer. An error or cancellation may leave partial
-changes. Review the output, retry, check dependencies, or create a fresh environment.
-Closing the package window lets the operation continue; quitting the app stops it.</p>
-<p>Environments persist in your user application-data folder, separated by Python
-version and architecture. Keep the installed app in place while using its terminal;
-launch the app again after moving it to repair environment links. The app's native
-file reader continues using its own isolated bundled packages.</p>
-
-<a name="models"></a>
-<h2>12. MACE, UMA, and Hugging Face authentication</h2>
-<h3>MACE relaxation of STRUCT_0</h3>
-<p>Select the <b>MACE</b> shortcut in Manage Packages, then Install. It selects
-<code>mace-torch</code>, the interatomic-potential package. The following example uses
-a small MACE-MP materials model on CPU. The first call downloads its weights; choose
-a model appropriate for your system before scientific use.</p>
-<pre>from mace.calculators import mace_mp
+<p>These names need no import. Import other modules and calculators as needed.
+Variables and attached calculators persist between runs.</p>
+<h3>Use a loaded structure</h3>
+<p>Replace <code>N</code> with the ID shown in the shell's structure list:
+<code>STRUCT_0</code>, <code>STRUCT_1</code>, and so on. IDs stay with their documents;
+switching the viewport does not rename them.</p>
+<pre>atoms = STRUCT_0
+print(atoms.get_chemical_formula())
+print(atoms.positions)
+print(np.mean(atoms.positions, axis=0))</pre>
+<p><code>atoms</code> refers to the same object as <code>STRUCT_0</code>, so editing
+either changes that structure. Use <code>print(...)</code> to see values in <b class="control">Output</b>.</p>
+<h3>Update the viewport</h3>
+<p>Changes to loaded structures appear automatically after a successful <b class="control">Run</b>.
+Positions and cell lengths are in angstroms.</p>
+<pre>STRUCT_0.positions[:, 2] += 0.5</pre>
+<p>To show an intermediate change during a running script, call
+<code>studio.update(atoms)</code>. Use <code>studio.show(atoms)</code> to select its document.</p>
+<pre>atoms = STRUCT_0
+studio.show(atoms)
+atoms.positions[:, 2] += 0.1
+studio.update(atoms)</pre>
+<p>For a separate copy to experiment on:</p>
+<pre>trial = studio.add(STRUCT_0.copy())
+studio.show(trial)</pre>
+<h3>Watch a relaxation live</h3>
+<p>Attach <code>studio.update</code> to an ASE optimizer to show each step.
+This complete example uses <b>EMT for a loaded copper structure</b>; replace the
+calculator with one suitable for your material. It relaxes atom positions with a fixed cell.</p>
+<pre>from ase.calculators.emt import EMT
 from ase.optimize import BFGS
 
 atoms = STRUCT_0
 studio.show(atoms)
-atoms.calc = mace_mp(model="small", device="cpu", default_dtype="float64")
-optimizer = BFGS(atoms, logfile="-")
-optimizer.attach(studio.update, interval=1, atoms=atoms)
-converged = optimizer.run(fmax=0.05, steps=50)
-print("Converged:", converged)
-print("Energy (eV):", atoms.get_potential_energy())</pre>
-<h3>UMA authentication</h3>
-<ol>
-<li>Install <code>fairchem-core</code> using the UMA / FAIRChem shortcut. A separate environment is useful because its dependencies can differ from MACE's.</li>
-<li>Sign in on the Hugging Face website and request access to <code>facebook/UMA</code>. The user's account must have model access; having a token alone is insufficient.</li>
-<li>Open the environment terminal and run <code>hf auth login</code>. Complete authentication there, then restart the interactive Python shell.</li>
-</ol>
-<p>Hugging Face saves credentials locally. The terminal and interactive shell share
-<code>HF_HOME</code> and any configured <code>HF_TOKEN_PATH</code>/<code>HF_HUB_CACHE</code>.
-Do not paste tokens into saved Python scripts. An existing saved login at that location
-can be reused. Model access and downloads are handled by Hugging Face and FAIRChem.</p>
-<h3>UMA relaxation of STRUCT_0</h3>
-<p>This example selects the materials task <code>omat</code>. Use the task appropriate
-to your structure; molecular tasks may also require charge and spin metadata. Model
-names and device support depend on the installed FAIRChem release. CPU is shown for
-a small initial test; do not assume every model supports Apple GPU or CUDA on every platform.</p>
-<pre>from fairchem.core import FAIRChemCalculator, pretrained_mlip
-from ase.optimize import BFGS
+atoms.calc = EMT()
 
-predictor = pretrained_mlip.get_predict_unit("uma-s-1p1", device="cpu")
-atoms = STRUCT_0
-studio.show(atoms)
-atoms.calc = FAIRChemCalculator(predictor, task_name="omat")
 optimizer = BFGS(atoms, logfile="-")
 optimizer.attach(studio.update, interval=1, atoms=atoms)
-converged = optimizer.run(fmax=0.05, steps=50)
-print("Converged:", converged)
-print("Energy (eV):", atoms.get_potential_energy())</pre>
-<p>A 401/403 or gated-repository error usually calls for checking the account's model
-access, saved login, and credential directory. <code>ModuleNotFoundError</code> calls
-for checking the selected environment and installation output. Packages may upgrade
-ASE within the shell environment without changing the app's native file reader.</p>
-<p><a href="#contents">Back to contents</a></p>
-</body>
-</html>
+converged = optimizer.run(fmax=0.05, steps=100)
+print("Converged:", converged)</pre>
+<p><code>fmax=0.05</code> sets the force threshold in eV/Å; <code>steps=100</code>
+limits the number of steps. Check convergence in <b class="control">Output</b>. <b class="control">Live updates/s</b>
+limits preview frequency; the final successful geometry is always applied.</p>
+<p><b class="control">Stop</b> interrupts a calculation and keeps the last accepted geometry.
+Save reusable code with <b class="control">Save .py</b> and save geometry with
+<b class="control">Files → Export Structures</b>.</p>
+</body></html>

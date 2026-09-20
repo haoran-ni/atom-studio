@@ -32,8 +32,8 @@ watch a relaxation run, and export images or edited geometries.
   POSCAR, or extended XYZ.
 
 macOS is the primary validated platform, with an automated installer build.
-Linux and Windows development builds are also available; package management and
-external-terminal integration still need validation on those platforms.
+Linux and Windows development builds are also available; package management
+still needs validation on those platforms.
 
 ## Install on macOS
 
@@ -115,11 +115,12 @@ Choose **Run** or press **Command/Ctrl+Enter** to update the viewport. Variables
 persist between runs; use `studio.update(atoms)` to show intermediate steps during
 a simulation.
 
-- **Code → Tutorial** provides a searchable offline guide with editing,
-  relaxation, MACE, and UMA examples.
+- **Code → Tutorial** provides a compact offline guide to the interactive shell,
+  environment management, and troubleshooting.
 - **Code → Manage Packages** installs packages and manages separate Python environments.
-- **Code → Open Environment Terminal** opens a terminal in the same environment
-  for package installation and model authentication.
+- To use the selected Python environment in your own terminal, copy its path from
+  **Manage Packages** and follow the activation commands in **Tutorial**. The guide
+  also covers switching managed environments and locating packages and model caches.
 
 Additional calculators may require model downloads, access approval, or external
 software. For UMA, follow the Tutorial's Hugging Face authentication steps.
