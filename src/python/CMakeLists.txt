@@ -40,5 +40,11 @@ if(BUILD_TESTING)
     add_executable(atom-python-bridge-test tests/ASEStructureBridgeTest.cpp)
     target_link_libraries(atom-python-bridge-test PRIVATE atom-python)
     add_test(NAME atom-python-bridge COMMAND atom-python-bridge-test)
-    set_tests_properties(atom-python-bridge PROPERTIES TIMEOUT 30)
+    # This standalone test embeds libpython directly, which does not discover
+    # the build venv from its own executable path. Use the selected interpreter's
+    # packages without changing the application's isolated bundled runtime.
+    set_tests_properties(atom-python-bridge PROPERTIES
+        ENVIRONMENT "PYTHONPATH=${Python3_SITELIB};PYTHONNOUSERSITE=1"
+        TIMEOUT 30
+    )
 endif()

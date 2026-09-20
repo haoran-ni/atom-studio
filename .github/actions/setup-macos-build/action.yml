@@ -1,0 +1,40 @@
+name: Set up macOS build
+description: Install the shared Qt and Python dependencies and configure a clean CI build.
+
+runs:
+  using: composite
+  steps:
+    - name: Install build dependencies
+      shell: bash
+      env:
+        HOMEBREW_NO_ANALYTICS: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      run: |
+        brew install cmake qtbase qtdeclarative qtsvg python@3.12
+        mkdir -p out/ci
+        "$(brew --prefix python@3.12)/bin/python3.12" -I -m venv out/ci/venv
+        out/ci/venv/bin/python -I -m pip --isolated --disable-pip-version-check install \
+          --only-binary=:all: -r cmake/macos-build-requirements.txt
+        out/ci/venv/bin/python -I -m pip --isolated check
+        out/ci/venv/bin/python -I -m pip --isolated freeze > out/ci/python-packages.txt
+        brew list --versions cmake qtbase qtdeclarative qtsvg python@3.12 > out/ci/build-dependencies.txt
+
+    - name: Configure
+      shell: bash
+      run: |
+        # Homebrew links the separate Qt modules into one shared prefix. Qt's
+        # component lookup otherwise searches only inside the qtbase keg.
+        cmake --fresh -S . -B out/ci/build -G 'Unix Makefiles' \
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+          -DCMAKE_MAKE_PROGRAM=/usr/bin/make \
+          "-DCMAKE_CXX_COMPILER=$(xcrun --find clang++)" \
+          "-DCMAKE_OBJCXX_COMPILER=$(xcrun --find clang++)" \
+          "-DCMAKE_OSX_ARCHITECTURES=$(uname -m)" \
+          "-DCMAKE_OSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion)" \
+          "-DCMAKE_OSX_SYSROOT=$(xcrun --sdk macosx --show-sdk-path)" \
+          "-DCMAKE_PREFIX_PATH=$(brew --prefix)" \
+          "-DPython3_EXECUTABLE=$PWD/out/ci/venv/bin/python" \
+          "-Dpybind11_DIR=$(out/ci/venv/bin/python -I -m pybind11 --cmakedir)" \
+          -DPython3_FIND_STRATEGY=LOCATION \
+          -DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON \
+          2>&1 | tee out/ci/configure.log

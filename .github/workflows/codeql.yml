@@ -1,0 +1,67 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            os: macos-15
+            build-mode: manual
+          - language: python
+            os: ubuntu-24.04
+            build-mode: none
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up C++ build
+        if: matrix.language == 'c-cpp'
+        uses: ./.github/actions/setup-macos-build
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # Trace a real build so CodeQL sees the Qt and Python headers and build flags.
+      # Only build the app target: runtime bundling and tests belong to the CI job.
+      # Objective-C++ (.mm), Metal shaders, and QML are not covered by CodeQL.
+      - name: Build C++ application for analysis
+        if: matrix.language == 'c-cpp'
+        run: cmake --build out/ci/build --target atom-studio --parallel 3
+
+      - name: Analyze and upload results
+        uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          category: /language:${{ matrix.language }}

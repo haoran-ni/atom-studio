@@ -7,6 +7,11 @@
 <p align="center">Explore, edit, and visualize atomic structures on your desktop.</p>
 
 <p align="center">
+  <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml/badge.svg?branch=main&amp;event=push" alt="macOS Build &amp; Tests"></a>
+  <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
+</p>
+
+<p align="center">
   <img src="resources/software_demo1.png" alt="ATOM-STUDIO software demo 1" width="33%"><img src="resources/software_demo2.png" alt="ATOM-STUDIO software demo 2" width="33%"><img src="resources/software_demo3.png" alt="ATOM-STUDIO software demo 3" width="33%">
 </p>
 
@@ -225,6 +230,10 @@ development build; automated installer packaging is currently provided for macOS
 Normal builds prepare the app's Python dependencies automatically. Tests that
 exercise graphics need access to a suitable GPU and desktop session; also check
 visual changes in the running app.
+
+GitHub Actions builds and tests on macOS and runs CodeQL analysis for C++ and
+Python. The build job summary lists passed, failed, and skipped tests; a passing
+badge does not mean GPU tests ran when the runner lacks graphics support.
 
 See [GUIDELINES.md](GUIDELINES.md) for architecture and contribution conventions,
 and [CMakePresets.json](CMakePresets.json) for the available build configurations.

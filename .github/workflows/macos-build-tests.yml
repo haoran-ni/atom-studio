@@ -1,0 +1,91 @@
+name: macOS Build & Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: macOS build and CTest
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up build
+        uses: ./.github/actions/setup-macos-build
+
+      - name: Build application, bundled Python, and tests
+        run: cmake --build out/ci/build --parallel 3 2>&1 | tee out/ci/build.log
+
+      - name: Run tests
+        id: tests
+        run: |
+          ctest --test-dir out/ci/build --output-on-failure --no-tests=error \
+            --timeout 180 --output-junit "$PWD/out/ci/ctest-results.xml" \
+            2>&1 | tee out/ci/ctest.log
+
+      - name: Summarize test results and skips
+        if: always() && steps.tests.outcome != 'skipped'
+        run: |
+          out/ci/venv/bin/python -I - <<'PY'
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          results = Path("out/ci/ctest-results.xml")
+          if not results.is_file():
+              raise SystemExit("CTest did not produce a test report; inspect the test log.")
+          cases = list(ET.parse(results).iter("testcase"))
+          skipped = [case for case in cases if case.find("skipped") is not None]
+          failed = [case for case in cases
+                    if case.find("failure") is not None or case.find("error") is not None]
+          passed = len(cases) - len(skipped) - len(failed)
+          lines = ["## macOS Build & Tests", "",
+                   f"**{passed} passed, {len(failed)} failed, {len(skipped)} skipped** "
+                   f"({len(cases)} CTest tests).", ""]
+          for label, tests in [("Failed", failed), ("Skipped", skipped)]:
+              if tests:
+                  lines += [f"### {label}", ""]
+                  lines += [f"- `{case.get('name', 'unnamed')}`" for case in tests]
+                  lines.append("")
+          lines += ["Graphics tests can skip when the runner lacks a suitable GPU or desktop "
+                    "session. Skips are not passes; native rendering still needs validation "
+                    "on a Mac before release."]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+          if skipped:
+              print(f"::warning::{len(skipped)} CTest tests were skipped. See the job summary.")
+          if not cases:
+              raise SystemExit("CTest reported no tests.")
+          PY
+
+      - name: Upload build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-build-test-results
+          path: |
+            out/ci/*.log
+            out/ci/*.txt
+            out/ci/ctest-results.xml
+            out/ci/build/Testing/Temporary/
+            out/ci/build/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
+          retention-days: 14
