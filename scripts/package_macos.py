@@ -188,10 +188,12 @@ def package(args: argparse.Namespace) -> Path:
         parked_python = temporary / "python"
         python_home.rename(parked_python)
         try:
+            # Request local signing explicitly: newer Qt does this by default,
+            # while older Qt otherwise skips its dependency/signing walk.
             deployment = subprocess.run([str(args.macdeployqt.resolve()), str(app),
                                          f"-qmldir={args.qml_dir.resolve()}",
                                          f"-qmlimport={args.qml_import_dir.resolve()}",
-                                         f"-libpath={library_path}", "-no-plugins", "-verbose=2"],
+                                         f"-libpath={library_path}", "-no-plugins", "-codesign=-", "-verbose=2"],
                                         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=900)
         finally:
             parked_python.rename(python_home)

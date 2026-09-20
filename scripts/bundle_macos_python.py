@@ -216,7 +216,11 @@ class NativeBundle:
             for rpath in rpaths:
                 changes.extend(["-delete_rpath", rpath])
             if has_id:
-                changes.extend(["-id", "@rpath/" + destination.name])
+                # Keep the copied library's own identity resolvable without
+                # an RPATH. macdeployqt's signing pass treats extensionless
+                # libraries such as Python as executables and includes their
+                # LC_ID_DYLIB in its dependency walk.
+                changes.extend(["-id", relative_load_path(destination, destination)])
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
             destination.chmod(destination.stat().st_mode | 0o200)

@@ -3,6 +3,7 @@
 
 from pathlib import Path
 from argparse import Namespace
+import json
 import plistlib
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from package_macos import deployment_versions, native_files, package, resolve_dependency, sign_app, version_tuple
+from bundle_macos_python import NativeBundle, load_commands
 
 
 class PackagingTests(unittest.TestCase):
@@ -104,6 +106,45 @@ class PackagingTests(unittest.TestCase):
                 package(args)
         self.assertEqual(image.read_bytes(), b"previous successful build")
         self.assertEqual(list(output.glob(".package-*")), [])
+
+    @unittest.skipUnless(sys.platform == "darwin", "Uses Apple compiler and codesign")
+    def test_extensionless_python_library_identity_resolves_after_relocation(self):
+        # Qt's codesigner includes the LC_ID_DYLIB as a dependency for a
+        # library named Python (no .dylib suffix or .framework directory).
+        # Exercise the real bundler with a tiny native stand-in for Python.
+        source = self.root / "Python"
+        subprocess.run(["/usr/bin/xcrun", "clang", "-dynamiclib", "-x", "c", "-",
+                        "-Wl,-install_name,@rpath/Python", "-o", str(source)],
+                       input="int answer(void) { return 42; }", text=True, check=True, capture_output=True)
+        original = source.read_bytes()
+        app = self.root / "Bundled.app"
+        executable = app / "Contents/MacOS/check"
+        executable.parent.mkdir(parents=True)
+        (app / "Contents/Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleExecutable": "check", "CFBundleIdentifier": "com.atomstudio.packaging-test",
+            "CFBundlePackageType": "APPL", "CFBundleVersion": "1"}))
+        subprocess.run(["/usr/bin/xcrun", "clang", "-x", "c", "-", "-x", "none", str(source),
+                        "-Wl,-rpath,@executable_path/../Frameworks", "-o", str(executable)],
+                       input="int answer(void); int main(void) { return answer() != 42; }",
+                       text=True, check=True, capture_output=True)
+        bundle = NativeBundle(app, executable, source)
+        bundle.libdir.mkdir(parents=True)
+        (bundle.python_home / ".atom-studio-package-manifest.json").write_text(
+            json.dumps({"distributions": {}}))
+        (bundle.python_home / ".atom-studio-stdlib-manifest.cmake").write_text("# test fixture\n")
+        bundle.synchronize()
+        self.assertEqual(source.read_bytes(), original, "The source installation must not change")
+
+        moved = self.root / "Moved bundle 原子.app"
+        app.rename(moved)
+        library = moved / "Contents/Frameworks/PythonRuntime/Python"
+        executable = moved / "Contents/MacOS/check"
+        identity = subprocess.check_output(["/usr/bin/otool", "-D", str(library)], text=True).splitlines()[1]
+        _, rpaths, _ = load_commands(library)
+        _, executable_rpaths, _ = load_commands(executable)
+        self.assertEqual(resolve_dependency(identity, library, executable, rpaths,
+                                             executable_rpaths, moved), library)
+        subprocess.run([str(executable)], check=True, capture_output=True)
 
     @unittest.skipUnless(sys.platform == "darwin", "Uses Apple compiler and codesign")
     def test_local_signing_seals_an_app_with_a_native_plugin(self):
