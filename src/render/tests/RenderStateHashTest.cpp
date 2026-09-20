@@ -33,7 +33,7 @@ int main() {
     retina.viewportAxesPixelRatio = 2.0f;
     if (atom::render::computeRenderStateHash(camera, opaque) == atom::render::computeRenderStateHash(camera, hidden)
         || atom::render::computeRenderStateHash(camera, opaque) == atom::render::computeRenderStateHash(camera, retina)) {
-        std::cerr << "Atom visibility and selection outline scale must restart ray tracing\n";
+        std::cerr << "Atom visibility and display scaling must restart ray tracing\n";
         return 1;
     }
     auto relit = opaque;

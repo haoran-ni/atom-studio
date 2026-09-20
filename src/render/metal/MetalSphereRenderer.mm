@@ -48,6 +48,7 @@ void MetalSphereRenderer::cleanup() {
     m_impl->instanceBuffer = nil;
     m_atomCount = 0;
     m_hasSelection = false;
+    m_maxStrokeWidth = 0.0f;
     m_hasBounds = false;
     m_maxBaseRadius = 0.0f;
     m_initialized = false;
@@ -75,6 +76,7 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure, const Pr
     if (!structure || structure->atomCount() == 0) {
         m_atomCount = 0;
         m_hasSelection = false;
+        m_maxStrokeWidth = 0.0f;
         m_hasBounds = false;
         m_maxBaseRadius = 0.0f;
         m_impl->instanceBuffer = nil;
@@ -95,6 +97,7 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure, const Pr
     const float* cg = structure->colorsG();
     const float* cb = structure->colorsB();
     m_hasSelection = false;
+    m_maxStrokeWidth = 0.0f;
 
     float boundsMin[3] = {px[0], py[0], pz[0]};
     float boundsMax[3] = {px[0], py[0], pz[0]};
@@ -103,6 +106,9 @@ void MetalSphereRenderer::setAtomData(const data::Structure* structure, const Pr
     for (size_t i = 0; i < m_atomCount; ++i) {
         instances[i].positionAndRadius = simd_make_float4(px[i], py[i], pz[i], radii[i]);
         instances[i].color = simd_make_float4(cr[i], cg[i], cb[i], 1.0f);
+        const auto& stroke = structure->stroke(i);
+        instances[i].stroke = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
+        m_maxStrokeWidth = std::max(m_maxStrokeWidth, stroke.width);
         instances[i].selected = structure->atomSelected(i) ? 1.0f : 0.0f;
         m_hasSelection |= instances[i].selected != 0.0f;
 
@@ -139,10 +145,14 @@ void MetalSphereRenderer::updateAppearance(const data::Structure* structure) {
     // attributes in place so a single selection edit does not rewrite geometry.
     auto* instances = static_cast<SphereInstance*>(m_impl->instanceBuffer.contents);
     m_hasSelection = false;
+    m_maxStrokeWidth = 0.0f;
     for (size_t i = 0; i < m_atomCount; ++i) {
         auto& instance = instances[i];
         const auto color = simd_make_float4(structure->colorsR()[i], structure->colorsG()[i], structure->colorsB()[i], 1.0f);
         if (simd_any(instance.color != color)) instance.color = color;
+        const auto& stroke = structure->stroke(i);
+        instance.stroke = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
+        m_maxStrokeWidth = std::max(m_maxStrokeWidth, stroke.width);
         const float selected = structure->atomSelected(i) ? 1.0f : 0.0f;
         if (instance.selected != selected) instance.selected = selected;
         m_hasSelection |= selected != 0.0f;
@@ -150,35 +160,25 @@ void MetalSphereRenderer::updateAppearance(const data::Structure* structure) {
 }
 
 bool MetalSphereRenderer::canUseEarlyZ(const Camera& camera, float atomScale,
-                                       float outlineWidthPx, float outlinePixelScale) const {
+                                       float maxOutlineWidthWorld) const {
     if (!m_initialized || m_atomCount == 0 || !m_hasBounds) return false;
 
-    // Min/max view depth of the atom-center AABB along the camera forward axis.
+    // Minimum view depth of the atom-center AABB along the camera forward axis.
     const QVector3D camPos = camera.position();
     const QVector3D forward = camera.forwardVector();
     const float cam[3] = {camPos.x(), camPos.y(), camPos.z()};
     const float fwd[3] = {forward.x(), forward.y(), forward.z()};
 
     float minDepth = 0.0f;
-    float maxDepth = 0.0f;
     for (int axis = 0; axis < 3; ++axis) {
         const float lo = fwd[axis] * (m_boundsMin[axis] - cam[axis]);
         const float hi = fwd[axis] * (m_boundsMax[axis] - cam[axis]);
         minDepth += std::min(lo, hi);
-        maxDepth += std::max(lo, hi);
     }
 
     const float maxScaledRadius = m_maxBaseRadius * atomScale;
 
-    // Conservative outline shell width at the deepest possible atom.
-    float maxShellWidth = 0.0f;
-    if (outlineWidthPx > 0.0f) {
-        maxShellWidth = outlineWidthPx * outlinePixelScale;
-        if (camera.isPerspective()) {
-            maxShellWidth *= std::max(maxDepth + maxScaledRadius, 0.0f);
-        }
-    }
-    const float maxOuterRadius = maxScaledRadius + maxShellWidth;
+    const float maxOuterRadius = maxScaledRadius + maxOutlineWidthWorld;
 
     // Every sphere's near-tangent plane must stay safely beyond the near
     // plane; otherwise near-plane clipping could differ from the default

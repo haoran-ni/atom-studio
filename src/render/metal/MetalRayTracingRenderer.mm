@@ -75,6 +75,9 @@ struct MetalRayTracingRenderer::Impl {
     id<MTLBuffer> bvhNodeMetaBuffer = nil;   // uint4(left,right,first,count) per node
     id<MTLBuffer> bvhPrimIndexBuffer = nil;  // uint primitive indices
 
+    id<MTLBuffer> atomStrokeBuffer = nil; // float4 rgb + width overrides
+    id<MTLBuffer> bondStrokeBuffer = nil;
+
     // Bond data buffers
     id<MTLBuffer> bondStartBuffer = nil;     // float4(x,y,z,startRadius) per bond
     id<MTLBuffer> bondEndBuffer = nil;       // float4(x,y,z,endRadius) per bond
@@ -469,11 +472,13 @@ void MetalRayTracingRenderer::uploadSceneData() {
     if (!m_structure || m_structure->atomCount() == 0) {
         m_atomCount = 0;
         m_hasSelection = false;
+        m_maxStrokeWidth = 0.0f;
         m_bondCount = 0;
         m_bvhNodeCount = 0;
         m_impl->atomPositionBuffer = nil;
         m_impl->atomColorBuffer = nil;
         m_impl->atomSelectionBuffer = nil;
+        m_impl->atomStrokeBuffer = nil;
         m_impl->bvhNodeMinBuffer = nil;
         m_impl->bvhNodeMaxBuffer = nil;
         m_impl->bvhNodeMetaBuffer = nil;
@@ -484,6 +489,7 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondEndColorBuffer = nil;
         m_impl->bondRadiusBuffer = nil;
         m_impl->bondSelectionBuffer = nil;
+        m_impl->bondStrokeBuffer = nil;
         m_atomDataDirty = false;
         m_bondDataDirty = false;
         m_appearanceDirty = false;
@@ -505,6 +511,8 @@ void MetalRayTracingRenderer::uploadSceneData() {
         geometry.atoms.data(), geometry.atoms.size() * sizeof(geometry.atoms[0]));
     m_impl->atomColorBuffer = ensureSharedBuffer(m_impl->device, m_impl->atomColorBuffer,
                                                 m_atomCount * sizeof(simd_float4));
+    m_impl->atomStrokeBuffer = ensureSharedBuffer(m_impl->device, m_impl->atomStrokeBuffer,
+                                                 m_atomCount * sizeof(simd_float4));
     m_impl->atomSelectionBuffer = ensureSharedBuffer(m_impl->device, m_impl->atomSelectionBuffer,
                                                     m_atomCount * sizeof(uint32_t));
     m_bondCount = static_cast<int>(geometry.bondStarts.size());
@@ -519,6 +527,8 @@ void MetalRayTracingRenderer::uploadSceneData() {
                                                          m_bondCount * sizeof(simd_float4));
         m_impl->bondEndColorBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondEndColorBuffer,
                                                        m_bondCount * sizeof(simd_float4));
+        m_impl->bondStrokeBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondStrokeBuffer,
+                                                     m_bondCount * sizeof(simd_float4));
         m_impl->bondSelectionBuffer = ensureSharedBuffer(m_impl->device, m_impl->bondSelectionBuffer,
                                                         m_bondCount * sizeof(uint32_t));
     } else {
@@ -528,10 +538,9 @@ void MetalRayTracingRenderer::uploadSceneData() {
         m_impl->bondEndColorBuffer = nil;
         m_impl->bondRadiusBuffer = nil;
         m_impl->bondSelectionBuffer = nil;
+        m_impl->bondStrokeBuffer = nil;
     }
     uploadAppearanceData(true);
-    std::copy(geometry.sceneMin.begin(), geometry.sceneMin.end(), m_sceneBoundsMin);
-    std::copy(geometry.sceneMax.begin(), geometry.sceneMax.end(), m_sceneBoundsMax);
     const auto& bvh = geometry.bvh;
     m_bvhNodeCount = static_cast<int>(bvh.nodes.size());
 
@@ -589,11 +598,17 @@ void MetalRayTracingRenderer::uploadAppearanceData(bool force) {
     }
 
     m_hasSelection = false;
+    m_maxStrokeWidth = 0.0f;
+    auto* strokes = static_cast<simd_float4*>(m_impl->atomStrokeBuffer.contents);
+    auto* bondStrokes = static_cast<simd_float4*>(m_impl->bondStrokeBuffer.contents);
     auto* colors = static_cast<simd_float4*>(m_impl->atomColorBuffer.contents);
     auto* selection = static_cast<uint32_t*>(m_impl->atomSelectionBuffer.contents);
     for (int i = 0; i < m_atomCount; ++i) {
         const auto color = simd_make_float4(m_structure->colorsR()[i], m_structure->colorsG()[i], m_structure->colorsB()[i], 1.0f);
         if (force || simd_any(colors[i] != color)) colors[i] = color;
+        const auto& stroke = m_structure->stroke(i);
+        strokes[i] = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
+        m_maxStrokeWidth = std::max(m_maxStrokeWidth, stroke.width);
         const uint32_t selected = m_structure->atomSelected(i) ? 1u : 0u;
         if (force || selection[i] != selected) selection[i] = selected;
         m_hasSelection |= selected != 0;
@@ -607,6 +622,9 @@ void MetalRayTracingRenderer::uploadAppearanceData(bool force) {
         const auto start = simd_make_float4(a.r, a.g, a.b, 1.0f), end = simd_make_float4(b.r, b.g, b.b, 1.0f);
         if (force || simd_any(starts[i] != start)) starts[i] = start;
         if (force || simd_any(ends[i] != end)) ends[i] = end;
+        const auto& stroke = bonds.stroke(i);
+        bondStrokes[i] = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
+        m_maxStrokeWidth = std::max(m_maxStrokeWidth, stroke.width);
         const uint32_t selected = bonds.selected(i) ? 1u : 0u;
         if (force || bondSelection[i] != selected) bondSelection[i] = selected;
         m_hasSelection |= selected != 0;
@@ -670,37 +688,15 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf, i
     rt.showBonds = m_settings.showBonds ? 1 : 0;
     rt.isPerspective = camera.isPerspective() ? 1 : 0;
 
-    // Stroke outlines: pixel→world scale factor valid for both projections
-    // (P[1][1] = 1/tan(fovY/2) perspective, 2/orthoHeight orthographic).
+    // Both regular and selection strokes have a fixed thickness in angstroms.
     const bool outlineOn = m_settings.outlineEnabled && m_settings.outlineWidth > 0.0f;
-    const float selectionOutlineWidthPx =
-        m_hasSelection ? 4.0f * std::max(m_settings.viewportAxesPixelRatio, 1.0f) : 0.0f;
-    const float p11 = camera.projectionMatrix()(1, 1);
-    const float pixelScale =
-        (p11 > 1e-6f) ? 2.0f / (p11 * static_cast<float>(m_height)) : 0.0f;
-    rt.outlineScale = outlineOn ? m_settings.outlineWidth * pixelScale : 0.0f;
-    rt.selectionOutlineScale = selectionOutlineWidthPx * pixelScale;
+    rt.outlineWidthWorld = outlineOn ? m_settings.outlineWidth : 0.0f;
+    rt.selectionOutlineWidthWorld = m_hasSelection ? m_settings.selectionOutlineWidth : 0.0f;
     const auto& oc = m_settings.outlineColor;
     rt.outlineColor = simd_make_float4(oc.redF(), oc.greenF(), oc.blueF(), 1.0f);
-    if ((outlineOn || rt.selectionOutlineScale > 0.0f) && camera.isPerspective()) {
-        // Conservative BVH padding: outline width at the farthest scene corner
-        // (1.1× margin absorbs runtime atom-scale AABB growth).
-        float dFarSq = 0.0f;
-        for (int corner = 0; corner < 8; ++corner) {
-            const float cx = (corner & 1) ? m_sceneBoundsMax[0] : m_sceneBoundsMin[0];
-            const float cy = (corner & 2) ? m_sceneBoundsMax[1] : m_sceneBoundsMin[1];
-            const float cz = (corner & 4) ? m_sceneBoundsMax[2] : m_sceneBoundsMin[2];
-            const float dx = cx - camPos.x();
-            const float dy = cy - camPos.y();
-            const float dz = cz - camPos.z();
-            dFarSq = std::max(dFarSq, dx * dx + dy * dy + dz * dz);
-        }
-        rt.outlineWorldMax = rt.outlineScale * std::sqrt(dFarSq) * 1.1f;
-        rt.selectionOutlineWorldMax = rt.selectionOutlineScale * std::sqrt(dFarSq) * 1.1f;
-    } else {
-        rt.outlineWorldMax = rt.outlineScale;
-        rt.selectionOutlineWorldMax = rt.selectionOutlineScale;
-    }
+    rt.selectionOutlineColor = simd_make_float4(1.0f, 0.0f, 0.0f, 1.0f);
+    rt.outlineWorldMax = outlineOn ? std::max(rt.outlineWidthWorld, m_maxStrokeWidth) : 0.0f;
+    rt.selectionOutlineWorldMax = rt.selectionOutlineWidthWorld;
     if (m_settings.showBonds && m_bondCount > 0) {
         // A capped-cylinder outline grows both axially and radially. On any
         // world axis the added extent is w*(|axis| + sqrt(1-axis^2)), at most
@@ -751,6 +747,8 @@ void MetalRayTracingRenderer::renderRTPass(const Camera& camera, void* cmdBuf, i
     [encoder setFragmentBuffer:m_impl->bvhNodeMetaBuffer offset:0 atIndex:5];
     [encoder setFragmentBuffer:m_impl->bvhPrimIndexBuffer offset:0 atIndex:6];
     [encoder setFragmentBuffer:m_impl->atomSelectionBuffer offset:0 atIndex:12];
+    [encoder setFragmentBuffer:m_impl->atomStrokeBuffer offset:0 atIndex:14];
+    [encoder setFragmentBuffer:(m_impl->bondStrokeBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:15];
 
     // All declared resources must be bound, even when a runtime count is zero.
     [encoder setFragmentBuffer:(m_impl->bondStartBuffer ?: m_impl->emptyBuffer) offset:0 atIndex:7];

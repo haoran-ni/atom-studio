@@ -132,6 +132,8 @@ void MetalBondRenderer::setBondData(const data::Structure* structure, const Prep
         const auto a = bonds.startColor(i), b = bonds.endColor(i);
         instance.startColor = simd_make_float4(a.r, a.g, a.b, 1.0f);
         instance.endColor = simd_make_float4(b.r, b.g, b.b, 1.0f);
+        const auto& stroke = bonds.stroke(i);
+        instance.stroke = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
         instance.selected = bonds.selected(i) ? 1.0f : 0.0f;
         m_hasSelection |= instance.selected != 0.0f;
     }
@@ -152,6 +154,8 @@ void MetalBondRenderer::updateAppearance(const data::Structure* structure) {
         const auto end = simd_make_float4(b.r, b.g, b.b, 1.0f);
         if (simd_any(instance.startColor != start)) instance.startColor = start;
         if (simd_any(instance.endColor != end)) instance.endColor = end;
+        const auto& stroke = bonds.stroke(i);
+        instance.stroke = simd_make_float4(stroke.color.r, stroke.color.g, stroke.color.b, stroke.width);
         const float selected = bonds.selected(i) ? 1.0f : 0.0f;
         if (instance.selected != selected) instance.selected = selected;
         m_hasSelection |= selected != 0.0f;
@@ -233,7 +237,7 @@ void MetalBondRenderer::render(void* encoderPtr, const SceneUniforms& uniforms, 
     // Stroke outline pass: re-draw the same instanced mesh inflated by the
     // outline width with front faces culled (inverted hull). Buffers 0-3 are
     // already bound; only pipeline and cull mode change.
-    if (uniforms.outlineWidthPx > 0.0f || (m_hasSelection && uniforms.selectionOutlineWidthPx > 0.0f)) {
+    if (uniforms.outlineWidthWorld > 0.0f || (m_hasSelection && uniforms.selectionOutlineWidthWorld > 0.0f)) {
         id<MTLRenderPipelineState> outlinePipeline = (__bridge id<MTLRenderPipelineState>)(
             usePrecomputed ? m_shaderLibrary->bondOutlinePipelinePrecomputed()
                            : m_shaderLibrary->bondOutlinePipeline());

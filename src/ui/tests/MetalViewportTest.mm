@@ -30,7 +30,13 @@ bool waitFor(const std::function<bool()>& ready, int limit = 10000) {
 }
 bool frame(atom::ui::MetalViewport& viewport) {
     const auto token = viewport.requestFrame();
-    return waitFor([&] { return viewport.frameToken() >= token; });
+    const bool ready = waitFor([&] { return viewport.frameToken() >= token; });
+    if (!ready) {
+        std::cerr << "Frame wait timed out: requested=" << token << " presented=" << viewport.frameToken()
+                  << " mode=" << viewport.rendererMode() << " samples=" << viewport.sampleCount()
+                  << " exposed=" << (viewport.window() && viewport.window()->isExposed()) << '\n';
+    }
+    return ready;
 }
 bool checkCenterGizmo(atom::ui::MetalViewport& viewport, QQuickWindow& window) {
     viewport.setBackgroundColor(Qt::black);
@@ -162,6 +168,9 @@ int main(int argc, char** argv) {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
         atom::ui::StructureModel model;
         QQuickWindow window;
+        // macOS suspends scene-graph delivery for fully occluded windows.
+        // Keep this temporary test surface exposed while other apps are active.
+        window.setFlag(Qt::WindowStaysOnTopHint);
         window.resize(320,320); window.setColor(QColor(200,40,20));
         auto* viewport = new atom::ui::MetalViewport(window.contentItem());
         viewport->setWidth(320); viewport->setHeight(320);
@@ -290,7 +299,12 @@ int main(int argc, char** argv) {
                     std::abs(model.structure()->precisePosition(0)[0] - .28) > 1e-12 ||
                     viewport->camera().viewMatrix() != camera.viewMatrix() ||
                     viewport->camera().projectionMatrix() != camera.projectionMatrix()) {
-                    std::cerr << "Live preview changed camera or lost final geometry\n"; return 1;
+                    std::cerr << "Live preview changed camera or lost final geometry: mode=" << mode
+                              << " pending=" << model.liveFramePending()
+                              << " x=" << model.structure()->precisePosition(0)[0]
+                              << " viewChanged=" << (viewport->camera().viewMatrix() != camera.viewMatrix())
+                              << " projectionChanged=" << (viewport->camera().projectionMatrix() != camera.projectionMatrix())
+                              << '\n'; return 1;
                 }
                 if (mode == 1 && !waitFor([&] { return viewport->sampleCount() == 8; })) return 1;
             }

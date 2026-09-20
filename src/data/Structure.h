@@ -2,6 +2,7 @@
 
 #include "BondList.h"
 #include "ElementData.h"
+#include "StrokeStyle.h"
 #include <array>
 #include <cstdint>
 #include <cmath>
@@ -226,6 +227,9 @@ public:
     void setColorOverride(size_t index, bool enabled) { m_colorOverrides[index] = enabled; }
     bool colorOverridden(size_t index) const { return m_colorOverrides[index] != 0; }
 
+    StrokeStyle& stroke(size_t index) { return m_strokes[index]; }
+    const StrokeStyle& stroke(size_t index) const { return m_strokes[index]; }
+
     // ========== Selection state ==========
 
     bool atomSelected(size_t index) const { return m_selectedAtoms[index] != 0; }
@@ -361,6 +365,7 @@ private:
     std::vector<float> m_colorB;
     std::vector<uint8_t> m_selectedAtoms;
     std::vector<uint8_t> m_colorOverrides;
+    std::vector<StrokeStyle> m_strokes;
 
     // Lattice
     Lattice m_lattice;

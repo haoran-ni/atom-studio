@@ -16,6 +16,9 @@ Rectangle {
     property var statusHintOwner: null
     readonly property bool rtSettingsVisible: sidebar.viewport && sidebar.viewport.rendererMode === 1
     readonly property color defaultBackgroundColor: "white"
+    readonly property bool canCustomizeSelection: StructureModel.selectionEnabled
+        && (StructureModel.selectedAtomCount > 0 || StructureModel.selectedBondCount > 0)
+        && !StructureModel.switchingLocked && !StructureModel.editsLocked
 
     readonly property color panelBgTop: "#fbfbfc"
     readonly property color panelBgBottom: "#efeff2"
@@ -824,18 +827,20 @@ Rectangle {
                             SidebarBranchRow {
                                 content: Component {
                                     NumericSliderControl {
-                                        title: qsTr("Stroke Thickness")
+                                        objectName: "structureStrokeThickness"
+                                        title: qsTr("Stroke Thickness (Å)")
                                         statusHintTarget: sidebar
-                                        tooltipText: qsTr("Stroke outline width in pixels along silhouettes and occluding boundaries.")
-                                        from: 0.5
-                                        to: 4
-                                        stepSize: 0.1
-                                        decimals: 1
-                                        defaultValue: 1.0
-                                        enabled: sidebar.viewport ? sidebar.viewport.outlineEnabled : true
-                                        sourceValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 1.0
+                                        tooltipText: qsTr("Stroke thickness in angstroms for all atoms and bonds. Replaces custom object thicknesses while preserving their stroke colors.")
+                                        from: 0.01
+                                        to: 0.50
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: 0.05
+                                        enabled: (!sidebar.viewport || sidebar.viewport.outlineEnabled)
+                                            && !StructureModel.switchingLocked && !StructureModel.editsLocked
+                                        sourceValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 0.05
                                         onValueApplied: function(newValue) {
-                                            if (sidebar.viewport) {
+                                            if (enabled && sidebar.viewport && StructureModel.clearStrokeWidthOverrides()) {
                                                 sidebar.viewport.outlineWidth = newValue
                                             }
                                         }
@@ -847,12 +852,14 @@ Rectangle {
                                 lastItem: true
                                 content: Component {
                                     ColorPicker {
+                                        objectName: "structureStrokeColor"
                                         pickerPopup: sharedColorPicker
                                         title: qsTr("Stroke Color")
+                                        enabled: !StructureModel.switchingLocked && !StructureModel.editsLocked
                                         defaultColor: Qt.rgba(0, 0, 0, 1.0)
                                         sourceColor: sidebar.viewport ? sidebar.viewport.outlineColor : defaultColor
                                         onColorApplied: function(c) {
-                                            if (sidebar.viewport) {
+                                            if (enabled && sidebar.viewport && StructureModel.clearStrokeColorOverrides()) {
                                                 sidebar.viewport.outlineColor = c
                                             }
                                         }
@@ -865,6 +872,7 @@ Rectangle {
 
                 SidebarSection {
                     id: selectionSection
+                    objectName: "selectionSection"
                     title: qsTr("Selection")
                     iconSource: "qrc:/icons/selection.svg"
                     Layout.fillWidth: true
@@ -895,6 +903,62 @@ Rectangle {
                                             onActivated: function(index) {
                                                 StructureModel.selectionMode = index
                                             }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColorPicker {
+                                        objectName: "selectionAtomColor"
+                                        pickerPopup: sharedColorPicker
+                                        selectionDependent: true
+                                        enabled: sidebar.canCustomizeSelection && StructureModel.selectedAtomCount > 0
+                                        defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
+                                        sourceColor: StructureModel.selectedAtomColor
+                                        onColorApplied: function(c) {
+                                            StructureModel.applyAtomColorToSelection(c)
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    NumericSliderControl {
+                                        objectName: "selectionStrokeThickness"
+                                        title: qsTr("Stroke Thickness (Å)")
+                                        statusHintTarget: sidebar
+                                        tooltipText: qsTr("Persistent object stroke thickness. The red selection highlight covers this stroke until selection is cleared.")
+                                        from: 0.01
+                                        to: 0.50
+                                        stepSize: 0.01
+                                        decimals: 2
+                                        defaultValue: sidebar.viewport ? sidebar.viewport.outlineWidth : 0.05
+                                        enabled: sidebar.canCustomizeSelection
+                                        sourceValue: StructureModel.selectedStroke.width ?? defaultValue
+                                        onValueApplied: function(newValue) {
+                                            if (enabled && sidebar.viewport)
+                                                StructureModel.applyStrokeWidthToSelection(newValue)
+                                        }
+                                    }
+                                }
+                            }
+
+                            SidebarBranchRow {
+                                content: Component {
+                                    ColorPicker {
+                                        objectName: "selectionStrokeColor"
+                                        title: qsTr("Stroke Color")
+                                        pickerPopup: sharedColorPicker
+                                        selectionDependent: true
+                                        enabled: sidebar.canCustomizeSelection
+                                        defaultColor: sidebar.viewport ? sidebar.viewport.outlineColor : Qt.rgba(0, 0, 0, 1.0)
+                                        sourceColor: StructureModel.selectedStroke.color ?? defaultColor
+                                        onColorApplied: function(c) {
+                                            if (enabled && sidebar.viewport)
+                                                StructureModel.applyStrokeColorToSelection(c)
                                         }
                                     }
                                 }
@@ -980,21 +1044,6 @@ Rectangle {
                                                     sidebar.viewport.atomColorScheme = index
                                                 }
                                             }
-                                        }
-                                    }
-                                }
-                            }
-
-                            SidebarBranchRow {
-                                content: Component {
-                                    ColorPicker {
-                                        pickerPopup: sharedColorPicker
-                                        selectionDependent: true
-                                        enabled: StructureModel.selectionEnabled && StructureModel.selectedAtomCount > 0
-                                        defaultColor: Qt.rgba(1.0, 1.0, 1.0, 1.0)
-                                        sourceColor: StructureModel.selectedAtomColor
-                                        onColorApplied: function(c) {
-                                            StructureModel.applyAtomColorToSelection(c)
                                         }
                                     }
                                 }

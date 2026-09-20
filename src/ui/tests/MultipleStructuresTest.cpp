@@ -8,6 +8,7 @@
 #include "common/Camera.h"
 #include "Structure.h"
 #include <QGuiApplication>
+#include <QHoverEvent>
 #include <QElapsedTimer>
 #include <QThread>
 #include <iostream>
@@ -105,6 +106,109 @@ void documents() {
     check(model.activeId() == 3, "IDs must never be reused within a session");
 }
 
+
+void persistentObjectStrokes() {
+    ui::StructureModel model;
+    model.addStructure(structure());
+    model.ensureBonds(1.1f);
+    check(waitFor([&] { return !model.isDetectingBonds() && model.bondCount() == 1; }), "Stroke bonds setup");
+    model.setSelectionMode(2);
+    check(model.toggleMoleculeSelectionFromAtom(0), "Select molecule for strokes");
+    check(model.selectedAtomCount() == 2 && model.selectedBondCount() == 1, "Molecule selection scope");
+    check(model.applyStrokeWidthToSelection(.24f) && model.applyStrokeColorToSelection(Qt::blue), "Apply molecule strokes");
+    const auto verifySaved = [&] {
+        auto s = model.structure();
+        check(s->stroke(0).width == .24f && s->stroke(1).width == .24f && s->stroke(0).color.b == 1,
+              "Selected atoms lost their saved strokes");
+        check(s->bonds().stroke(0).width == .24f && s->bonds().stroke(0).color.b == 1,
+              "Selected bond lost its saved stroke");
+        check(!model.originalStructure()->stroke(0).overridden(), "Stroke edit touched raw geometry");
+    };
+    verifySaved();
+    check(!model.structure()->stroke(2).overridden(), "Stroke edit touched an unselected object");
+    model.setSelectionMode(0);
+    verifySaved();
+    check(!model.applyStrokeWidthToSelection(.4f), "Stroke edit accepted without selection");
+    model.setSelectionMode(2);
+    model.toggleMoleculeSelectionFromAtom(0);
+    verifySaved();
+    model.setEditsLocked(true);
+    check(!model.applyStrokeColorToSelection(Qt::red), "Locked stroke edit accepted");
+    model.setEditsLocked(false);
+    model.addStructure(structure(20));
+    check(!model.structure()->stroke(0).overridden(), "Strokes leaked to another document");
+    model.setActiveIndex(0);
+    verifySaved();
+    model.clearSelection();
+    model.ensureBonds(1.2f);
+    check(waitFor([&] { return !model.isDetectingBonds(); }), "Stroke bond refresh");
+    verifySaved();
+    // ASE reorders surviving atoms: strokes follow stable atom/bond identity.
+    auto old = model.structure();
+    auto reordered = std::make_shared<data::Structure>();
+    for (size_t index : {size_t(1), size_t(0), size_t(2)}) {
+        auto pos = old->position(index);
+        auto i = reordered->addAtom(pos[0], pos[1], pos[2], old->atomicNumber(index));
+        reordered->setAtomId(i, old->atomId(index));
+    }
+    check(model.applyShellStructure(model.activeId(), model.document(model.activeId())->revision, reordered),
+          "Stroke shell update");
+    check(waitFor([&] { return !model.isDetectingBonds(); }), "Stroke shell bond refresh");
+    verifySaved();
+    model.setSelectionMode(1);
+    model.toggleAtomSelection(2);
+    check(model.deleteSelectedObjects(), "Stroke deletion setup");
+    verifySaved();
+    model.setSelectionMode(2);
+    model.toggleMoleculeSelectionFromAtom(0);
+    check(model.resetSelectedObjects(.1f, 0), "Reset selected strokes");
+    check(!model.structure()->stroke(0).overridden() && !model.structure()->bonds().stroke(0).overridden(),
+          "Reset selected objects left stroke overrides");
+}
+
+void globalStrokeOverrides() {
+    ui::StructureModel model;
+    for (int i = 0; i < 2; ++i) {
+        auto input = structure(i * 20);
+        input->bonds().addBond(0, 1);
+        model.addStructure(input);
+        model.setSelectionMode(2);
+        model.toggleMoleculeSelectionFromAtom(0);
+        model.applyStrokeWidthToSelection(.25f);
+        model.applyStrokeColorToSelection(Qt::blue);
+        model.setSelectionMode(0);
+    }
+    model.setSwitchingLocked(true);
+    check(!model.clearStrokeWidthOverrides(), "Capture lock allowed global stroke edits");
+    model.setSwitchingLocked(false);
+    check(model.clearStrokeWidthOverrides(), "Global stroke width reset failed");
+    for (const auto& document : model.documents()) {
+        const auto& s = *document->current;
+        check(s.stroke(0).width < 0 && s.bonds().stroke(0).width < 0,
+              "Global width missed an active or inactive object override");
+        check(s.stroke(0).color.b == 1 && s.bonds().stroke(0).color.b == 1,
+              "Global width erased custom stroke colors");
+        check(!document->raw->stroke(0).overridden() && !document->raw->bonds().stroke(0).overridden(),
+              "Global stroke edit touched raw originals");
+    }
+    model.setActiveIndex(0);
+    model.setSelectionMode(2);
+    model.toggleMoleculeSelectionFromAtom(0);
+    model.applyStrokeWidthToSelection(.3f);
+    model.setEditsLocked(true);
+    check(!model.clearStrokeColorOverrides(), "Python lock allowed global stroke edits");
+    model.setEditsLocked(false);
+    check(model.clearStrokeColorOverrides(), "Global stroke color reset failed");
+    for (const auto& document : model.documents()) {
+        const auto& s = *document->current;
+        check(s.stroke(0).color.r < 0 && s.bonds().stroke(0).color.r < 0,
+              "Global color missed an active or inactive object override");
+    }
+    check(model.structure()->stroke(0).width == .3f && model.structure()->bonds().stroke(0).width == .3f,
+          "Global color erased custom stroke widths");
+    check(model.selectedAtomCount() == 2 && model.selectedBondCount() == 1,
+          "Global stroke edit changed selection");
+}
 
 void atomRadiusModes() {
     ui::StructureModel model;
@@ -351,6 +455,56 @@ void imports() {
     check(model.activeId() == 2, "Imports must resume after cancellation");
 }
 
+template<class Viewport> void hoverIds() {
+    ui::StructureModel model;
+    Viewport view;
+    view.setWidth(400);
+    view.setHeight(240);
+    view.setShowBonds(false);
+    view.setIsPerspective(false);
+    view.setViewDirection(static_cast<int>(render::ViewDirection::PlusZ));
+    QCoreApplication::processEvents();
+    auto input = std::make_shared<data::Structure>();
+    input->addAtom(-4, 0, 0, 6);
+    input->addAtom(0, 0, 0, 8);
+    input->addAtom(4, 0, 0, 1);
+    input->setAtomId(0, 501);
+    input->setAtomId(1, 71);
+    input->setAtomId(2, 9002);
+    model.addStructure(input);
+    view.setOrthographicScale(8);
+    const auto hover = [&](size_t index) {
+        const auto p = model.structure()->position(index);
+        const auto screen = view.camera().worldToScreen(QVector3D(p[0], p[1], p[2]), 400, 240);
+        const QPointF point(screen.x(), screen.y());
+        QHoverEvent event(QEvent::HoverMove, point, point, point);
+        QCoreApplication::sendEvent(&view, &event);
+        return view.hoverStatus();
+    };
+    check(hover(0) == "ID: 0    |    Element: C    |    Position: (-4.0000, 0.0000, 0.0000)",
+          "Hover must show the zero-based import ID before element and position");
+    model.setSelectionMode(1);
+    model.toggleAtomSelection(0);
+    check(model.deleteSelectedObjects(), "Hover deletion setup");
+    check(hover(0).startsWith("ID: 1    |    Element: O"), "Deletion renumbered hover ID");
+    auto reordered = std::make_shared<data::Structure>();
+    reordered->addAtom(4, 0, 0, 1);
+    reordered->setAtomId(0, 9002);
+    reordered->addAtom(0, 0, 0, 8);
+    reordered->setAtomId(1, 71);
+    check(model.applyShellStructure(model.activeId(), model.document(model.activeId())->revision, reordered),
+          "Hover reorder setup");
+    check(hover(0).startsWith("ID: 2    |    Element: H"), "Reordering changed hover ID");
+    check(hover(1).startsWith("ID: 1    |    Element: O"), "Reordering changed surviving hover ID");
+    model.addStructure(input);
+    check(hover(0).startsWith("ID: 0    |    Element: C"), "Hover used the previous document's IDs");
+    model.setActiveIndex(0);
+    check(hover(0).startsWith("ID: 2    |    Element: H"), "Document switch lost hover IDs");
+    QHoverEvent leave(QEvent::HoverLeave, QPointF(), QPointF(), QPointF());
+    QCoreApplication::sendEvent(&view, &leave);
+    check(view.hoverStatus().isEmpty(), "Leaving viewport retained hover text");
+}
+
 template<class Viewport> void viewport() {
     ui::StructureModel model;
     Viewport view;
@@ -422,14 +576,18 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     try {
         documents();
+        persistentObjectStrokes();
+        globalStrokeOverrides();
         atomRadiusModes();
         speciesProperties();
         globalReplication();
         pendingBondEdits();
         imports();
         viewport<ui::OpenGLViewport>();
+        hoverIds<ui::OpenGLViewport>();
 #ifdef ATOM_HAS_METAL
         viewport<ui::MetalViewport>();
+        hoverIds<ui::MetalViewport>();
 #endif
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

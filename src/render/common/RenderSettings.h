@@ -67,8 +67,10 @@ struct RenderSettings {
 
     // Stroke outlines (inverted-hull shells around atoms and bonds)
     bool outlineEnabled = true;
-    float outlineWidth = 1.0f;               // Stroke width in rendered pixels
+    float outlineWidth = 0.05f;              // Fixed outline shell thickness in angstroms
     QColor outlineColor = QColor(0, 0, 0);
+    // Selected objects replace the regular stroke, including when it is disabled.
+    static constexpr float selectionOutlineWidth = 0.15f; // Angstroms; always red
 
     // Effects
     bool enableAmbientOcclusion = false;

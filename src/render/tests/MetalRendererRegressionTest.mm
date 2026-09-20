@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QImage>
 #include <QThread>
+#include <cmath>
 #include <iostream>
 
 using namespace atom;
@@ -65,6 +66,99 @@ QImage converge(render::metal::MetalRayTracingRenderer& r, const render::Camera&
     return {};
 }
 
+template<class Renderer>
+bool checkStrokeThickness(Renderer& renderer, id<MTLCommandQueue> queue) {
+    render::Camera camera;
+    camera.setPresetView(render::ViewDirection::PlusZ);
+    camera.setAspectRatio(1);
+    render::RenderSettings settings;
+    settings.showUnitCell = false;
+    settings.showViewportAxes = false;
+    settings.enableAmbientOcclusion = false;
+    settings.enableShadows = false;
+    settings.maxRTSamples = 1;
+    settings.backgroundColor = Qt::white;
+    settings.outlineColor = Qt::magenta;
+    data::Structure atom;
+    atom.addAtom(0, 0, 0, 6);
+    atom.radii()[0] = .5f;
+    data::Structure bond;
+    bond.addAtom(-1, 0, 0, 6);
+    bond.addAtom(1, 0, 0, 6);
+    bond.bonds().addBond(0, 1);
+    bond.bonds().setRadius(0, .15f);
+    // Selection must replace normal strokes, even if they are wider or disabled.
+    for (bool bonds : {false, true}) for (int strokeCase : {0, 1, 2, 3, 4, 5, 6, 7}) {
+        const bool selected = (strokeCase > 0 && strokeCase < 4) || strokeCase == 6;
+        atom.setAtomSelected(0, selected);
+        bond.bonds().setSelected(0, selected);
+        settings.outlineEnabled = strokeCase != 3;
+        settings.outlineWidth = strokeCase == 2 ? .5f : (selected ? .05f : .12f);
+        const float savedWidth = strokeCase >= 5 ? .08f : .25f;
+        const QColor savedColor = strokeCase >= 5 ? Qt::green : Qt::blue;
+        auto& savedStroke = bonds ? bond.bonds().stroke(0) : atom.stroke(0);
+        if (strokeCase >= 4) {
+            savedStroke.width = savedWidth;
+            savedStroke.color = data::Color(savedColor.redF(), savedColor.greenF(), savedColor.blueF());
+        } else savedStroke = {};
+        // Cases 4-7 change only appearance on the same geometry. Cases 6-7
+        // select/deselect the same customized object without replacing its style.
+        if (strokeCase == 0) renderer.setStructure(bonds ? &bond : &atom);
+        else renderer.invalidateAppearance();
+        settings.showAtoms = !bonds;
+        settings.showBonds = bonds;
+        for (bool perspective : {false, true}) for (int zoom : {1, 2}) for (float scale : {1.f, 1.5f}) {
+            const int pixels = 256 * zoom;
+            renderer.resize(pixels, pixels);
+            settings.viewportAxesPixelRatio = float(zoom);
+            settings.atomScale = scale;
+            camera.setProjection(perspective);
+            camera.setDistance(12.f / zoom);
+            camera.setOrthoScale(4.f / zoom);
+            const auto image = draw(renderer, camera, settings, queue);
+            if (!check(!image.isNull(), "Stroke thickness frame failed")) return false;
+            int strokePixels = 0;
+            int regularStrokePixels = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                const auto color = image.pixelColor(image.width() / 2, y);
+                const QColor selectedColor = Qt::red;
+                const QColor objectColor = strokeCase >= 4 ? savedColor : settings.outlineColor;
+                const bool highlight = std::abs(color.red() - selectedColor.red()) < 60
+                    && std::abs(color.green() - selectedColor.green()) < 60
+                    && std::abs(color.blue() - selectedColor.blue()) < 60;
+                const bool magenta = color.red() > 200 && color.blue() > 200 && color.green() < 60;
+                const bool objectStroke = std::abs(color.red() - objectColor.red()) < 60
+                    && std::abs(color.green() - objectColor.green()) < 60
+                    && std::abs(color.blue() - objectColor.blue()) < 60;
+                if (selected ? highlight : objectStroke) ++strokePixels;
+                if (selected && objectStroke) ++regularStrokePixels;
+                if (magenta) ++regularStrokePixels;
+            }
+            if (!check(!selected || regularStrokePixels == 0,
+                       "Regular stroke was drawn on a selected object")) return false;
+            // Compare rendered silhouettes against the projection of a shell
+            // with a known physical thickness, including perspective tangency.
+            const double radius = bonds ? .15 : .5 * scale;
+            const double distance = camera.distance();
+            const double projection = pixels * camera.projectionMatrix()(1, 1) / 2.0;
+            const auto projectedRadius = [&](double r) {
+                return projection * r / (perspective ? std::sqrt(distance * distance - r * r) : 1.0);
+            };
+            const double shellWidth = selected ? .15 : (strokeCase >= 4 ? savedWidth : settings.outlineWidth);
+            const double expected = projectedRadius(radius + shellWidth) - projectedRadius(radius);
+            if (!check(std::abs(strokePixels / 2.0 - expected) <= 1.5,
+                       "Stroke width changed in angstroms with zoom, resolution, or atom scale")) {
+                std::cerr << "bonds=" << bonds << " perspective=" << perspective << " zoom=" << zoom
+                          << " scale=" << scale << " strokeCase=" << strokeCase << " measured=" << strokePixels / 2.0
+                          << " expected=" << expected << '\n';
+                return false;
+            }
+        }
+    }
+    renderer.setStructure(nullptr);
+    return true;
+}
+
 bool checkOutlineBounds(id<MTLDevice> device, id<MTLCommandQueue> queue) {
     render::metal::MetalRayTracingRenderer rt;
     rt.setDevice((__bridge void*)device);
@@ -93,7 +187,7 @@ bool checkOutlineBounds(id<MTLDevice> device, id<MTLCommandQueue> queue) {
     for (bool perspective : {false,true}) for (bool selected : {false,true}) {
         camera.setProjection(perspective); camera.setDistance(10);
         scene.bonds().setSelected(0,selected);
-        for (float width : {1.f,2.f,4.f,8.f}) {
+        for (float width : {.01f,.02f,.12f,.5f}) {
             settings.outlineWidth=width;
             rt.setPreparedStructure(&scene,geometry);
             const auto image=converge(rt,camera,settings,queue);
@@ -333,7 +427,8 @@ int main() {
         raster.resize(size,size); raster.setStructure(&behind);
         if (!check(emptyRaster==draw(raster,camera,settings,queue),
                    "Raster recreation reused an old submission")) return 1;
-        if (!checkOutlineBounds(device,queue) || !checkCameraMotion(device,queue)) return 1;
+        if (!checkStrokeThickness(raster,queue) || !checkStrokeThickness(rt,queue) ||
+            !checkOutlineBounds(device,queue) || !checkCameraMotion(device,queue)) return 1;
         std::cout << "Metal renderer image, validation, motion, idle, batch, appearance, memory, and resize regressions passed\n";
         return 0;
     }

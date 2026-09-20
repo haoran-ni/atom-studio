@@ -259,6 +259,28 @@ QColor StructureModel::selectedAtomColor() const {
     return QColor(255, 255, 255);
 }
 
+QVariantMap StructureModel::selectedStroke() const {
+    if (!m_active->current) return {};
+    const auto& structure = *m_active->current;
+    const data::StrokeStyle* stroke = nullptr;
+    for (size_t i = 0; i < structure.atomCount(); ++i) {
+        if (structure.atomSelected(i)) { stroke = &structure.stroke(i); break; }
+    }
+    const auto& bonds = structure.bonds();
+    if (!stroke) {
+        for (size_t i = 0; i < bonds.bondCount(); ++i) {
+            if (bonds.selected(i)) { stroke = &bonds.stroke(i); break; }
+        }
+    }
+    QVariantMap result;
+    if (stroke) {
+        if (stroke->width >= 0.0f) result["width"] = stroke->width;
+        if (stroke->color.r >= 0.0f)
+            result["color"] = QColor::fromRgbF(stroke->color.r, stroke->color.g, stroke->color.b);
+    }
+    return result;
+}
+
 // Compatibility entry point for replacing a session; file imports use addStructure.
 void StructureModel::setStructure(std::shared_ptr<data::Structure> structure) {
     clear();
@@ -349,6 +371,7 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
         structure->colorsR()[i] = previous->colorsR()[old];
         structure->colorsG()[i] = previous->colorsG()[old];
         structure->colorsB()[i] = previous->colorsB()[old];
+        structure->stroke(i) = previous->stroke(old);
         structure->setColorOverride(i, previous->colorOverridden(old));
         structure->setAtomSelected(i, previous->atomSelected(old));
     }
@@ -364,6 +387,7 @@ bool StructureModel::applyShellStructure(qint64 id, quint64 revision,
         const auto index = bonds.addBond(first->second, second->second,
                                         bond.imageX, bond.imageY, bond.imageZ, bond.order);
         const bool swapped = first->second > second->second;
+        bonds.stroke(index) = oldBonds.stroke(i);
         bonds.setRadius(index, oldBonds.radius(i), oldBonds.radiusOverridden(i));
         bonds.setStartColor(index, swapped ? oldBonds.endColor(i) : oldBonds.startColor(i),
                             swapped ? oldBonds.endColorOverridden(i) : oldBonds.startColorOverridden(i));
@@ -691,6 +715,71 @@ bool StructureModel::applyBondRadiusToSelection(float radius) {
     return true;
 }
 
+bool StructureModel::applyStrokeWidthToSelection(float width) {
+    if (m_editsLocked || m_switchingLocked || !selectionEnabled() ||
+        !m_active->current || !m_active->current->hasSelection() || !std::isfinite(width)) return false;
+    width = std::clamp(width, 0.01f, 0.50f);
+    auto& structure = *m_active->current;
+    for (size_t i = 0; i < structure.atomCount(); ++i)
+        if (structure.atomSelected(i)) structure.stroke(i).width = width;
+    auto& bonds = structure.bonds();
+    for (size_t i = 0; i < bonds.bondCount(); ++i)
+        if (bonds.selected(i)) bonds.stroke(i).width = width;
+    // Renderers derive conservative shell bounds from the appearance upload.
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::applyStrokeColorToSelection(const QColor& color) {
+    if (m_editsLocked || m_switchingLocked || !selectionEnabled() ||
+        !m_active->current || !m_active->current->hasSelection() || !color.isValid()) return false;
+    const auto target = colorFromQColor(color);
+    auto& structure = *m_active->current;
+    for (size_t i = 0; i < structure.atomCount(); ++i)
+        if (structure.atomSelected(i)) structure.stroke(i).color = target;
+    auto& bonds = structure.bonds();
+    for (size_t i = 0; i < bonds.bondCount(); ++i)
+        if (bonds.selected(i)) bonds.stroke(i).color = target;
+    emit structureStyleChanged();
+    return true;
+}
+
+bool StructureModel::clearStrokeWidthOverrides() {
+    return clearStrokeOverrides(true);
+}
+
+bool StructureModel::clearStrokeColorOverrides() {
+    return clearStrokeOverrides(false);
+}
+
+bool StructureModel::clearStrokeOverrides(bool width) {
+    if (m_editsLocked || m_switchingLocked) return false;
+    bool activeChanged = false;
+    // Stroke defaults belong to the shared viewport. Clear the corresponding
+    // overrides in every current document, including inactive structures.
+    for (const auto& document : m_documents) {
+        if (!document->current) continue;
+        bool changed = false;
+        const auto clear = [&](data::StrokeStyle& stroke) {
+            if (width && stroke.width >= 0.0f) {
+                stroke.width = -1.0f;
+                changed = true;
+            } else if (!width && stroke.color.r >= 0.0f) {
+                stroke.color = {-1.0f, -1.0f, -1.0f};
+                changed = true;
+            }
+        };
+        auto& structure = *document->current;
+        for (size_t i = 0; i < structure.atomCount(); ++i) clear(structure.stroke(i));
+        auto& bonds = structure.bonds();
+        for (size_t i = 0; i < bonds.bondCount(); ++i) clear(bonds.stroke(i));
+        activeChanged |= changed && document == m_active;
+    }
+    // Also refresh when the user reapplies an unchanged global default.
+    if (activeChanged) emit structureStyleChanged();
+    return true;
+}
+
 bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorScheme) {
     if (!m_active->current || !selectionEnabled() || !m_active->current->hasSelection()) return false;
     if (!std::isfinite(defaultBondRadius)) return false;
@@ -706,6 +795,7 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
     for (size_t i = 0; i < m_active->current->atomCount(); ++i) {
         if (!selectedAtoms[i]) continue;
         radii[i] = data::ElementData::radiusForElement(atomicNumbers[i], m_atomRadiusType == 1);
+        m_active->current->stroke(i) = {};
         m_active->current->setColorOverride(i, false);
         const auto color = data::ElementData::colorForElement(atomicNumbers[i], scheme);
         cr[i] = color.r;
@@ -725,6 +815,7 @@ bool StructureModel::resetSelectedObjects(float defaultBondRadius, int colorSche
             continue;
         }
 
+        bonds.stroke(i) = {};
         bonds.setRadius(i, clampedBondRadius);
         bonds.setEndpointColors(
             i,
@@ -848,7 +939,7 @@ void StructureModel::onBondsReady() {
         const auto& previous = m_active->current->bonds();
         std::map<Key, size_t> edits;
         for (size_t i = 0; i < previous.bondCount(); ++i)
-            if (previous.radiusOverridden(i) || previous.startColorOverridden(i) || previous.endColorOverridden(i) || previous.selected(i))
+            if (previous.radiusOverridden(i) || previous.startColorOverridden(i) || previous.endColorOverridden(i) || previous.stroke(i).overridden() || previous.selected(i))
                 edits.emplace(key(previous.bond(i)), i);
         for (size_t i = 0; i < bonds.bondCount(); ++i) {
             auto found = edits.find(key(bonds.bond(i)));
@@ -857,6 +948,7 @@ void StructureModel::onBondsReady() {
             if (previous.radiusOverridden(old)) bonds.setRadius(i, previous.radius(old), true);
             if (previous.startColorOverridden(old)) bonds.setStartColor(i, previous.startColor(old), true);
             if (previous.endColorOverridden(old)) bonds.setEndColor(i, previous.endColor(old), true);
+            bonds.stroke(i) = previous.stroke(old);
             bonds.setSelected(i, previous.selected(old));
         }
         m_active->current->setBondList(result.bonds);

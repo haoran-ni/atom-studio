@@ -6,6 +6,7 @@ namespace atom::data {
 
 void BondList::reserve(size_t count) {
     m_bonds.reserve(count);
+    m_strokes.reserve(count);
     m_radii.reserve(count);
     m_startColors.reserve(count);
     m_endColors.reserve(count);
@@ -17,6 +18,7 @@ void BondList::reserve(size_t count) {
 
 void BondList::clear() {
     m_bonds.clear();
+    m_strokes.clear();
     m_radii.clear();
     m_startColors.clear();
     m_endColors.clear();
@@ -40,6 +42,7 @@ size_t BondList::addBond(uint32_t atomIndex1, uint32_t atomIndex2,
 
     size_t index = m_bonds.size();
     m_bonds.emplace_back(atomIndex1, atomIndex2, imageX, imageY, imageZ, order);
+    m_strokes.emplace_back();
     m_radii.push_back(0.1f);
     m_startColors.emplace_back(1.0f, 1.0f, 1.0f);
     m_endColors.emplace_back(1.0f, 1.0f, 1.0f);
@@ -53,6 +56,7 @@ size_t BondList::addBond(uint32_t atomIndex1, uint32_t atomIndex2,
 void BondList::removeBond(size_t bondIndex) {
     if (bondIndex < m_bonds.size()) {
         m_bonds.erase(m_bonds.begin() + static_cast<std::ptrdiff_t>(bondIndex));
+        m_strokes.erase(m_strokes.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_radii.erase(m_radii.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_startColors.erase(m_startColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));
         m_endColors.erase(m_endColors.begin() + static_cast<std::ptrdiff_t>(bondIndex));

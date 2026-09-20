@@ -26,6 +26,7 @@ public:
     void setAtomData(const data::Structure* structure, const PreparedGeometry* geometry = nullptr);
     void updateAppearance(const data::Structure* structure);
     bool hasSelection() const { return m_hasSelection; }
+    float maxStrokeWidth() const { return m_maxStrokeWidth; }
     /// Encode draw commands into an existing render command encoder.
     /// Uses the early-Z pipeline when uniforms.sphereEarlyZ is set.
     void render(void* encoder, const SceneUniforms& uniforms);
@@ -35,7 +36,7 @@ public:
     /// safely beyond the camera near plane, so the near-tangent billboard
     /// placement renders pixel-identically to the default placement.
     bool canUseEarlyZ(const Camera& camera, float atomScale,
-                      float outlineWidthPx, float outlinePixelScale) const;
+                      float maxOutlineWidthWorld) const;
 
     size_t atomCount() const { return m_atomCount; }
 
@@ -48,6 +49,7 @@ private:
     size_t m_atomCount = 0;
     bool m_initialized = false;
     bool m_hasSelection = false;
+    float m_maxStrokeWidth = 0.0f;
 
     // Atom-center bounds + max base radius for the early-Z gate.
     bool m_hasBounds = false;

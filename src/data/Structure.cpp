@@ -236,6 +236,7 @@ std::unique_ptr<Structure> Structure::clone() const {
     s->m_colorB = m_colorB;
     s->m_selectedAtoms = m_selectedAtoms;
     s->m_colorOverrides = m_colorOverrides;
+    s->m_strokes = m_strokes;
 
     s->m_lattice = m_lattice;
     s->m_bonds   = std::make_shared<BondList>(*m_bonds);
@@ -262,6 +263,7 @@ void Structure::reserve(size_t count) {
     m_colorB.reserve(count);
     m_selectedAtoms.reserve(count);
     m_colorOverrides.reserve(count);
+    m_strokes.reserve(count);
 }
 
 void Structure::resize(size_t count) {
@@ -279,6 +281,7 @@ void Structure::resize(size_t count) {
     m_colorB.resize(count, 1.0f);
     m_selectedAtoms.resize(count, 0);
     m_colorOverrides.resize(count, 0);
+    m_strokes.resize(count);
     m_atomCount = count;
 }
 
@@ -298,6 +301,7 @@ void Structure::clear() {
     m_colorB.clear();
     m_selectedAtoms.clear();
     m_colorOverrides.clear();
+    m_strokes.clear();
 
     m_velX.clear();
     m_velY.clear();
@@ -336,6 +340,7 @@ size_t Structure::addAtom(float x, float y, float z, int atomicNumber, std::stri
     m_colorB.push_back(color.b);
     m_selectedAtoms.push_back(0);
     m_colorOverrides.push_back(0);
+    m_strokes.emplace_back();
 
     return index;
 }
@@ -518,6 +523,7 @@ bool Structure::deleteSelectedObjects() {
     compactAtomVector(m_colorG, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorB, removedAtoms, keptAtomCount);
     compactAtomVector(m_colorOverrides, removedAtoms, keptAtomCount);
+    compactAtomVector(m_strokes, removedAtoms, keptAtomCount);
     m_selectedAtoms.assign(keptAtomCount, 0);
     m_atomCount = keptAtomCount;
 
@@ -545,6 +551,7 @@ bool Structure::deleteSelectedObjects() {
                 bond.imageY,
                 bond.imageZ,
                 bond.order);
+            rebuiltBonds->stroke(newBondIndex) = oldBonds->stroke(i);
             rebuiltBonds->setRadius(newBondIndex, oldBonds->radius(i), oldBonds->radiusOverridden(i));
             rebuiltBonds->setStartColor(newBondIndex, oldBonds->startColor(i), oldBonds->startColorOverridden(i));
             rebuiltBonds->setEndColor(newBondIndex, oldBonds->endColor(i), oldBonds->endColorOverridden(i));

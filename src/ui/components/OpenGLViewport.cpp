@@ -199,7 +199,7 @@ public:
         // Stroke outlines: not yet implemented by the OpenGL renderers
         // (settings plumbed for QML interface parity with MetalViewport).
         viewport->m_renderSettings.outlineEnabled = viewport->m_outlineEnabled;
-        viewport->m_renderSettings.outlineWidth = viewport->m_outlineWidth * static_cast<float>(dpr);
+        viewport->m_renderSettings.outlineWidth = viewport->m_outlineWidth;
         viewport->m_renderSettings.outlineColor = viewport->m_outlineColor;
         viewport->m_renderSettings.showViewportAxes = viewport->m_showViewportAxes;
         viewport->m_renderSettings.viewportAxesScreenX = viewport->m_viewportAxesX * static_cast<float>(dpr);
@@ -758,7 +758,7 @@ void OpenGLViewport::setOutlineEnabled(bool enable) {
 }
 
 void OpenGLViewport::setOutlineWidth(float width) {
-    const float clamped = std::clamp(width, 0.5f, 4.0f);
+    const float clamped = std::clamp(width, 0.01f, 0.50f);
     if (!qFuzzyCompare(m_outlineWidth, clamped)) {
         m_outlineWidth = clamped;
         emit outlineWidthChanged();
@@ -773,6 +773,7 @@ void OpenGLViewport::setOutlineColor(const QColor& color) {
         update();
     }
 }
+
 
 void OpenGLViewport::setShowViewportAxes(bool show) {
     if (m_showViewportAxes != show) {

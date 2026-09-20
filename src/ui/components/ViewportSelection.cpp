@@ -33,8 +33,17 @@ QString atomSymbol(const data::Structure& structure, size_t atomIndex) {
 QString atomHoverStatus(const data::Structure& structure, size_t atomIndex) {
     if (atomIndex >= structure.atomCount()) return QString();
 
+    qint64 displayId = static_cast<qint64>(atomIndex);
+    if (const auto* model = StructureModel::instance(); model && model->structure().get() == &structure) {
+        if (const auto document = model->document(model->activeId())) {
+            // Use the same import IDs as the per-atom table, even after deletion or reordering.
+            const auto id = document->atomDisplayIds.find(structure.atomId(atomIndex));
+            if (id != document->atomDisplayIds.end()) displayId = id->second;
+        }
+    }
     const auto position = structure.position(atomIndex);
-    return QStringLiteral("Element: %1    |    Position: %2")
+    return QStringLiteral("ID: %1    |    Element: %2    |    Position: %3")
+        .arg(displayId)
         .arg(atomSymbol(structure, atomIndex))
         .arg(formatPosition(position[0], position[1], position[2]));
 }

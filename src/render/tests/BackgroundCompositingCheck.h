@@ -52,7 +52,10 @@ bool checkBackgroundCompositing(Renderer& renderer, atom::render::RenderSettings
                 if (std::abs(qRed(a) - qRed(e)) > 3 || std::abs(qGreen(a) - qGreen(e)) > 3
                     || std::abs(qBlue(a) - qBlue(e)) > 3 || std::abs(qAlpha(a) - qAlpha(e)) > 3) {
                     std::cerr << "Background composition changed foreground/edge coverage at "
-                              << x << ", " << y << '\n';
+                              << x << ", " << y << "; axes=" << settings.showViewportAxes
+                              << "; samples=" << samples << "; background=" << background.name().toStdString()
+                              << "; actual=" << std::hex << a << "; expected=" << e
+                              << "; foreground=" << foreground.pixel(x, y) << std::dec << '\n';
                     return false;
                 }
             }

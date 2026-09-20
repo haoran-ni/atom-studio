@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QVariantMap>
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
@@ -59,6 +60,7 @@ class StructureModel : public QObject {
     Q_PROPERTY(int selectedAtomCount READ selectedAtomCount NOTIFY selectionChanged)
     Q_PROPERTY(int selectedBondCount READ selectedBondCount NOTIFY selectionChanged)
     Q_PROPERTY(QColor selectedAtomColor READ selectedAtomColor NOTIFY structureStyleChanged)
+    Q_PROPERTY(QVariantMap selectedStroke READ selectedStroke NOTIFY structureStyleChanged)
 
 public:
     explicit StructureModel(QObject* parent = nullptr);
@@ -118,6 +120,7 @@ public:
     bool hasActiveAtomSelection() const;
     bool hasActiveBondSelection() const;
     QColor selectedAtomColor() const;
+    QVariantMap selectedStroke() const;
 
 public slots:
     void setStructure(std::shared_ptr<atom::data::Structure> structure);
@@ -134,6 +137,10 @@ public slots:
     bool applyAtomColorSchemeToSelection(int scheme);
     Q_INVOKABLE bool applyAtomColorToSelection(const QColor& color);
     bool applyBondRadiusToSelection(float radius);
+    Q_INVOKABLE bool applyStrokeWidthToSelection(float width);
+    Q_INVOKABLE bool applyStrokeColorToSelection(const QColor& color);
+    Q_INVOKABLE bool clearStrokeWidthOverrides();
+    Q_INVOKABLE bool clearStrokeColorOverrides();
     Q_INVOKABLE bool resetSelectedObjects(float defaultBondRadius, int colorScheme);
     Q_INVOKABLE bool deleteSelectedObjects();
     void clear();
@@ -161,6 +168,7 @@ signals:
     void structureEdited(std::shared_ptr<data::Structure> structure);
 
 private:
+    bool clearStrokeOverrides(bool width);
     QAbstractItemModel* m_atomProperties = nullptr;
     void applyAtomRadiusType(StructureDocument& document);
     void updateElementList();

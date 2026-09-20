@@ -22,18 +22,20 @@ struct SceneUniforms {
     float         atomScale;
     float         bondRadius;
     int32_t       isPerspective;
-    float         outlineWidthPx;    // stroke width in rendered pixels (0 = off)
+    float         outlineWidthWorld; // fixed stroke thickness in angstroms (0 = off)
     simd_float4   outlineColor;      // rgb stroke color
-    float         outlinePixelScale; // world units per pixel: × view depth (persp) or absolute (ortho)
+    float         selectionOutlineWidthWorld; // selected-object thickness in angstroms
     int32_t       sphereEarlyZ;      // 1 = near-tangent billboard placement (early-Z pipeline)
-    float         selectionOutlineWidthPx; // selected-object stroke width in rendered pixels
+    float         _pad1;
     float         _pad2;
+    simd_float4   selectionOutlineColor;
 };
 
 // Per-instance sphere data — [[buffer(2)]] in sphere shader
 struct SphereInstance {
     simd_float4 positionAndRadius;    // xyz = world center, w = covalent radius
     simd_float4 color;                // rgb, opaque padding
+    simd_float4 stroke;               // rgb + width (negative components inherit global defaults)
     float       selected;             // 1 when selected, 0 otherwise
     float       _pad0;
     float       _pad1;
@@ -52,6 +54,7 @@ struct BondInstance {
     float       endRadius;
     float       bondRadius;
     float       selected;             // 1 when selected, 0 otherwise
+    simd_float4 stroke;               // rgb + width (negative components inherit global defaults)
 };
 
 // Line vertex (unit cell) — [[buffer(1)]] in line shader
@@ -87,11 +90,12 @@ struct RTUniforms {
     int32_t       showAtoms;
     int32_t       showBonds;
     int32_t       isPerspective;
-    float         outlineScale;      // widthPx × pixelScale; × hit distance (persp) or absolute (ortho); 0 = off
+    float         outlineWidthWorld; // fixed stroke thickness in angstroms (0 = off)
     simd_float4   outlineColor;      // rgb stroke color
     float         outlineWorldMax;   // conservative world-space width bound for BVH AABB padding
-    float         selectionOutlineScale;    // selected widthPx × pixelScale
+    float         selectionOutlineWidthWorld; // selected-object thickness in angstroms
     float         selectionOutlineWorldMax; // conservative selected outline AABB padding
+    simd_float4   selectionOutlineColor;
 };
 
 // Unit-cell object overlay uniforms for RT output compositing

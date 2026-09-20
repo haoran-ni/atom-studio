@@ -52,6 +52,31 @@ public:
         return m_model.deleteSelectedObjects();
     }
 
+    Q_INVOKABLE void selectAtom(int index) {
+        m_model.setSelectionMode(1);
+        m_model.toggleAtomSelection(index);
+    }
+
+    Q_INVOKABLE void selectBond() {
+        m_model.setSelectionMode(1);
+        if (m_model.structure()->bonds().empty()) {
+            m_model.structure()->bonds().addBond(0, 1);
+            m_model.notifyBondsUpdated();
+        }
+        m_model.toggleBondSelection(0);
+    }
+
+    Q_INVOKABLE float atomStrokeWidth(int index) const {
+        return m_model.structure()->stroke(index).width;
+    }
+    Q_INVOKABLE QColor atomStrokeColor(int index) const {
+        const auto& c = m_model.structure()->stroke(index).color;
+        return c.r >= 0 ? QColor::fromRgbF(c.r, c.g, c.b) : QColor();
+    }
+    Q_INVOKABLE float bondStrokeWidth() const {
+        return m_model.structure()->bonds().stroke(0).width;
+    }
+
 public slots:
     void qmlEngineAvailable(QQmlEngine* engine) {
         qmlRegisterSingletonInstance("AtomStudio", 1, 0, "StructureModel", &m_model);

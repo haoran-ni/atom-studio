@@ -263,7 +263,7 @@ private:
     float m_lightAzimuth = 0.0f;
     float m_lightElevation = 45.0f;
     bool m_outlineEnabled = true;
-    float m_outlineWidth = 1.0f;   // logical pixels; scaled by dpr for rendering
+    float m_outlineWidth = 0.05f;  // fixed shell thickness in angstroms
     QColor m_outlineColor = QColor(0, 0, 0);
     bool m_showViewportAxes = true;
     float m_viewportAxesX = 60.0f;

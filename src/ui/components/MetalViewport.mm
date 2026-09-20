@@ -593,7 +593,7 @@ void MetalViewport::setOutlineEnabled(bool enable) {
 }
 
 void MetalViewport::setOutlineWidth(float width) {
-    const float clamped = std::clamp(width, 0.5f, 4.0f);
+    const float clamped = std::clamp(width, 0.01f, 0.50f);
     if (!qFuzzyCompare(m_outlineWidth, clamped)) {
         m_outlineWidth = clamped;
         emit outlineWidthChanged();
@@ -608,6 +608,7 @@ void MetalViewport::setOutlineColor(const QColor& color) {
         update();
     }
 }
+
 
 void MetalViewport::setShowViewportAxes(bool show) {
     if (m_showViewportAxes != show) {
@@ -850,7 +851,7 @@ QSGNode* MetalViewport::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) 
     int pw = static_cast<int>(width() * dpr);
     int ph = static_cast<int>(height() * dpr);
     m_renderSettings.outlineEnabled = m_outlineEnabled;
-    m_renderSettings.outlineWidth = m_outlineWidth * static_cast<float>(dpr);
+    m_renderSettings.outlineWidth = m_outlineWidth;
     m_renderSettings.outlineColor = m_outlineColor;
     m_renderSettings.showViewportAxes = m_showViewportAxes;
     m_renderSettings.viewportAxesScreenX = m_viewportAxesX * static_cast<float>(dpr);

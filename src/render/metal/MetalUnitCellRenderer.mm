@@ -157,8 +157,8 @@ void MetalUnitCellRenderer::render(void* encoderPtr,
 
     // No stroke outlines on the unit-cell object — the corner joints share the
     // sphere impostor pipeline with atoms and would otherwise grow shells.
-    unitCellUniforms.outlineWidthPx = 0.0f;
-    unitCellUniforms.selectionOutlineWidthPx = 0.0f;
+    unitCellUniforms.outlineWidthWorld = 0.0f;
+    unitCellUniforms.selectionOutlineWidthWorld = 0.0f;
 
     // No early-Z placement either: the atom-based gate does not cover the
     // tiny joint spheres, and this pass uses the depth(any) pipeline.

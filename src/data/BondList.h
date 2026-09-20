@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ElementData.h"
+#include "StrokeStyle.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -101,6 +102,9 @@ public:
     bool startColorOverridden(size_t i) const { return m_startOverrides[i] != 0; }
     bool endColorOverridden(size_t i) const { return m_endOverrides[i] != 0; }
 
+    StrokeStyle& stroke(size_t index) { return m_strokes[index]; }
+    const StrokeStyle& stroke(size_t index) const { return m_strokes[index]; }
+
     // Selection state
     bool selected(size_t bondIndex) const { return m_selected[bondIndex] != 0; }
     void setSelected(size_t bondIndex, bool selected);
@@ -111,6 +115,7 @@ public:
 
 private:
     std::vector<Bond> m_bonds;
+    std::vector<StrokeStyle> m_strokes;
     std::vector<float> m_radii;
     std::vector<Color> m_startColors;
     std::vector<Color> m_endColors;

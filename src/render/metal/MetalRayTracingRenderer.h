@@ -77,15 +77,13 @@ private:
     int m_atomCount = 0;
     int m_bondCount = 0;
     int m_bvhNodeCount = 0;
-    // Scene AABB (including primitive radii) — used to bound outline widths
-    float m_sceneBoundsMin[3] = {0.0f, 0.0f, 0.0f};
-    float m_sceneBoundsMax[3] = {0.0f, 0.0f, 0.0f};
     int m_sampleCount = 0;
     bool m_initialized = false;
     bool m_atomDataDirty = true;
     bool m_bondDataDirty = true;
     bool m_appearanceDirty = false;
     bool m_hasSelection = false;
+    float m_maxStrokeWidth = 0.0f;
     bool m_accumNeedsClear = true;
     bool m_unitCellDataDirty = true;
     int m_unitCellEdgeCount = 0;
