@@ -88,6 +88,8 @@ jobs:
           VERSION: ${{ steps.metadata.outputs.version }}
           MINIMUM_MACOS: ${{ steps.metadata.outputs.minimum_macos }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.sha }}
+          LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/LICENSE
         run: |
           cd out/release
           shasum -a 256 -c "ATOM-STUDIO-$VERSION-macOS-arm64.dmg.sha256"
@@ -113,6 +115,13 @@ jobs:
           \`\`\`
 
           The result should say **OK**. This checks that the download matches the published file.
+
+          ## License and source
+
+          ATOM-STUDIO is licensed under [GNU GPL version 3]($LICENSE_URL) (GPL-3.0-only).
+          The DMG and installed app include LICENSE and COPYRIGHT.
+          Third-party components retain their own license terms.
+          [Source code and build instructions for this release]($SOURCE_URL).
 
           [Build and packaging logs]($RUN_URL)
 

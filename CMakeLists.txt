@@ -83,6 +83,15 @@ if(APPLE)
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     list(APPEND APP_BUNDLE_SOURCES ${APP_ICON_MACOS})
+    set(APP_LICENSE_FILES
+        "${CMAKE_SOURCE_DIR}/LICENSE"
+        "${CMAKE_SOURCE_DIR}/COPYRIGHT"
+    )
+    set_source_files_properties(${APP_LICENSE_FILES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources/licenses"
+        HEADER_FILE_ONLY TRUE
+    )
+    list(APPEND APP_BUNDLE_SOURCES ${APP_LICENSE_FILES})
 endif()
 
 # Main executable

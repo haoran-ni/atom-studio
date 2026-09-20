@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -156,6 +157,14 @@ def package(args: argparse.Namespace) -> Path:
         stage.mkdir()
         app = stage / "ATOM-STUDIO.app"
         run("/usr/bin/ditto", "--noextattr", "--noqtn", "--norsrc", args.app.resolve(), app)
+        # Include the project's license on the disk and in the installed app.
+        # Refresh from source before signing, including when packaging an older build.
+        license_dir = app / "Contents/Resources/licenses"
+        license_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("LICENSE", "COPYRIGHT"):
+            source = Path(__file__).resolve().parents[1] / name
+            shutil.copyfile(source, stage / name)
+            shutil.copyfile(source, license_dir / name)
         info_path = app / "Contents/Info.plist"
         info = plistlib.loads(info_path.read_bytes())
         version = info["CFBundleShortVersionString"]
@@ -220,7 +229,12 @@ def package(args: argparse.Namespace) -> Path:
             f"Built for {args.architecture}, macOS {args.minimum_macos} or newer.\n"
             "This build uses free local signatures and is not notarized by Apple.\n"
             "If macOS blocks a downloaded copy, attempt to open it, then use\n"
-            "System Settings > Privacy & Security > Open Anyway, if you trust it.\n",
+            "System Settings > Privacy & Security > Open Anyway, if you trust it.\n\n"
+            "ATOM-STUDIO is licensed under GNU GPL version 3 (GPL-3.0-only).\n"
+            "See LICENSE and COPYRIGHT on this disk or in the app's\n"
+            "Contents/Resources/licenses folder. Third-party components retain\n"
+            "their own license terms. Source code and build instructions:\n"
+            "https://github.com/haoran-ni/atom-studio\n",
             encoding="utf-8")
         name = f"ATOM-STUDIO-{version}-macOS-{args.architecture}.dmg"
         image = temporary / name

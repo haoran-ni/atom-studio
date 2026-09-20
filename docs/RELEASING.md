@@ -8,6 +8,12 @@ or desktop session; it does not validate the native renderer. The app uses
 ad-hoc signatures and is not notarized by Apple. No signing secrets or Apple
 Developer account are required.
 
+The DMG includes the project's `LICENSE` (GPL-3.0-only) and `COPYRIGHT` at its
+root and inside `ATOM-STUDIO.app/Contents/Resources/licenses`. Release notes link
+to the exact source revision and build instructions. Third-party components
+retain their own license terms; including the project license does not replace
+their notices or source requirements.
+
 ## Try the workflow before publishing
 
 Once the workflow is on the default branch, open **Actions → Build and Release →

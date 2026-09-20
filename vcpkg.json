@@ -3,6 +3,7 @@
   "name": "atom-studio",
   "version": "0.1.0",
   "description": "High performance visualization application for atomic structures",
+  "license": "GPL-3.0-only",
   "dependencies": [
     {
       "name": "qt6-base",

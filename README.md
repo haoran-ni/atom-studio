@@ -10,6 +10,7 @@
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/macos-build-tests.yml/badge.svg?branch=main&amp;event=push" alt="macOS Build &amp; Tests"></a>
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml/badge.svg?event=push" alt="Build and Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPLv3"></a>
 </p>
 
 <p align="center">
@@ -271,3 +272,9 @@ See [AGENTS.md](AGENTS.md) for architecture and contribution conventions,
 and [CMakePresets.json](CMakePresets.json) for the available build configurations.
 For tag-based DMG publishing and manual packaging runs, see
 [Publishing a macOS release](docs/RELEASING.md).
+
+## License
+
+ATOM-STUDIO is licensed under the [GNU General Public License version 3](LICENSE)
+(`GPL-3.0-only`). Copyright © 2026 Haoran Ni; see [COPYRIGHT](COPYRIGHT).
+Third-party components retain their own copyrights and license terms.
