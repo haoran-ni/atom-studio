@@ -21,6 +21,7 @@ set(CMAKE_AUTOUIC ON)
 # Find Qt6 packages
 find_package(Qt6 REQUIRED COMPONENTS
     Core
+    Concurrent
     Gui
     Quick
     QuickControls2
