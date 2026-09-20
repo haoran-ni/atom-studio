@@ -17,6 +17,23 @@ Rectangle {
     border.color: "#c7c9d1"
     border.width: 1
 
+    component SwitcherArrow: ToolButton {
+        id: control
+        implicitWidth: 28
+        implicitHeight: 28
+        icon.width: 12
+        icon.height: 12
+        icon.color: enabled ? "#4b4b4b" : "#a4a4a4"
+        background: Rectangle {
+            radius: 6
+            color: !control.enabled ? "transparent"
+                   : control.down ? "#e4e4e4"
+                   : control.hovered ? "#f0f0f0" : "transparent"
+            border.width: control.visualFocus ? 1 : 0
+            border.color: "#c7c9d1"
+        }
+    }
+
     // Consume input on the floating surface so gestures never orbit/zoom the scene.
     MouseArea {
         anchors.fill: parent
@@ -47,13 +64,9 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
-            ToolButton {
+            SwitcherArrow {
                 objectName: "previousStructure"
                 icon.source: "qrc:/icons/chevron-left.svg"
-                icon.width: 12
-                icon.height: 12
-                implicitWidth: 28
-                implicitHeight: 28
                 enabled: switcher.activeIndex > 0
                 Accessible.name: qsTr("Previous structure")
                 onClicked: switcher.activated(switcher.activeIndex - 1)
@@ -95,13 +108,9 @@ Rectangle {
                     border.width: 2
                 }
             }
-            ToolButton {
+            SwitcherArrow {
                 objectName: "nextStructure"
                 icon.source: "qrc:/icons/chevron-right.svg"
-                icon.width: 12
-                icon.height: 12
-                implicitWidth: 28
-                implicitHeight: 28
                 enabled: switcher.activeIndex < switcher.structureCount - 1
                 Accessible.name: qsTr("Next structure")
                 onClicked: switcher.activated(switcher.activeIndex + 1)
