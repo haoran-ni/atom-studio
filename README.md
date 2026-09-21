@@ -11,6 +11,7 @@
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/codeql.yml/badge.svg?branch=main&amp;event=push" alt="CodeQL"></a>
   <a href="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml"><img src="https://github.com/haoran-ni/atom-studio/actions/workflows/build-release.yml/badge.svg?event=push" alt="Build and Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPLv3"></a>
+  <a href="https://doi.org/10.5281/zenodo.22865903"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.22865903.svg" alt="DOI: 10.5281/zenodo.22865903"></a>
 </p>
 
 <p align="center">
@@ -288,6 +289,9 @@ Citation is appreciated if this software is used to make figures.
   author = {Ni, Haoran},
   title = {{Atom Studio: Real-Time Ray Tracing Visualization of Atomic Structures with Integrated Python Scripting}},
   year = {2026},
-  url = {https://github.com/haoran-ni/atom-studio}
+  version = {0.1.1},
+  publisher = {Zenodo},
+  doi = {10.5281/zenodo.22865903},
+  url = {https://doi.org/10.5281/zenodo.22865903}
 }
 ```
