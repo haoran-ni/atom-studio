@@ -56,11 +56,9 @@ set(PYTHON_NATIVE_BUNDLE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/bundle_macos_python
 
 # Platform-specific settings
 if(APPLE)
-    set(CMAKE_MACOSX_BUNDLE ON)
-    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.atomstudio.app")
-    set(MACOSX_BUNDLE_BUNDLE_NAME "Atom Studio")
-    set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
-    set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+    # Tests and build utilities are ordinary executables. Only the main app
+    # opts into bundling below, so macOS does not index tests as applications.
+    set(CMAKE_MACOSX_BUNDLE OFF)
 
     # Set RPATH settings for finding frameworks in the app bundle
     set(CMAKE_INSTALL_RPATH "@executable_path/../Frameworks")
@@ -132,6 +130,10 @@ set_target_properties(atom-python-launcher PROPERTIES MACOSX_BUNDLE FALSE)
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.atomstudio.app"
+        MACOSX_BUNDLE_BUNDLE_NAME "Atom Studio"
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
         MACOSX_BUNDLE_ICON_FILE "logo_1024x1024.icns"
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist.in
     )

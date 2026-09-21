@@ -81,6 +81,7 @@ The rendering system is organized by **graphics backend**, not by OS. Shared abs
 ### Build System: CMake
 - vcpkg or Conan for dependency management
 - Platform-conditional backend compilation in `src/render/CMakeLists.txt`
+- On macOS, only the main `atom-studio` target is an application bundle. Keep tests and build utilities as ordinary executables so macOS does not index them as apps; use CMake target names or `$<TARGET_FILE:...>` for test commands.
 - Cross-platform CI pipeline
 - Normal development builds must be self-consistent: `cmake --build build` should leave the app runnable without requiring a separate manual Python deployment step.
 - If embedded/bundled Python is used, the build system must automatically invalidate and rebuild stale bundled runtimes when the selected interpreter version, ABI, or package set changes.
