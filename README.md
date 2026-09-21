@@ -278,3 +278,16 @@ For tag-based DMG publishing and manual packaging runs, see
 ATOM-STUDIO is licensed under the [GNU General Public License version 3](LICENSE)
 (`GPL-3.0-only`). Copyright © 2026 Haoran Ni; see [COPYRIGHT](COPYRIGHT).
 Third-party components retain their own copyrights and license terms.
+
+## Citation
+
+Citation is appreciated if this software is used to make figures.
+
+```bibtex
+@misc{ni2026atomstudio,
+  author = {Ni, Haoran},
+  title = {{Atom Studio: Real-Time Ray Tracing Visualization of Atomic Structures with Integrated Python Scripting}},
+  year = {2026},
+  url = {https://github.com/haoran-ni/atom-studio}
+}
+```
