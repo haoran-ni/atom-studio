@@ -9,7 +9,7 @@ ad-hoc signatures and is not notarized by Apple. No signing secrets or Apple
 Developer account are required.
 
 The DMG includes the project's `LICENSE` (GPL-3.0-only) and `COPYRIGHT` at its
-root and inside `ATOM-STUDIO.app/Contents/Resources/licenses`. Release notes link
+root and inside `Atom Studio.app/Contents/Resources/licenses`. Release notes link
 to the exact source revision and build instructions. Third-party components
 retain their own license terms; including the project license does not replace
 their notices or source requirements.
@@ -31,20 +31,21 @@ tagging a release.
 ## Publish
 
 1. Set `project(atom-studio VERSION ...)` in `CMakeLists.txt` to the intended
-   `MAJOR.MINOR.PATCH` version. The workflow requires the tag to match this version.
+   `MAJOR.MINOR.PATCH` version and update `vcpkg.json` to match. The workflow
+   requires the tag to match the CMake version.
 2. Commit and push the release changes to `main`, and check that macOS Build &
    Tests and CodeQL succeed.
-3. Create and push an annotated tag on that commit. For version `0.1.0`:
+3. Create and push an annotated tag on that commit. For version `0.1.1`:
 
    ```bash
-   git tag -a v0.1.0 -m "ATOM-STUDIO 0.1.0"
-   git push origin v0.1.0
+   git tag -a v0.1.1 -m "Atom Studio 0.1.1"
+   git push origin v0.1.1
    ```
 
 4. Watch **Actions → Build and Release**. After all build, test, and packaging
    steps succeed, a separate job publishes the tag's GitHub Release with:
-   - `ATOM-STUDIO-0.1.0-macOS-arm64.dmg`
-   - `ATOM-STUDIO-0.1.0-macOS-arm64.dmg.sha256`
+   - `Atom Studio-0.1.1-macOS-arm64.dmg`
+   - `Atom Studio-0.1.1-macOS-arm64.dmg.sha256`
 
 The publication job uses GitHub's automatic `GITHUB_TOKEN` with `contents: write`;
 the build job has read-only repository access. The tag must already exist on

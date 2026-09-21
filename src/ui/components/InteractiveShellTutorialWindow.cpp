@@ -62,7 +62,7 @@ protected:
 
 InteractiveShellTutorialWindow::InteractiveShellTutorialWindow() {
     setObjectName("interactiveShellTutorialWindow");
-    setWindowTitle(tr("ATOM-STUDIO — Interactive Shell Tutorial"));
+    setWindowTitle(tr("Atom Studio — Interactive Shell Tutorial"));
     setAttribute(Qt::WA_QuitOnClose, false);
     resize(820, 740);
     setMinimumSize(560, 420);

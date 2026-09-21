@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="resources/logo_1024x1024.png" alt="ATOM-STUDIO logo" width="240">
+  <img src="resources/logo_1024x1024.png" alt="Atom Studio logo" width="240">
 </p>
 
-<h1 align="center">ATOM-STUDIO</h1>
+<h1 align="center">Atom Studio</h1>
 
 <p align="center">Explore, edit, and visualize atomic structures on your desktop.</p>
 
@@ -14,10 +14,10 @@
 </p>
 
 <p align="center">
-  <img src="resources/software_demo1.png" alt="ATOM-STUDIO software demo 1" width="33%"><img src="resources/software_demo2.png" alt="ATOM-STUDIO software demo 2" width="33%"><img src="resources/software_demo3.png" alt="ATOM-STUDIO software demo 3" width="33%">
+  <img src="resources/software_demo1.png" alt="Atom Studio software demo 1" width="33%"><img src="resources/software_demo2.png" alt="Atom Studio software demo 2" width="33%"><img src="resources/software_demo3.png" alt="Atom Studio software demo 3" width="33%">
 </p>
 
-ATOM-STUDIO brings interactive 3D visualization, ray-traced rendering, and Python/ASE
+Atom Studio brings interactive 3D visualization, ray-traced rendering, and Python/ASE
 scripting into one workspace. Inspect molecules and crystals, compare structures,
 watch a relaxation run, and export images or edited geometries.
 
@@ -49,8 +49,8 @@ or the repository's **Releases** section. Published installers are for
 **Apple Silicon (M1 or newer)**; check the release notes for the exact minimum
 macOS version. If no release is available yet, use the source-build option below.
 
-1. Open `ATOM-STUDIO-<version>-macOS-arm64.dmg`.
-2. Drag **ATOM-STUDIO** into **Applications**, then eject the disk image.
+1. Open `Atom Studio-<version>-macOS-arm64.dmg`.
+2. Drag **Atom Studio** into **Applications**, then eject the disk image.
 3. Open the app from Applications.
 
 The app includes Python, ASE, NumPy, and Qt. You do not need Homebrew, Python,
@@ -68,7 +68,7 @@ Terminal, change to that folder and run this command, replacing `<version>`
 with the release version:
 
 ```bash
-shasum -a 256 -c ATOM-STUDIO-<version>-macOS-arm64.dmg.sha256
+shasum -a 256 -c "Atom Studio-<version>-macOS-arm64.dmg.sha256"
 ```
 
 An `OK` result confirms that the download matches the published checksum.
@@ -88,7 +88,7 @@ native Intel builds are attempted but may require additional dependency setup.
    bash scripts/build-macos-dmg.sh
    ```
 
-3. When the disk image opens, drag **ATOM-STUDIO** into **Applications**.
+3. When the disk image opens, drag **Atom Studio** into **Applications**.
    Eject the image and launch the app from Applications.
 
 The script installs missing build tools, builds and tests the app, and packages
@@ -107,7 +107,7 @@ To leave the disk image closed and limit compilation to four jobs:
 bash scripts/build-macos-dmg.sh --no-open --jobs 4
 ```
 
-- **Output:** `out/macos/ATOM-STUDIO-<version>-macOS-<architecture>.dmg`,
+- **Output:** `out/macos/Atom Studio-<version>-macOS-<architecture>.dmg`,
   with a `.sha256` checksum beside it.
 - **Build failure:** check `out/macos/build.log`, resolve the reported problem,
   and rerun the same command. Existing build dependencies are reused.
@@ -275,7 +275,7 @@ For tag-based DMG publishing and manual packaging runs, see
 
 ## License
 
-ATOM-STUDIO is licensed under the [GNU General Public License version 3](LICENSE)
+Atom Studio is licensed under the [GNU General Public License version 3](LICENSE)
 (`GPL-3.0-only`). Copyright © 2026 Haoran Ni; see [COPYRIGHT](COPYRIGHT).
 Third-party components retain their own copyrights and license terms.
 

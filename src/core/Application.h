@@ -9,7 +9,7 @@ namespace atom {
 /**
  * @brief Core application class managing lifecycle and QML engine
  *
- * The Application class serves as the central coordinator for ATOM-STUDIO.
+ * The Application class serves as the central coordinator for Atom Studio.
  * It manages:
  * - QML engine initialization and configuration
  * - Application lifecycle events

@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
         PyConfig_Clear(&config);
         return Py_RunMain();
     } catch (const std::exception& error) {
-        std::cerr << "ATOM-STUDIO Python: " << error.what() << '\n';
+        std::cerr << "Atom Studio Python: " << error.what() << '\n';
         return 1;
     }
 }

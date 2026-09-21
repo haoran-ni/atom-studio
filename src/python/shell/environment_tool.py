@@ -30,14 +30,14 @@ def environment_lock(root, shared=False):
                 stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError as error:
-            raise RuntimeError("This environment is busy in another ATOM-STUDIO process. Close its Python shell and retry.") from error
+            raise RuntimeError("This environment is busy in another Atom Studio process. Close its Python shell and retry.") from error
         yield
 
 
 def ensure(root):
     marker = root / ".atom-studio-environment.json"
     expected = {"format": 2, "python": list(sys.version_info[:2]),
-                "base": sys.base_prefix}
+                "base": sys.base_prefix, "prompt": "Atom Studio " + root.name}
     current = json.loads(marker.read_text()) if marker.exists() else None
     if current and current["python"] != expected["python"]:
         raise RuntimeError("This environment requires a different Python version. Create a new environment.")
@@ -51,7 +51,7 @@ def ensure(root):
                 if link.is_symlink():
                     link.unlink()
         venv.EnvBuilder(system_site_packages=True, symlinks=os.name != "nt",
-                        with_pip=False, prompt="ATOM-STUDIO " + root.name).create(root)
+                        with_pip=False, prompt=expected["prompt"]).create(root)
         if os.name == "nt":
             shutil.copy2(Path(sys.base_prefix) / "bin/python.exe", root / "Scripts/python.exe")
             for dll in (Path(sys.base_prefix) / "bin").glob("*.dll"):

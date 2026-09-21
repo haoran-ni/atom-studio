@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QDebug>
@@ -57,7 +58,7 @@ bool Application::initialize()
         return false;
     }
 
-    qInfo() << "ATOM-STUDIO initialized successfully";
+    qInfo() << "Atom Studio initialized successfully";
     emit initialized();
     return true;
 }
@@ -68,7 +69,7 @@ void Application::setupQmlContext()
 
     // Expose application version to QML
     context->setContextProperty("appVersion", QCoreApplication::applicationVersion());
-    context->setContextProperty("appName", QStringLiteral("ATOM-STUDIO"));
+    context->setContextProperty("appName", QGuiApplication::applicationDisplayName());
 
     // Future: expose more application state/controllers here
 }

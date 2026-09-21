@@ -86,7 +86,7 @@ void writeVector(QTextStream& out, const std::array<T, 3>& vector) {
 }
 
 void writeAims(QTextStream& out, const StructureExportData& structure) {
-    out << "# Exported by ATOM-STUDIO\n";
+    out << "# Exported by Atom Studio\n";
     if (structure.lattice.defined) {
         for (const auto& vector : structure.lattice.matrix) {
             out << "lattice_vector ";
@@ -134,7 +134,7 @@ void writePoscar(QTextStream& out, const StructureExportData& structure) {
         if (groups[number].empty()) species.push_back(number);
         groups[number].push_back(i);
     }
-    out << "Exported by ATOM-STUDIO\n1.0\n";
+    out << "Exported by Atom Studio\n1.0\n";
     for (const auto& vector : structure.lattice.matrix) {
         writeVector(out, vector);
         out << '\n';

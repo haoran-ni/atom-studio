@@ -24,7 +24,7 @@ def wheel(directory):
     files = {
         "atom_env_fixture.py": "VALUE = 42\ndef main():\n    print('entry-point-works')\n",
         "atom_env_fixture-1.0.dist-info/METADATA": "Metadata-Version: 2.1\nName: atom-env-fixture\nVersion: 1.0\n",
-        "atom_env_fixture-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nGenerator: ATOM-STUDIO test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        "atom_env_fixture-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nGenerator: Atom Studio test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         "atom_env_fixture-1.0.dist-info/entry_points.txt": "[console_scripts]\natom-env-fixture = atom_env_fixture:main\n",
     }
     records = []
@@ -109,6 +109,18 @@ def main():
         assert "entry-point-works" in run(root / "bin/atom-env-fixture", env=terminal_environment)
         worker(python, entry, environment)
         worker(python, entry, environment)  # Survives a worker restart.
+        # An environment created before display-name tracking must refresh its
+        # activation prompt without losing packages the user installed.
+        marker_path = root / ".atom-studio-environment.json"
+        marker = json.loads(marker_path.read_text())
+        marker.pop("prompt")
+        marker_path.write_text(json.dumps(marker))
+        activation = root / "bin/activate"
+        activation.write_text(activation.read_text().replace("Atom Studio environment", "Old name environment"))
+        run(launcher, "-I", helper, "ensure", root, env=environment)
+        assert "Atom Studio environment" in activation.read_text()
+        assert "Old name environment" not in activation.read_text()
+        run(python, "-I", "-c", "import atom_env_fixture; assert atom_env_fixture.VALUE == 42", env=environment)
         other = directory / "other"
         run(launcher, "-I", helper, "ensure", other, env=environment)
         run(other / "bin/python", "-I", "-c", "import importlib.util; assert importlib.util.find_spec('atom_env_fixture') is None", env=environment)
@@ -124,7 +136,7 @@ def main():
         run(python, "-I", "-m", "pip", "install", "--no-index", "--find-links", directory,
             source_package(directory), env=environment)
         worker(python, entry, terminal_environment)
-    print("PASS: venv, offline pip install/uninstall, console entry point, worker import/restart, isolation, launcher repair, credential paths")
+    print("PASS: venv, offline pip install/uninstall, console entry point, worker import/restart, prompt upgrade, isolation, launcher repair, credential paths")
 
 
 if __name__ == "__main__":

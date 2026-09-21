@@ -69,14 +69,15 @@ int main(int argc, char* argv[])
     // Create Qt application (QApplication instead of QGuiApplication for QFileDialog support)
     QApplication app(argc, argv);
 
-    // Set application metadata
+    // Keep storage identifiers stable for existing settings and Python environments.
     app.setApplicationName("ATOM-STUDIO");
+    app.setApplicationDisplayName("Atom Studio");
     app.setApplicationVersion(ATOM_STUDIO_VERSION);
     app.setOrganizationName("ATOM-STUDIO");
     app.setOrganizationDomain("atomstudio.app");
     app.setWindowIcon(QIcon(":/branding/app-logo.png"));
 
-    qInfo() << "Starting ATOM-STUDIO v" << app.applicationVersion();
+    qInfo() << "Starting Atom Studio v" << app.applicationVersion();
     qInfo() << "Qt version:" << qVersion();
 
     int result = -1;

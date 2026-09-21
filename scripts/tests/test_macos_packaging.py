@@ -21,7 +21,7 @@ class PackagingTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(prefix="atom packaging 原子 ")
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name).resolve()
-        self.app = self.root / "Moved ATOM-STUDIO.app"
+        self.app = self.root / "Moved Atom Studio.app"
         self.executable = self.app / "Contents/MacOS/atom-studio"
         self.executable.parent.mkdir(parents=True)
         self.executable.touch()
@@ -95,7 +95,7 @@ class PackagingTests(unittest.TestCase):
         deploy.chmod(0o755)
         output = self.root / "output"
         output.mkdir()
-        image = output / "ATOM-STUDIO-0.1.0-macOS-arm64.dmg"
+        image = output / "Atom Studio-0.1.0-macOS-arm64.dmg"
         image.write_bytes(b"previous successful build")
         args = Namespace(app=self.app, output_dir=output, macdeployqt=deploy,
                          qml_dir=self.root, qml_import_dir=self.root, library_dir=self.root,

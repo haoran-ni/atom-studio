@@ -22,7 +22,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(prefix="atom relocated runtime ") as directory:
-        app = Path(directory) / "Moved ATOM-STUDIO 原子.app"
+        app = Path(directory) / "Moved Atom Studio 原子.app"
         contents = app / "Contents"
         (contents / "MacOS").mkdir(parents=True)
         python_home = contents / "Resources/python"

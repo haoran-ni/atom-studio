@@ -71,7 +71,7 @@ const QStringList examples{
 InteractiveShellWindow::InteractiveShellWindow(PythonShellController* controller)
     : m_controller(controller) {
     setObjectName("interactiveShellWindow");
-    setWindowTitle(tr("ATOM-STUDIO — Interactive Python"));
+    setWindowTitle(tr("Atom Studio — Interactive Python"));
     resize(940, 820);
     setMinimumSize(660, 520);
     setAttribute(Qt::WA_QuitOnClose, false);

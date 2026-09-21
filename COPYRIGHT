@@ -1,19 +1,19 @@
-ATOM-STUDIO
+Atom Studio
 Copyright (C) 2026 Haoran Ni
 
 SPDX-License-Identifier: GPL-3.0-only
 
-ATOM-STUDIO is free software: you can redistribute it and/or modify it
+Atom Studio is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
 Free Software Foundation, version 3 of the License.
 
-ATOM-STUDIO is distributed in the hope that it will be useful,
+Atom Studio is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with ATOM-STUDIO in the LICENSE file. If not, see
+along with Atom Studio in the LICENSE file. If not, see
 <https://www.gnu.org/licenses/>.
 
 Source code and build instructions:

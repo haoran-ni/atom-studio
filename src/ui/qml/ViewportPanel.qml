@@ -81,7 +81,7 @@ Rectangle {
             spacing: 15
 
             Label {
-                text: "ATOM STUDIO"
+                text: "Atom Studio"
                 color: "#000000"
                 font.pixelSize: 40
                 font.bold: true

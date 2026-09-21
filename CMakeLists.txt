@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(atom-studio
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "High performance visualization application for atomic structures"
     LANGUAGES CXX
 )
@@ -58,7 +58,7 @@ set(PYTHON_NATIVE_BUNDLE_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/bundle_macos_python
 if(APPLE)
     set(CMAKE_MACOSX_BUNDLE ON)
     set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.atomstudio.app")
-    set(MACOSX_BUNDLE_BUNDLE_NAME "ATOM-STUDIO")
+    set(MACOSX_BUNDLE_BUNDLE_NAME "Atom Studio")
     set(MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 

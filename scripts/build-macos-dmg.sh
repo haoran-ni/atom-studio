@@ -6,8 +6,8 @@ usage() {
     cat <<'EOF'
 Usage: bash scripts/build-macos-dmg.sh [--no-open] [--jobs N]
 
-Install missing build prerequisites, build and test ATOM-STUDIO, then create
-and open out/macos/ATOM-STUDIO-<version>-macOS-<architecture>.dmg.
+Install missing build prerequisites, build and test Atom Studio, then create
+and open out/macos/Atom Studio-<version>-macOS-<architecture>.dmg.
 
 Requires macOS 14+, internet access for missing dependencies, and a normal
 user account. Apple/Homebrew installers may request confirmation or an admin
@@ -185,7 +185,7 @@ if [[ -z "$jobs" ]]; then
     [[ "$jobs" -le 8 ]] || jobs=8
 fi
 build_dir="$output_dir/build"
-step "Building ATOM-STUDIO for $architecture on macOS $macos_version"
+step "Building Atom Studio for $architecture on macOS $macos_version"
 # --fresh resets dependency discovery after Homebrew upgrades, while retaining
 # object files. This build directory is independent of all development presets.
 "$cmake" --fresh -S "$repo_dir" -B "$build_dir" -G 'Unix Makefiles' \
@@ -211,7 +211,7 @@ step 'Bundling Qt, checking portability, signing locally and creating the disk i
     "${plugin_args[@]}" \
     --architecture "$architecture" --minimum-macos "$macos_version"
 dmg="$(cat "$output_dir/latest-dmg.txt")"
-printf '\nReady: %s\nOpen the disk image and drag ATOM-STUDIO into Applications.\n' "$dmg"
+printf '\nReady: %s\nOpen the disk image and drag Atom Studio into Applications.\n' "$dmg"
 if [[ "$open_dmg" == 1 ]]; then
     /usr/bin/open "$dmg" || printf 'Open the disk image above manually.\n'
 fi

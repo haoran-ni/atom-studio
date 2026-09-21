@@ -43,7 +43,7 @@ for module in tuple(sys.modules.values()):
         assert within(path, root), path
 assert numpy.allclose(scipy.linalg.solve([[2.0]], [4.0]), [2.0])
 for codec in (gzip, bz2, lzma):
-    assert codec.decompress(codec.compress(b'ATOM-STUDIO')) == b'ATOM-STUDIO'
+    assert codec.decompress(codec.compress(b'Atom Studio')) == b'Atom Studio'
 assert sqlite3.connect(':memory:').execute('select 42').fetchone()[0] == 42
 assert hashlib.sha256(b'atom').hexdigest()
 stream = io.StringIO()

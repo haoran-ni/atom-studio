@@ -139,7 +139,7 @@ def smoke_test(executable: Path, directory: Path, *, headless: bool = False) -> 
         except subprocess.TimeoutExpired:
             process.terminate()
             output, _ = process.communicate(timeout=10)
-        if "ATOM-STUDIO initialized successfully" not in output:
+        if "Atom Studio initialized successfully" not in output:
             raise RuntimeError(f"Packaged app did not finish QML initialization:\n{output}")
         print(output.strip(), flush=True)
     finally:
@@ -155,7 +155,7 @@ def package(args: argparse.Namespace) -> Path:
         temporary = Path(directory)
         stage = temporary / "disk"
         stage.mkdir()
-        app = stage / "ATOM-STUDIO.app"
+        app = stage / "Atom Studio.app"
         run("/usr/bin/ditto", "--noextattr", "--noqtn", "--norsrc", args.app.resolve(), app)
         # Include the project's license on the disk and in the installed app.
         # Refresh from source before signing, including when packaging an older build.
@@ -223,23 +223,23 @@ def package(args: argparse.Namespace) -> Path:
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
         (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
         (stage / "INSTALL.txt").write_text(
-            f"ATOM-STUDIO {version}\n\n"
-            "Drag ATOM-STUDIO.app onto Applications, then eject this disk image.\n"
-            "Open ATOM-STUDIO from Applications. Python and Qt are included.\n\n"
+            f"Atom Studio {version}\n\n"
+            "Drag Atom Studio.app onto Applications, then eject this disk image.\n"
+            "Open Atom Studio from Applications. Python and Qt are included.\n\n"
             f"Built for {args.architecture}, macOS {args.minimum_macos} or newer.\n"
             "This build uses free local signatures and is not notarized by Apple.\n"
             "If macOS blocks a downloaded copy, attempt to open it, then use\n"
             "System Settings > Privacy & Security > Open Anyway, if you trust it.\n\n"
-            "ATOM-STUDIO is licensed under GNU GPL version 3 (GPL-3.0-only).\n"
+            "Atom Studio is licensed under GNU GPL version 3 (GPL-3.0-only).\n"
             "See LICENSE and COPYRIGHT on this disk or in the app's\n"
             "Contents/Resources/licenses folder. Third-party components retain\n"
             "their own license terms. Source code and build instructions:\n"
             "https://github.com/haoran-ni/atom-studio\n",
             encoding="utf-8")
-        name = f"ATOM-STUDIO-{version}-macOS-{args.architecture}.dmg"
+        name = f"Atom Studio-{version}-macOS-{args.architecture}.dmg"
         image = temporary / name
         print("Creating and verifying compressed disk image...", flush=True)
-        run("/usr/bin/hdiutil", "create", "-volname", "ATOM-STUDIO", "-srcfolder", stage,
+        run("/usr/bin/hdiutil", "create", "-volname", "Atom Studio", "-srcfolder", stage,
             "-fs", "HFS+", "-format", "UDZO", image)
         run("/usr/bin/hdiutil", "verify", image)
         # Preserve a previous successful image until every packaging check passes.

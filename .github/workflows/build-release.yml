@@ -92,16 +92,16 @@ jobs:
           LICENSE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/LICENSE
         run: |
           cd out/release
-          shasum -a 256 -c "ATOM-STUDIO-$VERSION-macOS-arm64.dmg.sha256"
+          shasum -a 256 -c "Atom Studio-$VERSION-macOS-arm64.dmg.sha256"
           cat > release-notes.md <<EOF
           ## Download and install
 
-          Download **ATOM-STUDIO-$VERSION-macOS-arm64.dmg** from the assets below.
+          Download **Atom Studio-$VERSION-macOS-arm64.dmg** from the assets below.
           Requires **Apple Silicon (M1 or newer)** and **macOS $MINIMUM_MACOS or newer**.
           Python, ASE, NumPy, and Qt are included; no separate installation is needed.
 
-          1. Open the DMG and drag **ATOM-STUDIO** into **Applications**.
-          2. Eject the DMG and open ATOM-STUDIO from Applications.
+          1. Open the DMG and drag **Atom Studio** into **Applications**.
+          2. Eject the DMG and open Atom Studio from Applications.
           3. This app is locally signed and **not notarized by Apple**. If macOS blocks it,
              attempt to open it first, then choose **System Settings → Privacy & Security → Open Anyway**
              if you trust this download. See [Apple's instructions](https://support.apple.com/en-us/102445).
@@ -111,14 +111,14 @@ jobs:
           Download the matching .sha256 file into the same folder as the DMG, then run:
 
           \`\`\`bash
-          shasum -a 256 -c ATOM-STUDIO-$VERSION-macOS-arm64.dmg.sha256
+          shasum -a 256 -c "Atom Studio-$VERSION-macOS-arm64.dmg.sha256"
           \`\`\`
 
           The result should say **OK**. This checks that the download matches the published file.
 
           ## License and source
 
-          ATOM-STUDIO is licensed under [GNU GPL version 3]($LICENSE_URL) (GPL-3.0-only).
+          Atom Studio is licensed under [GNU GPL version 3]($LICENSE_URL) (GPL-3.0-only).
           The DMG and installed app include LICENSE and COPYRIGHT.
           Third-party components retain their own license terms.
           [Source code and build instructions for this release]($SOURCE_URL).
@@ -180,10 +180,10 @@ jobs:
       - name: Verify and publish release assets
         working-directory: release
         run: |
-          dmg="ATOM-STUDIO-${RELEASE_TAG#v}-macOS-arm64.dmg"
+          dmg="Atom Studio-${RELEASE_TAG#v}-macOS-arm64.dmg"
           sha256sum --check "$dmg.sha256"
           # gh creates a draft, uploads both assets, then publishes it. Existing
           # releases fail instead of silently replacing a published download.
           gh release create "$RELEASE_TAG" "$dmg" "$dmg.sha256" \
-            --verify-tag --title "ATOM-STUDIO $RELEASE_TAG" \
+            --verify-tag --title "Atom Studio $RELEASE_TAG" \
             --notes-file release-notes.md

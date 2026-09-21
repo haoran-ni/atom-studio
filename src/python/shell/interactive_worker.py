@@ -222,7 +222,7 @@ def _unsupported_input(*args, **kwargs):
 
 
 def _trace(frame, event, arg):
-    if frame.f_code.co_filename == "<ATOM-STUDIO>":
+    if frame.f_code.co_filename == "<Atom Studio>":
         _check_cancel()
         return _trace
     return None
@@ -262,7 +262,7 @@ while True:
             os.chdir(command["directory"])
             builtins.input = _unsupported_input
             sys.settrace(_trace)
-            exec(compile(command["code"], "<ATOM-STUDIO>", "exec"), _namespace, _namespace)
+            exec(compile(command["code"], "<Atom Studio>", "exec"), _namespace, _namespace)
             sys.settrace(None)
             # Plain ASE/NumPy objects can change through aliases and in-place edits.
             # Check every registered object before publishing any final states.

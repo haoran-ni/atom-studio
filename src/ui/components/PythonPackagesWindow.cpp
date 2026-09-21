@@ -20,7 +20,7 @@ namespace atom::ui {
 PythonPackagesWindow::PythonPackagesWindow(PythonShellController* shell) {
     auto* manager = shell->environment();
     setObjectName("pythonPackagesWindow");
-    setWindowTitle(tr("ATOM-STUDIO — Python Packages"));
+    setWindowTitle(tr("Atom Studio — Python Packages"));
     setAttribute(Qt::WA_QuitOnClose, false);
     resize(820, 740); setMinimumSize(620, 520);
     auto* content = new QWidget; setCentralWidget(content);
